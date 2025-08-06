@@ -11,4 +11,5 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 	RegisterAuthenticationRoutes(api, db)
 	RegisterEncryptionRoutes(api)
 	RegisterUserRoutes(api, db)
+	RegisterDashboardRoutes(api, db)
 }
