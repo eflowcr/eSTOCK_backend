@@ -300,16 +300,14 @@ func (u *UsersRepository) ExportUsersToExcel() ([]byte, *responses.InternalRespo
 	sheet := "Sheet1"
 	f.SetSheetName("Sheet1", sheet)
 
-	// Encabezados en fila 6
 	headers := []string{"ID Usuario", "Email", "Nombre", "Apellido", "Rol"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
 		f.SetCellValue(sheet, cell, h)
 	}
 
-	// Datos a partir de la fila 7
 	for idx, user := range users {
-		row := idx + 7 // empieza en la fila 7
+		row := idx + 7
 		values := []interface{}{
 			user.ID,
 			user.Email,
@@ -323,7 +321,6 @@ func (u *UsersRepository) ExportUsersToExcel() ([]byte, *responses.InternalRespo
 		}
 	}
 
-	// Convertir a []byte
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
@@ -334,4 +331,49 @@ func (u *UsersRepository) ExportUsersToExcel() ([]byte, *responses.InternalRespo
 	}
 
 	return buf.Bytes(), nil
+}
+
+func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *responses.InternalResponse {
+	var user database.User
+
+	err := u.DB.First(&user, "id = ?", id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return &responses.InternalResponse{
+			Error:   nil,
+			Message: "User not found",
+			Handled: true,
+		}
+	}
+	if err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to find user",
+			Handled: false,
+		}
+	}
+
+	hashedPassword, err := tools.Encrypt(plainPassword)
+	if err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to encrypt password",
+			Handled: false,
+		}
+	}
+
+	updateData := map[string]interface{}{
+		"password":   hashedPassword,
+		"updated_at": tools.GetCurrentTime(),
+	}
+
+	err = u.DB.Model(&user).Updates(updateData).Error
+	if err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to update password",
+			Handled: false,
+		}
+	}
+
+	return nil
 }

@@ -44,3 +44,7 @@ func (s *UserService) ImportUsersFromExcel(fileBytes []byte) ([]string, []*respo
 func (s *UserService) ExportUsersToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportUsersToExcel()
 }
+
+func (s *UserService) UpdateUserPassword(id string, newPassword string) *responses.InternalResponse {
+	return s.Repository.UpdateUserPassword(id, newPassword)
+}

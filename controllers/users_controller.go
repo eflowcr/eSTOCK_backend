@@ -143,3 +143,17 @@ func (c *UserController) ExportUsersToExcel(ctx *gin.Context) {
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", excel)
 	tools.Response(ctx, "ExportUsersToExcel", true, "Users exported successfully", "export_users_to_excel", nil, false, "")
 }
+
+func (c *UserController) UpdateUserPassword(ctx *gin.Context) {
+	id := ctx.Param("id")
+	password := ctx.PostForm("password")
+
+	response := c.Service.UpdateUserPassword(id, password)
+	if response != nil {
+		tools.Response(ctx, "ChangePassword", false, response.Message, "change_password", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "ChangePassword", true, "Password changed successfully", "change_password", nil, true, "")
+
+}
