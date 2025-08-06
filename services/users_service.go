@@ -36,3 +36,11 @@ func (s *UserService) UpdateUser(id string, data map[string]interface{}) *respon
 func (s *UserService) DeleteUser(id string) *responses.InternalResponse {
 	return s.Repository.DeleteUser(id)
 }
+
+func (s *UserService) ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+	return s.Repository.ImportUsersFromExcel(fileBytes)
+}
+
+func (s *UserService) ExportUsersToExcel() ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportUsersToExcel()
+}

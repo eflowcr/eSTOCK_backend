@@ -21,5 +21,7 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.POST("/", userController.CreateUser)
 		route.PUT("/:id", userController.UpdateUser)
 		route.DELETE("/:id", userController.DeleteUser)
+		route.POST("/import", userController.ImportUsersFromExcel)
+		route.GET("/export", userController.ExportUsersToExcel)
 	}
 }

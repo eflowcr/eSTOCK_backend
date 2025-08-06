@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"io"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -91,4 +93,53 @@ func (c *UserController) DeleteUser(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "DeleteUser", true, "User deleted successfully", "delete_user", nil, false, "")
+}
+
+func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
+	fileHeader, err := ctx.FormFile("file")
+	if err != nil {
+		tools.Response(ctx, "ImportUsersFromExcel", false, "File upload error: "+err.Error(), "import_users_from_excel", nil, false, "")
+		return
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		tools.Response(ctx, "ImportUsersFromExcel", false, "Failed to open file: "+err.Error(), "import_users_from_excel", nil, false, "")
+		return
+	}
+	defer file.Close()
+
+	// Leer archivo como []byte
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		tools.Response(ctx, "ImportUsersFromExcel", false, "Failed to read file content: "+err.Error(), "import_users_from_excel", nil, false, "")
+		return
+	}
+
+	importedUsers, errorResponses := c.Service.ImportUsersFromExcel(fileBytes)
+
+	if len(importedUsers) == 0 && len(errorResponses) > 0 {
+		// Mostrar el primer error (puedes hacer un resumen si querés)
+		resp := errorResponses[0]
+		tools.Response(ctx, "ImportUsersFromExcel", false, resp.Message, "import_users_from_excel", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "ImportUsersFromExcel", true, "Users imported successfully", "import_users_from_excel", gin.H{
+		"imported_users": importedUsers,
+		"errors":         errorResponses,
+	}, false, "")
+}
+
+func (c *UserController) ExportUsersToExcel(ctx *gin.Context) {
+	excel, response := c.Service.ExportUsersToExcel()
+	if response != nil {
+		tools.Response(ctx, "ExportUsersToExcel", false, response.Message, "export_users_to_excel", nil, false, "")
+		return
+	}
+
+	ctx.Header("Content-Disposition", "attachment; filename=users.xlsx")
+	ctx.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", excel)
+	tools.Response(ctx, "ExportUsersToExcel", true, "Users exported successfully", "export_users_to_excel", nil, false, "")
 }

@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -220,11 +221,11 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 	return nil
 }
 
-func (u *UsersRepository) ImportUsersFromExcel(filePath string) ([]string, []*responses.InternalResponse) {
+func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
 	imported := []string{}
 	errorsList := []*responses.InternalResponse{}
 
-	f, err := excelize.OpenFile(filePath)
+	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
@@ -277,7 +278,7 @@ func (u *UsersRepository) ImportUsersFromExcel(filePath string) ([]string, []*re
 		if resp != nil {
 			errorsList = append(errorsList, &responses.InternalResponse{
 				Error:   resp.Error,
-				Message: fmt.Sprintf("Error at row %d: %s", i+1, resp.Message),
+				Message: fmt.Sprintf("Row %d: %s", i+1, resp.Message),
 				Handled: resp.Handled,
 			})
 			continue
@@ -287,4 +288,50 @@ func (u *UsersRepository) ImportUsersFromExcel(filePath string) ([]string, []*re
 	}
 
 	return imported, errorsList
+}
+
+func (u *UsersRepository) ExportUsersToExcel() ([]byte, *responses.InternalResponse) {
+	users, errResp := u.GetAllUsers()
+	if errResp != nil {
+		return nil, errResp
+	}
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	f.SetSheetName("Sheet1", sheet)
+
+	// Encabezados en fila 6
+	headers := []string{"ID Usuario", "Email", "Nombre", "Apellido", "Rol"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
+		f.SetCellValue(sheet, cell, h)
+	}
+
+	// Datos a partir de la fila 7
+	for idx, user := range users {
+		row := idx + 7 // empieza en la fila 7
+		values := []interface{}{
+			user.ID,
+			user.Email,
+			user.FirstName,
+			user.LastName,
+			user.Role,
+		}
+		for col, val := range values {
+			cell, _ := excelize.CoordinatesToCellName(col+1, row)
+			f.SetCellValue(sheet, cell, val)
+		}
+	}
+
+	// Convertir a []byte
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to generate Excel file",
+			Handled: false,
+		}
+	}
+
+	return buf.Bytes(), nil
 }
