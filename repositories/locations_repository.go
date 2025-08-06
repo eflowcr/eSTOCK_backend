@@ -302,9 +302,9 @@ func (l *LocationsRepository) ExportLocationsToExcel() ([]byte, *responses.Inter
 	return buf.Bytes(), nil
 }
 
-func getOrEmpty(s *string) string {
-	if s != nil {
-		return *s
+func getOrEmpty[T any](ptr *T) interface{} {
+	if ptr == nil {
+		return ""
 	}
-	return ""
+	return fmt.Sprintf("%v", *ptr)
 }
