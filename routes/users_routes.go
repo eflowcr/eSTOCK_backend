@@ -4,6 +4,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -15,6 +16,7 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	userController := controllers.NewUserController(*userService)
 
 	route := router.Group("/users")
+	route.Use(tools.JWTAuthMiddleware())
 	{
 		route.GET("/", userController.GetAllUsers)
 		route.GET("/:id", userController.GetUserByID)
