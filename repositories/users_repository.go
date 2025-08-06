@@ -2,12 +2,14 @@ package repositories
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -216,4 +218,73 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 	}
 
 	return nil
+}
+
+func (u *UsersRepository) ImportUsersFromExcel(filePath string) ([]string, []*responses.InternalResponse) {
+	imported := []string{}
+	errorsList := []*responses.InternalResponse{}
+
+	f, err := excelize.OpenFile(filePath)
+	if err != nil {
+		errorsList = append(errorsList, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to open Excel file",
+			Handled: false,
+		})
+		return imported, errorsList
+	}
+
+	rows, err := f.GetRows("Sheet1")
+	if err != nil {
+		errorsList = append(errorsList, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to read rows",
+			Handled: false,
+		})
+		return imported, errorsList
+	}
+
+	for i, row := range rows {
+		if i < 6 {
+			continue
+		}
+
+		if len(row) < 6 {
+			continue
+		}
+
+		id := strings.TrimSpace(row[0])
+		email := strings.TrimSpace(row[1])
+		firstName := strings.TrimSpace(row[2])
+		lastName := strings.TrimSpace(row[3])
+		password := strings.TrimSpace(row[4])
+		role := strings.TrimSpace(row[5])
+
+		if id == "" || email == "" || password == "" || role == "" {
+			continue
+		}
+
+		user := &requests.User{
+			ID:        id,
+			Email:     email,
+			FirstName: firstName,
+			LastName:  lastName,
+			Password:  &password,
+			Role:      role,
+		}
+
+		resp := u.CreateUser(user)
+		if resp != nil {
+			errorsList = append(errorsList, &responses.InternalResponse{
+				Error:   resp.Error,
+				Message: fmt.Sprintf("Error at row %d: %s", i+1, resp.Message),
+				Handled: resp.Handled,
+			})
+			continue
+		}
+
+		imported = append(imported, id)
+	}
+
+	return imported, errorsList
 }

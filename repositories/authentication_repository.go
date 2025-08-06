@@ -14,7 +14,7 @@ type AuthenticationRepository struct {
 	DB *gorm.DB
 }
 
-func (a *AuthenticationRepository) Login(login requests.Login) (*string, *responses.InternalResponse) {
+func (a *AuthenticationRepository) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
 	var user database.User
 
 	err := a.DB.Where("email = ?", login.Email).First(&user).Error
@@ -59,5 +59,11 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*string, *respon
 		}
 	}
 
-	return &token, nil
+	return &responses.LoginResponse{
+		Name:     user.FirstName,
+		LastName: user.LastName,
+		Email:    user.Email,
+		Token:    token,
+		Role:     user.Role,
+	}, nil
 }

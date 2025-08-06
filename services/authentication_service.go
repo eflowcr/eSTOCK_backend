@@ -16,6 +16,6 @@ func NewAuthenticationService(repo *repositories.AuthenticationRepository) *Auth
 	}
 }
 
-func (s *AuthenticationService) Login(login requests.Login) (*string, *responses.InternalResponse) {
+func (s *AuthenticationService) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
 	return s.Repository.Login(login)
 }
