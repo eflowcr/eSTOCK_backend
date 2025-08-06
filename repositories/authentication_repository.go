@@ -4,9 +4,9 @@ import (
 	"errors"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -14,10 +14,10 @@ type AuthenticationRepository struct {
 	DB *gorm.DB
 }
 
-func (a *AuthenticationRepository) Login(email, password string) (*string, *responses.InternalResponse) {
+func (a *AuthenticationRepository) Login(login requests.Login) (*string, *responses.InternalResponse) {
 	var user database.User
 
-	err := a.DB.Where("email = ?", email).First(&user).Error
+	err := a.DB.Where("email = ?", login.Email).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &responses.InternalResponse{
 			Error:   errors.New("user not found"),
@@ -42,7 +42,7 @@ func (a *AuthenticationRepository) Login(email, password string) (*string, *resp
 		}
 	}
 
-	if user.Password == nil || bcrypt.CompareHashAndPassword([]byte(*user.Password), []byte(password)) != nil {
+	if user.Password == nil || !tools.ComparePasswords(*user.Password, login.Password) {
 		return nil, &responses.InternalResponse{
 			Error:   errors.New("invalid password"),
 			Message: "Invalid credentials",
