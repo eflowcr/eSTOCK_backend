@@ -24,5 +24,5 @@ func (c *DashboardController) GetDashboardStats(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetDashboardStats", true, "Dashboard stats retrieved successfully", "get_dashboard_stats", gin.H{"stats": stats}, false, "")
+	tools.Response(ctx, "GetDashboardStats", true, "Dashboard stats retrieved successfully", "get_dashboard_stats", stats, false, "")
 }

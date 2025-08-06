@@ -26,7 +26,7 @@ func (c *EncryptionController) EncryptData(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "EncryptData", true, "Data encrypted successfully", "encrypt", gin.H{"encrypted_data": encryptedData}, false, "")
+	tools.Response(ctx, "EncryptData", true, "Data encrypted successfully", "encrypt", encryptedData, false, "")
 }
 
 func (c *EncryptionController) DecryptData(ctx *gin.Context) {
@@ -39,5 +39,5 @@ func (c *EncryptionController) DecryptData(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DecryptData", true, "Data decrypted successfully", "decrypt", gin.H{"decrypted_data": decryptedData}, false, "")
+	tools.Response(ctx, "DecryptData", true, "Data decrypted successfully", "decrypt", decryptedData, false, "")
 }

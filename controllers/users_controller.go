@@ -27,7 +27,7 @@ func (c *UserController) GetAllUsers(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetAllUsers", true, "Users retrieved successfully", "get_all_users", gin.H{"users": users}, false, "")
+	tools.Response(ctx, "GetAllUsers", true, "Users retrieved successfully", "get_all_users", users, false, "")
 }
 
 func (c *UserController) GetUserByID(ctx *gin.Context) {
@@ -44,7 +44,7 @@ func (c *UserController) GetUserByID(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetUserByID", true, "User retrieved successfully", "get_user_by_id", gin.H{"user": user}, false, "")
+	tools.Response(ctx, "GetUserByID", true, "User retrieved successfully", "get_user_by_id", user, false, "")
 }
 
 func (c *UserController) CreateUser(ctx *gin.Context) {
@@ -62,7 +62,7 @@ func (c *UserController) CreateUser(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateUser", true, "User created successfully", "create_user", gin.H{"user": user}, false, "")
+	tools.Response(ctx, "CreateUser", true, "User created successfully", "create_user", nil, false, "")
 }
 
 func (c *UserController) UpdateUser(ctx *gin.Context) {
