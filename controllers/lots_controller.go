@@ -109,5 +109,5 @@ func (c *LotsController) DeleteLot(ctx *gin.Context) {
 		return
 	}
 
-	ctx.Status(204) // No Content
+	tools.Response(ctx, "DeleteLot", true, "Lot deleted successfully", "delete_lot", nil, false, "")
 }
