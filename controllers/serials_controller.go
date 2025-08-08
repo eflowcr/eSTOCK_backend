@@ -72,3 +72,47 @@ func (c *SerialsController) CreateSerial(ctx *gin.Context) {
 
 	tools.Response(ctx, "CreateSerial", true, "Serial created successfully", "create_serial", nil, false, "")
 }
+
+func (c *SerialsController) UpdateSerial(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		tools.Response(ctx, "UpdateSerial", false, "Invalid serial ID", "update_serial", nil, false, "")
+		return
+	}
+
+	var data map[string]interface{}
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		tools.Response(ctx, "UpdateSerial", false, "Invalid request data", "update_serial", nil, false, "")
+		return
+	}
+
+	resp := c.Service.UpdateSerial(id, data)
+	if resp != nil {
+		tools.Response(ctx, "UpdateSerial", false, resp.Message, "update_serial", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "UpdateSerial", true, "Serial updated successfully", "update_serial", nil, false, "")
+}
+
+func (c *SerialsController) DeleteSerial(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		tools.Response(ctx, "DeleteSerial", false, "Invalid serial ID", "delete_serial", nil, false, "")
+		return
+	}
+
+	response := c.Service.Delete(id)
+	if response != nil {
+		if response.Handled {
+			tools.Response(ctx, "DeleteSerial", false, response.Message, "delete_serial", nil, false, "")
+		} else {
+			tools.Response(ctx, "DeleteSerial", false, "Internal error occurred", "delete_serial", nil, false, "")
+		}
+		return
+	}
+
+	tools.Response(ctx, "DeleteSerial", true, "Serial deleted successfully", "delete_serial", nil, false, "")
+}

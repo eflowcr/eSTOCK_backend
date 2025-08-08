@@ -26,3 +26,12 @@ func (s *SerialsService) GetSerialsBySKU(sku string) ([]database.Serial, *respon
 func (s *SerialsService) Create(data *requests.CreateSerialRequest) *responses.InternalResponse {
 	return s.Repository.CreateSerial(data)
 }
+
+func (s *SerialsService) UpdateSerial(id int, data map[string]interface{}) *responses.InternalResponse {
+	return s.Repository.UpdateSerial(id, data)
+}
+
+func (s *SerialsService) Delete(id int) *responses.InternalResponse {
+	return s.Repository.DeleteSerial(id)
+}
+

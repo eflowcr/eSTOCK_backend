@@ -21,5 +21,7 @@ func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/:id", serialController.GetSerialByID)
 		route.GET("/by-sku/:sku", serialController.GetSerialsBySKU)
 		route.POST("/", serialController.CreateSerial)
+		route.PUT("/:id", serialController.UpdateSerial)
+		route.DELETE("/:id", serialController.DeleteSerial)
 	}
 }
