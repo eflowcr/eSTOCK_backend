@@ -22,5 +22,6 @@ func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/:sku", lotsController.GetLotsBySKU)
 		route.POST("/", lotsController.CreateLot)
 		route.PUT("/:id", lotsController.UpdateLot)
+		route.DELETE("/:id", lotsController.DeleteLot)
 	}
 }

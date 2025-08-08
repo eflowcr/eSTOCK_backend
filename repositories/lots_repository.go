@@ -118,3 +118,24 @@ func (r *LotsRepository) UpdateLot(id int, data map[string]interface{}) *respons
 
 	return nil
 }
+
+func (r *LotsRepository) DeleteLot(id int) *responses.InternalResponse {
+	result := r.DB.Delete(&database.Lot{}, id)
+	if result.Error != nil {
+		return &responses.InternalResponse{
+			Error:   result.Error,
+			Message: "Failed to delete lot",
+			Handled: false,
+		}
+	}
+
+	if result.RowsAffected == 0 {
+		return &responses.InternalResponse{
+			Error:   nil,
+			Message: "Lot not found",
+			Handled: true,
+		}
+	}
+
+	return nil
+}

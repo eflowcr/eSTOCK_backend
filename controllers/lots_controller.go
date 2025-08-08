@@ -90,3 +90,24 @@ func (c *LotsController) UpdateLot(ctx *gin.Context) {
 
 	tools.Response(ctx, "UpdateLot", true, "Lot updated successfully", "update_lot", nil, false, "")
 }
+
+func (c *LotsController) DeleteLot(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		tools.Response(ctx, "DeleteLot", false, "Invalid lot ID", "delete_lot", nil, false, "")
+		return
+	}
+
+	response := c.Service.DeleteLot(id)
+	if response != nil {
+		if response.Handled {
+			tools.Response(ctx, "DeleteLot", false, response.Message, "delete_lot", nil, false, "")
+		} else {
+			tools.Response(ctx, "DeleteLot", false, "Internal error occurred", "delete_lot", nil, false, "")
+		}
+		return
+	}
+
+	ctx.Status(204) // No Content
+}
