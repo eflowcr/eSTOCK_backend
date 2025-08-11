@@ -20,5 +20,7 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	{
 		route.GET("/", inventoryController.GetAllInventory)
 		route.POST("/", inventoryController.CreateInventory)
+		route.PUT("/:id", inventoryController.UpdateInventory)
+		route.DELETE("/:id/:location", inventoryController.DeleteInventory)
 	}
 }

@@ -24,3 +24,11 @@ func (s *InventoryService) GetAllInventory() ([]*dto.EnhancedInventory, *respons
 func (s *InventoryService) CreateInventory(item *requests.CreateInventory) *responses.InternalResponse {
 	return s.Repository.CreateInventory(item)
 }
+
+func (s *InventoryService) UpdateInventory(item *requests.UpdateInventory) *responses.InternalResponse {
+	return s.Repository.UpdateInventory(item)
+}
+
+func (s *InventoryService) DeleteInventory(sku, location string) *responses.InternalResponse {
+	return s.Repository.DeleteInventory(sku, location)
+}

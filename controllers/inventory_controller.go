@@ -43,3 +43,32 @@ func (c *InventoryController) CreateInventory(ctx *gin.Context) {
 
 	tools.Response(ctx, "CreateInventory", true, "Inventory created successfully", "create_inventory", nil, false, "")
 }
+
+func (c *InventoryController) UpdateInventory(ctx *gin.Context) {
+	var request requests.UpdateInventory
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		tools.Response(ctx, "UpdateInventory", false, "Invalid request payload", "update_inventory", nil, false, "")
+		return
+	}
+
+	response := c.Service.UpdateInventory(&request)
+	if response != nil {
+		tools.Response(ctx, "UpdateInventory", false, response.Message, "update_inventory", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "UpdateInventory", true, "Inventory updated successfully", "update_inventory", nil, false, "")
+}
+
+func (c *InventoryController) DeleteInventory(ctx *gin.Context) {
+	id := ctx.Param("id")
+	location := ctx.Param("location")
+
+	response := c.Service.DeleteInventory(id, location)
+	if response != nil {
+		tools.Response(ctx, "DeleteInventory", false, response.Message, "delete_inventory", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "DeleteInventory", true, "Inventory deleted successfully", "delete_inventory", nil, false, "")
+}
