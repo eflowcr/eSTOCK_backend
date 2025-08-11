@@ -2,6 +2,7 @@ package services
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 )
@@ -18,4 +19,8 @@ func NewInventoryService(repo *repositories.InventoryRepository) *InventoryServi
 
 func (s *InventoryService) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
 	return s.Repository.GetAllInventory()
+}
+
+func (s *InventoryService) CreateInventory(item *requests.CreateInventory) *responses.InternalResponse {
+	return s.Repository.CreateInventory(item)
 }

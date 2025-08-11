@@ -19,5 +19,6 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	route.Use(tools.JWTAuthMiddleware())
 	{
 		route.GET("/", inventoryController.GetAllInventory)
+		route.POST("/", inventoryController.CreateInventory)
 	}
 }
