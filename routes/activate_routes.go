@@ -17,4 +17,5 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 	RegisterInventoryRoutes(api, db)
 	RegisterLotsRoutes(api, db)
 	RegisterSerialRoutes(api, db)
+	RegisterReceivingTasksRoutes(api, db)
 }

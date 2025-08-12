@@ -68,27 +68,10 @@ func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.Int
 }
 
 func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalResponse {
-	var existingByID database.User
-	err := u.DB.First(&existingByID, "id = ?", user.ID).Error
-
-	if err == nil {
-		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "User ID already exists",
-			Handled: true,
-		}
-	}
-
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return &responses.InternalResponse{
-			Error:   err,
-			Message: "Failed to check user ID",
-			Handled: false,
-		}
-	}
+	user.ID = tools.GenerateGUID()
 
 	var count int64
-	err = u.DB.Model(&database.User{}).Where("email = ?", user.Email).Count(&count).Error
+	err := u.DB.Model(&database.User{}).Where("email = ?", user.Email).Count(&count).Error
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
