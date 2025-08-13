@@ -20,4 +20,5 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 	RegisterReceivingTasksRoutes(api, db)
 	RegisterPickingTasksRoutes(api, db)
 	RegisterAdjustmentsRoutes(api, db)
+	RegisterStockAlertsRoutes(api, db)
 }
