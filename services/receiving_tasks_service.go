@@ -32,3 +32,11 @@ func (s *ReceivingTasksService) CreateReceivingTask(userId string, task *request
 func (s *ReceivingTasksService) UpdateReceivingTask(id int, data map[string]interface{}) *responses.InternalResponse {
 	return s.Repository.UpdateReceivingTask(id, data)
 }
+
+func (s *ReceivingTasksService) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+	return s.Repository.ImportReceivingTaskFromExcel(userID, fileBytes)
+}
+
+func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportReceivingTaskToExcel()
+}

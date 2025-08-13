@@ -1,9 +1,11 @@
 package repositories
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -243,4 +246,240 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]i
 	}
 
 	return nil
+}
+
+func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Failed to open Excel file"}
+	}
+	defer f.Close()
+
+	const sheet = "Sheet1"
+
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Failed to read rows"}
+	}
+	if len(rows) == 0 {
+		return &responses.InternalResponse{Error: fmt.Errorf("empty sheet"), Message: "Excel has no data", Handled: true}
+	}
+
+	getLabeledValue := func(label string) *string {
+		lab := strings.ToLower(strings.TrimSpace(label))
+		for _, row := range rows[:minInt(len(rows), 30)] {
+			for j, cell := range row {
+				if strings.EqualFold(strings.TrimSpace(cell), lab) {
+					for k := j + 1; k < len(row); k++ {
+						val := strings.TrimSpace(row[k])
+						if val != "" {
+							return ptr(val)
+						}
+					}
+					return ptr("")
+				}
+			}
+		}
+		return nil
+	}
+
+	headerRowIdx := -1
+	colIndex := map[string]int{}
+
+	for i, row := range rows {
+		found := 0
+		tmp := map[string]int{}
+		for j, cell := range row {
+			key := strings.ToLower(strings.TrimSpace(cell))
+			switch key {
+			case "sku":
+				tmp["sku"] = j
+				found++
+			case "expected quantity":
+				tmp["expected quantity"] = j
+				found++
+			case "location":
+				tmp["location"] = j
+				found++
+			case "lot numbers":
+				tmp["lot numbers"] = j
+				found++
+			case "serial numbers":
+				tmp["serial numbers"] = j
+				found++
+			}
+		}
+		if found >= 3 && tmp["sku"] >= 0 {
+			headerRowIdx = i
+			colIndex = tmp
+			break
+		}
+	}
+	if headerRowIdx == -1 {
+		return &responses.InternalResponse{Error: fmt.Errorf("headers not found"), Message: "Items header row not found (SKU, Expected Quantity...)", Handled: true}
+	}
+
+	inboundNumber := getLabeledValue("Inbound Number")
+	assignedTo := getLabeledValue("Assigned To")
+	priority := getLabeledValue("Priority")
+	notes := getLabeledValue("Notes")
+
+	priorityNorm := "normal"
+	if priority != nil && strings.TrimSpace(*priority) != "" {
+		p := strings.ToLower(strings.TrimSpace(*priority))
+		switch p {
+		case "low", "baja":
+			priorityNorm = "low"
+		case "high", "alta":
+			priorityNorm = "high"
+		default:
+			priorityNorm = "normal"
+		}
+	}
+
+	var items []database.ReceivingTaskItem
+
+	for i := headerRowIdx + 1; i < len(rows); i++ {
+		row := rows[i]
+		sku := get(row, colIndex["sku"])
+		if strings.TrimSpace(sku) == "" {
+			continue
+		}
+
+		expQtyStr := get(row, colIndex["expected quantity"])
+		location := get(row, colIndex["location"])
+		lotsStr := get(row, colIndex["lot numbers"])
+		serialsStr := get(row, colIndex["serial numbers"])
+
+		expQty := 0
+		if n, err := strconv.Atoi(strings.TrimSpace(expQtyStr)); err == nil {
+			expQty = n
+		}
+
+		lots := splitCSV(lotsStr)
+		serials := splitCSV(serialsStr)
+
+		items = append(items, database.ReceivingTaskItem{
+			SKU:              strings.TrimSpace(sku),
+			ExpectedQuantity: expQty,
+			Location:         strings.TrimSpace(location),
+			LotNumbers:       lots,
+			SerialNumbers:    serials,
+		})
+	}
+	if len(items) == 0 {
+		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No items found to import", Handled: true}
+	}
+
+	itemsJSON, _ := json.Marshal(items)
+	req := &requests.CreateReceivingTaskRequest{
+		InboundNumber: safeDeref(inboundNumber),
+		AssignedTo:    assignedTo,
+		Priority:      priorityNorm,
+		Notes:         notes,
+		Items:         json.RawMessage(itemsJSON),
+	}
+
+	if resp := r.CreateReceivingTask(userID, req); resp != nil && resp.Error != nil {
+		return resp
+	}
+	return &responses.InternalResponse{
+		Message: "Receiving task imported and created successfully",
+		Handled: true,
+	}
+}
+
+func get(row []string, idx int) string {
+	if idx < 0 || idx >= len(row) {
+		return ""
+	}
+	return row[idx]
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func safeDeref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (r *ReceivingTasksRepository) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+	tasks, errResp := r.GetAllReceivingTasks()
+	if errResp != nil {
+		return nil, errResp
+	}
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	f.SetSheetName("Sheet1", sheet)
+
+	headers := []string{"ID", "Task ID", "Inbound Number", "Created By", "Assigned To", "Status", "Priority", "Notes", "Items", "Created At", "Updated At", "Completed At"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, h)
+	}
+
+	for i, task := range tasks {
+		rowNum := i + 2
+		row := []interface{}{
+			task.ID,
+			task.TaskID,
+			task.InboundNumber,
+			task.CreatedBy,
+			task.AssignedTo,
+			task.Status,
+			task.Priority,
+			task.Notes,
+			string(task.Items),
+			task.CreatedAt.Format(time.RFC3339),
+			nil,
+			nil,
+		}
+		if !task.UpdatedAt.IsZero() {
+			row[10] = task.UpdatedAt.Format(time.RFC3339)
+		}
+		if !task.CompletedAt.IsZero() {
+			row[11] = task.CompletedAt.Format(time.RFC3339)
+		}
+
+		for j, val := range row {
+			cell, _ := excelize.CoordinatesToCellName(j+1, rowNum)
+			f.SetCellValue(sheet, cell, val)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to generate Excel file",
+			Handled: false,
+		}
+	}
+
+	return buf.Bytes(), nil
 }

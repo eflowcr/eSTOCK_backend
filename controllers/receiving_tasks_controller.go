@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"io"
 	"strconv"
 
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
@@ -97,4 +98,48 @@ func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "PatchReceivingTask", true, "Receiving task updated successfully", "patch_receiving_task", nil, false, "")
+}
+
+func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context) {
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	fileHeader, err := ctx.FormFile("file")
+	if err != nil {
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "File upload error: "+err.Error(), "import_locations_from_excel", nil, false, "")
+		return
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to open file: "+err.Error(), "import_locations_from_excel", nil, false, "")
+		return
+	}
+	defer file.Close()
+
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to read file content: "+err.Error(), "import_locations_from_excel", nil, false, "")
+		return
+	}
+
+	response := c.Service.ImportReceivingTaskFromExcel(userId, fileBytes)
+	if response != nil {
+		tools.Response(ctx, "ImportReceivingTaskFromExcel", false, response.Message, "import_receiving_task_from_excel", nil, response.Handled, "")
+		return
+	}
+
+	tools.Response(ctx, "ImportReceivingTaskFromExcel", true, "Receiving tasks imported successfully", "import_receiving_task_from_excel", nil, false, "")
+}
+
+func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) {
+	fileBytes, response := c.Service.ExportReceivingTaskToExcel()
+	if response != nil {
+		tools.Response(ctx, "ExportReceivingTaskToExcel", false, response.Message, "export_receiving_task_to_excel", nil, response.Handled, "")
+		return
+	}
+
+	ctx.Header("Content-Description", "File Transfer")
+	ctx.Header("Content-Disposition", `attachment; filename="receiving_tasks.xlsx"`)
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
