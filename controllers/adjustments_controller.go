@@ -1,0 +1,81 @@
+package controllers
+
+import (
+	"strconv"
+
+	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/gin-gonic/gin"
+)
+
+type AdjustmentsController struct {
+	Service services.AdjustmentsService
+}
+
+func NewAdjustmentsController(service services.AdjustmentsService) *AdjustmentsController {
+	return &AdjustmentsController{
+		Service: service,
+	}
+}
+
+func (c *AdjustmentsController) GetAllAdjustments(ctx *gin.Context) {
+	adjustments, response := c.Service.GetAllAdjustments()
+
+	if response != nil {
+		tools.Response(ctx, "GetAllAdjustments", false, response.Message, "get_all_adjustments", nil, false, "")
+		return
+	}
+
+	if len(adjustments) == 0 {
+		tools.Response(ctx, "GetAllAdjustments", true, "No adjustments found", "get_all_adjustments", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetAllAdjustments", true, "Adjustments retrieved successfully", "get_all_adjustments", adjustments, false, "")
+}
+
+func (c *AdjustmentsController) GetAdjustmentByID(ctx *gin.Context) {
+	id := ctx.Param("id")
+
+	adjustmentId, err := strconv.Atoi(id)
+	if err != nil {
+		tools.Response(ctx, "GetAdjustmentByID", false, "Invalid ID provided", "get_adjustment_by_id", nil, false, "")
+		return
+	}
+
+	adjustment, response := c.Service.GetAdjustmentByID(adjustmentId)
+	if response != nil {
+		tools.Response(ctx, "GetAdjustmentByID", false, response.Message, "get_adjustment_by_id", nil, false, "")
+		return
+	}
+
+	if adjustment == nil {
+		tools.Response(ctx, "GetAdjustmentByID", true, "Adjustment not found", "get_adjustment_by_id", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetAdjustmentByID", true, "Adjustment retrieved successfully", "get_adjustment_by_id", adjustment, false, "")
+}
+
+func (c *AdjustmentsController) GetAdjustmentDetails(ctx *gin.Context) {
+	id := ctx.Param("id")
+
+	adjustmentId, err := strconv.Atoi(id)
+	if err != nil {
+		tools.Response(ctx, "GetAdjustmentDetails", false, "Invalid ID provided", "get_adjustment_details", nil, false, "")
+		return
+	}
+
+	details, response := c.Service.GetAdjustmentDetails(adjustmentId)
+	if response != nil {
+		tools.Response(ctx, "GetAdjustmentDetails", false, response.Message, "get_adjustment_details", nil, false, "")
+		return
+	}
+
+	if details == nil {
+		tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details not found", "get_adjustment_details", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details retrieved successfully", "get_adjustment_details", details, false, "")
+}
