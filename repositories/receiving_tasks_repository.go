@@ -46,6 +46,32 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]database.ReceivingT
 	return tasks, nil
 }
 
+func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.ReceivingTask, *responses.InternalResponse) {
+	var task database.ReceivingTask
+
+	err := r.DB.
+		Table(database.ReceivingTask{}.TableName()).
+		Where("id = ?", id).
+		First(&task).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &responses.InternalResponse{
+				Error:   nil,
+				Message: "Receiving task not found",
+				Handled: true,
+			}
+		}
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch receiving task",
+			Handled: false,
+		}
+	}
+
+	return &task, nil
+}
+
 func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	var items []database.ReceivingTaskItem
 	if err := json.Unmarshal(task.Items, &items); err != nil {

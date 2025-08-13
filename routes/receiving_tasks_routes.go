@@ -18,6 +18,7 @@ func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	route.Use(tools.JWTAuthMiddleware())
 	{
 		route.GET("/", receivingTasksController.GetAllReceivingTasks)
+		route.GET("/:id", receivingTasksController.GetReceivingTaskByID)
 		route.POST("/", receivingTasksController.CreateReceivingTask)
 		route.PUT("/:id", receivingTasksController.UpdateReceivingTask)
 	}

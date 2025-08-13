@@ -21,6 +21,10 @@ func (s *ReceivingTasksService) GetAllReceivingTasks() ([]database.ReceivingTask
 	return s.Repository.GetAllReceivingTasks()
 }
 
+func (s *ReceivingTasksService) GetReceivingTaskByID(id int) (*database.ReceivingTask, *responses.InternalResponse) {
+	return s.Repository.GetReceivingTaskByID(id)
+}
+
 func (s *ReceivingTasksService) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	return s.Repository.CreateReceivingTask(userId, task)
 }

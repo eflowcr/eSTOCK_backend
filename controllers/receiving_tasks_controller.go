@@ -19,7 +19,6 @@ func NewReceivingTasksController(service services.ReceivingTasksService) *Receiv
 	}
 }
 
-// GetAllReceivingTasks retrieves all receiving tasks
 func (c *ReceivingTasksController) GetAllReceivingTasks(ctx *gin.Context) {
 	tasks, response := c.Service.GetAllReceivingTasks()
 
@@ -34,6 +33,28 @@ func (c *ReceivingTasksController) GetAllReceivingTasks(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "GetAllReceivingTasks", true, "Receiving tasks retrieved successfully", "get_all_receiving_tasks", tasks, false, "")
+}
+
+func (c *ReceivingTasksController) GetReceivingTaskByID(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "GetReceivingTaskByID", false, "Invalid task ID", "get_receiving_task_by_id", nil, false, "")
+		return
+	}
+
+	task, response := c.Service.GetReceivingTaskByID(id)
+	if response != nil {
+		tools.Response(ctx, "GetReceivingTaskByID", false, response.Message, "get_receiving_task_by_id", nil, response.Handled, "")
+		return
+	}
+
+	if task == nil {
+		tools.Response(ctx, "GetReceivingTaskByID", true, "Receiving task not found", "get_receiving_task_by_id", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetReceivingTaskByID", true, "Receiving task retrieved successfully", "get_receiving_task_by_id", task, false, "")
 }
 
 func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
