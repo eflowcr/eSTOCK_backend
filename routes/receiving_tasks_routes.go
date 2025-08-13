@@ -19,5 +19,6 @@ func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	{
 		route.GET("/", receivingTasksController.GetAllReceivingTasks)
 		route.POST("/", receivingTasksController.CreateReceivingTask)
+		route.PUT("/:id", receivingTasksController.UpdateReceivingTask)
 	}
 }

@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"strconv"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -51,4 +53,27 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "CreateReceivingTask", true, "Receiving task created successfully", "create_receiving_task", nil, false, "")
+}
+
+func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "PatchReceivingTask", false, "Invalid task ID", "patch_receiving_task", nil, false, "")
+		return
+	}
+
+	var data map[string]interface{}
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		tools.Response(ctx, "PatchReceivingTask", false, "Invalid request body", "patch_receiving_task", nil, false, "")
+		return
+	}
+
+	resp := c.Service.UpdateReceivingTask(id, data)
+	if resp != nil {
+		tools.Response(ctx, "PatchReceivingTask", false, resp.Message, "patch_receiving_task", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "PatchReceivingTask", true, "Receiving task updated successfully", "patch_receiving_task", nil, false, "")
 }

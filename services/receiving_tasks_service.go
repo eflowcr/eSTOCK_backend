@@ -24,3 +24,7 @@ func (s *ReceivingTasksService) GetAllReceivingTasks() ([]database.ReceivingTask
 func (s *ReceivingTasksService) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	return s.Repository.CreateReceivingTask(userId, task)
 }
+
+func (s *ReceivingTasksService) UpdateReceivingTask(id int, data map[string]interface{}) *responses.InternalResponse {
+	return s.Repository.UpdateReceivingTask(id, data)
+}
