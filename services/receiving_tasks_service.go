@@ -2,6 +2,7 @@ package services
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 )
@@ -18,4 +19,8 @@ func NewReceivingTasksService(repo *repositories.ReceivingTasksRepository) *Rece
 
 func (s *ReceivingTasksService) GetAllReceivingTasks() ([]database.ReceivingTask, *responses.InternalResponse) {
 	return s.Repository.GetAllReceivingTasks()
+}
+
+func (s *ReceivingTasksService) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+	return s.Repository.CreateReceivingTask(userId, task)
 }
