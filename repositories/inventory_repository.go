@@ -55,13 +55,45 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 		// Obtener lotes si aplica
 		var lots []database.Lot
 		if article.TrackByLot {
-			// lots, _ = r.GetLotsByInventoryID(item.ID)
+			// Get lots associated with the inventory item
+			err = r.DB.
+				Table(database.Lot{}.TableName()).
+				Joins("JOIN inventory_lots ON lots.id = inventory_lots.lot_id").
+				Where("inventory_lots.inventory_id = ?", item.ID).
+				Find(&lots).Error
+
+			if err != nil {
+				return nil, &responses.InternalResponse{
+					Error:   err,
+					Message: "Failed to fetch lots for inventory item",
+					Handled: false,
+				}
+			}
 		}
 
 		// Obtener seriales si aplica
 		var serials []database.Serial
 		if article.TrackBySerial {
-			// serials, _ = r.GetSerialsByInventoryID(item.ID)
+			// Get serials associated with the inventory item
+			err = r.DB.
+				Table(database.Serial{}.TableName()).
+				Joins("JOIN inventory_serials ON serials.id = inventory_serials.serial_id").
+				Where("inventory_serials.inventory_id = ?", item.ID).
+				Find(&serials).Error
+
+			if err != nil {
+				return nil, &responses.InternalResponse{
+					Error:   err,
+					Message: "Failed to fetch serials for inventory item",
+					Handled: false,
+				}
+			}
+		}
+
+		// Image URL
+		imageURL := ""
+		if article.ImageURL != nil {
+			imageURL = *article.ImageURL
 		}
 
 		enhanced = append(enhanced, &dto.EnhancedInventory{
@@ -79,7 +111,7 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			TrackByLot:      article.TrackByLot,
 			TrackBySerial:   article.TrackBySerial,
 			TrackExpiration: article.TrackExpiration,
-			ImageURL:        *article.ImageURL,
+			ImageURL:        imageURL,
 			MinQuantity:     *article.MinQuantity,
 			MaxQuantity:     *article.MaxQuantity,
 			Lots:            lots,

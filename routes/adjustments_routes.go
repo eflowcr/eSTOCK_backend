@@ -21,7 +21,7 @@ func RegisterAdjustmentsRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/", adjustmentsController.GetAllAdjustments)
 		route.GET("/:id", adjustmentsController.GetAdjustmentByID)
 		route.GET("/:id/details", adjustmentsController.GetAdjustmentDetails)
-		// route.POST("/", adjustmentsController.CreateAdjustment)
+		route.POST("/", adjustmentsController.CreateAdjustment)
 		// route.PUT("/:id", adjustmentsController.UpdateAdjustment)
 		// route.DELETE("/:id", adjustmentsController.DeleteAdjustment)
 	}

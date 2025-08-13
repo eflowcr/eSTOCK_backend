@@ -3,6 +3,7 @@ package controllers
 import (
 	"strconv"
 
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
@@ -78,4 +79,24 @@ func (c *AdjustmentsController) GetAdjustmentDetails(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details retrieved successfully", "get_adjustment_details", details, false, "")
+}
+
+func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
+	var adjustment requests.CreateAdjustment
+
+	if err := ctx.ShouldBindJSON(&adjustment); err != nil {
+		tools.Response(ctx, "CreateAdjustment", false, "Invalid request payload", "create_adjustment", nil, false, "")
+		return
+	}
+
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	response := c.Service.CreateAdjustment(userId, adjustment)
+	if response != nil {
+		tools.Response(ctx, "CreateAdjustment", false, response.Message, "create_adjustment", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "CreateAdjustment", true, "Adjustment created successfully", "create_adjustment", adjustment, false, "")
 }

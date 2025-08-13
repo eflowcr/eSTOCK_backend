@@ -3,6 +3,7 @@ package services
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 )
@@ -27,4 +28,8 @@ func (s *AdjustmentsService) GetAdjustmentByID(id int) (*database.Adjustment, *r
 
 func (s *AdjustmentsService) GetAdjustmentDetails(id int) (*dto.AdjustmentDetails, *responses.InternalResponse) {
 	return s.Repository.GetAdjustmentDetails(id)
+}
+
+func (s *AdjustmentsService) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) *responses.InternalResponse {
+	return s.Repository.CreateAdjustment(userId, adjustment)
 }
