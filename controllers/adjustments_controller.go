@@ -100,3 +100,19 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 
 	tools.Response(ctx, "CreateAdjustment", true, "Adjustment created successfully", "create_adjustment", adjustment, false, "")
 }
+
+func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
+	data, response := c.Service.ExportAdjustmentsToExcel()
+	if response != nil {
+		tools.Response(ctx, "ExportAdjustmentsToExcel", false, response.Message, "export_adjustments_to_excel", nil, false, "")
+		return
+	}
+
+	if data == nil {
+		tools.Response(ctx, "ExportAdjustmentsToExcel", true, "No adjustments to export", "export_adjustments_to_excel", nil, false, "")
+		return
+	}
+
+	ctx.Header("Content-Disposition", "attachment; filename=adjustments.xlsx")
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}

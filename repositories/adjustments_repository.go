@@ -1,12 +1,15 @@
 package repositories
 
 import (
+	"bytes"
 	"math"
+	"time"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -381,4 +384,79 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 	}
 
 	return nil
+}
+
+func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
+	adjustments, errResp := r.GetAllAdjustments()
+	if errResp != nil {
+		return nil, errResp
+	}
+
+	if len(adjustments) == 0 {
+		return nil, &responses.InternalResponse{
+			Error:   nil,
+			Message: "No adjustments found to export",
+			Handled: true,
+		}
+	}
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	f.SetSheetName("Sheet1", sheet)
+
+	headers := []string{
+		"ID",
+		"SKU",
+		"Ubicación",
+		"Cantidad Anterior",
+		"Ajuste",
+		"Nueva Cantidad",
+		"Motivo",
+		"Notas",
+		"Usuario",
+		"Creado En",
+	}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
+		_ = f.SetCellValue(sheet, cell, h)
+	}
+
+	strOrEmpty := func(p *string) string {
+		if p != nil {
+			return *p
+		}
+		return ""
+	}
+
+	for idx, a := range adjustments {
+		row := idx + 7
+		values := []interface{}{
+			a.ID,
+			a.SKU,
+			a.Location,
+			a.PreviousQuantity,
+			a.AdjustmentQty,
+			a.NewQuantity,
+			a.Reason,
+			strOrEmpty(a.Notes),
+			a.UserID,
+			a.CreatedAt.Format(time.RFC3339),
+		}
+
+		for col, val := range values {
+			cell, _ := excelize.CoordinatesToCellName(col+1, row)
+			_ = f.SetCellValue(sheet, cell, val)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to generate Excel file",
+			Handled: false,
+		}
+	}
+
+	return buf.Bytes(), nil
 }

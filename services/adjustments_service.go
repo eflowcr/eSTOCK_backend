@@ -33,3 +33,7 @@ func (s *AdjustmentsService) GetAdjustmentDetails(id int) (*dto.AdjustmentDetail
 func (s *AdjustmentsService) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) *responses.InternalResponse {
 	return s.Repository.CreateAdjustment(userId, adjustment)
 }
+
+func (s *AdjustmentsService) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportAdjustmentsToExcel()
+}
