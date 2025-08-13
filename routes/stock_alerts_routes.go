@@ -19,5 +19,6 @@ func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	route.Use(tools.JWTAuthMiddleware())
 	{
 		route.GET("/:resolved", stockAlertsController.GetAllStockAlerts)
+		route.GET("/analyze", stockAlertsController.Analyze)
 	}
 }

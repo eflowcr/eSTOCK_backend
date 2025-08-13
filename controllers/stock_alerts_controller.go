@@ -32,3 +32,14 @@ func (c *StockAlertsController) GetAllStockAlerts(ctx *gin.Context) {
 
 	tools.Response(ctx, "GetAllStockAlerts", true, "Stock alerts retrieved successfully", "get_all_stock_alerts", stockAlerts, false, "")
 }
+
+func (c *StockAlertsController) Analyze(ctx *gin.Context) {
+	responseData, response := c.Service.Analyze()
+
+	if response != nil {
+		tools.Response(ctx, "Analyze", false, response.Message, "analyze_stock_alerts", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "Analyze", true, "Stock alerts analyzed successfully", "analyze_stock_alerts", responseData, false, "")
+}

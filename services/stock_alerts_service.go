@@ -19,3 +19,7 @@ func NewStockAlertsService(repo *repositories.StockAlertsRepository) *StockAlert
 func (s *StockAlertsService) GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
 	return s.Repository.GetAllStockAlerts(resolved)
 }
+
+func (s *StockAlertsService) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
+	return s.Repository.Analyze()
+}
