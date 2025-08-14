@@ -46,3 +46,29 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 
 	return &userStat, nil
 }
+
+func (r *GamificationRepository) Badges(userId string) ([]database.Badge, *responses.InternalResponse) {
+	var badges []database.Badge
+	if err := r.DB.Where("user_id = ?", userId).Find(&badges).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch badges",
+			Handled: false,
+		}
+	}
+
+	return badges, nil
+}
+
+func (r *GamificationRepository) GetAllBadges() ([]database.Badge, *responses.InternalResponse) {
+	var badges []database.Badge
+	if err := r.DB.Find(&badges).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch all badges",
+			Handled: false,
+		}
+	}
+
+	return badges, nil
+}

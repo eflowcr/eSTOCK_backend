@@ -19,3 +19,11 @@ func NewGamificationService(repo *repositories.GamificationRepository) *Gamifica
 func (s *GamificationService) GamificationStats(userId string) (*database.UserStat, *responses.InternalResponse) {
 	return s.Repository.GamificationStats(userId)
 }
+
+func (s *GamificationService) Badges(userId string) ([]database.Badge, *responses.InternalResponse) {
+	return s.Repository.Badges(userId)
+}
+
+func (s *GamificationService) GetAllBadges() ([]database.Badge, *responses.InternalResponse) {
+	return s.Repository.GetAllBadges()
+}
