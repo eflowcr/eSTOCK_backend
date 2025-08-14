@@ -48,3 +48,7 @@ func (s *InventoryService) ExportInventoryToExcel() ([]byte, *responses.Internal
 func (s *InventoryService) GetInventoryLots(inventoryID int) ([]responses.InventoryLot, *responses.InternalResponse) {
 	return s.Repository.GetInventoryLots(inventoryID)
 }
+
+func (s *InventoryService) GetInventorySerials(inventoryID int) ([]responses.InventorySerialWithSerial, *responses.InternalResponse) {
+	return s.Repository.GetInventorySerials(inventoryID)
+}

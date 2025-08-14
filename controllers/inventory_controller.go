@@ -149,3 +149,20 @@ func (c *InventoryController) GetInventoryLots(ctx *gin.Context) {
 
 	tools.Response(ctx, "GetInventoryLots", true, "Inventory lots retrieved successfully", "get_inventory_lots", lots, false, "")
 }
+
+func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
+	inventoryID, err := tools.StringToInt(ctx.Param("id"))
+
+	if err != nil {
+		tools.Response(ctx, "GetInventorySerials", false, "Invalid inventory ID", "get_inventory_serials", nil, false, "")
+		return
+	}
+
+	serials, response := c.Service.GetInventorySerials(inventoryID)
+	if response != nil {
+		tools.Response(ctx, "GetInventorySerials", false, response.Message, "get_inventory_serials", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetInventorySerials", true, "Inventory serials retrieved successfully", "get_inventory_serials", serials, false, "")
+}

@@ -888,3 +888,29 @@ func (r *InventoryRepository) GetInventoryLots(inventoryID int) ([]responses.Inv
 
 	return result, nil
 }
+
+func (r *InventoryRepository) GetInventorySerials(inventoryID int) ([]responses.InventorySerialWithSerial, *responses.InternalResponse) {
+	var result []responses.InventorySerialWithSerial
+
+	err := r.DB.
+		Table("inventory_serials").
+		Select(`
+			inventory_serials.id, inventory_serials.inventory_id, inventory_serials.serial_id,
+			inventory_serials.location, inventory_serials.created_at,
+			serials.id as serial_id, serials.serial_number, serials.sku, serials.status,
+			serials.created_at as serial_created_at, serials.updated_at as serial_updated_at
+		`).
+		Joins("INNER JOIN serials ON inventory_serials.serial_id = serials.id").
+		Where("inventory_serials.inventory_id = ?", inventoryID).
+		Scan(&result).Error
+
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch inventory serials",
+			Handled: false,
+		}
+	}
+
+	return result, nil
+}
