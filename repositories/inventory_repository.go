@@ -3,6 +3,9 @@ package repositories
 import (
 	"errors"
 	"fmt"
+	"math"
+	"strings"
+	"time"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
@@ -565,4 +568,88 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	}
 
 	return nil
+}
+
+func (r *InventoryRepository) Trend(sku string) (*dto.ConsumptionTrend, *responses.InternalResponse) {
+	days := 30
+
+	if days <= 0 {
+		days = 30
+	}
+
+	now := time.Now().UTC()
+	cutoffDate := now.AddDate(0, 0, -days)
+
+	var movements []database.InventoryMovement
+	if err := r.DB.
+		Where("sku = ? AND movement_type = ? AND created_at >= ?", sku, "outbound", cutoffDate).
+		Order("created_at ASC").
+		Find(&movements).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch inventory movements",
+			Handled: false,
+		}
+	}
+
+	if len(movements) == 0 {
+		return &dto.ConsumptionTrend{
+			AverageDailyConsumption: 0,
+			Trend:                   "stable",
+			PredictedStockOutDays:   -1,
+		}, nil
+	}
+
+	var totalConsumption float64
+	for _, m := range movements {
+		if !strings.EqualFold(strings.TrimSpace(m.MovementType), "outbound") {
+			continue
+		}
+		totalConsumption += math.Abs(float64(m.Quantity))
+	}
+	avgDaily := totalConsumption / float64(days)
+
+	mid := len(movements) / 2
+	older := movements[:mid]
+	recent := movements[mid:]
+
+	var olderSum, recentSum float64
+	for _, m := range older {
+		olderSum += math.Abs(float64(m.Quantity))
+	}
+	for _, m := range recent {
+		recentSum += math.Abs(float64(m.Quantity))
+	}
+
+	var olderAvg, recentAvg float64
+	if len(older) > 0 {
+		olderAvg = olderSum / float64(len(older))
+	}
+	if len(recent) > 0 {
+		recentAvg = recentSum / float64(len(recent))
+	}
+
+	trendStr := "stable"
+	if recentAvg > olderAvg*1.10 {
+		trendStr = "increasing"
+	} else if recentAvg < olderAvg*0.90 {
+		trendStr = "decreasing"
+	}
+
+	currentStock := 0.0
+	var inv database.Inventory
+	if err := r.DB.Where("sku = ?", sku).First(&inv).Error; err == nil {
+		currentStock = inv.Quantity
+	}
+
+	predicted := -1.0
+	if avgDaily > 0 {
+		predicted = currentStock / avgDaily
+	}
+
+	return &dto.ConsumptionTrend{
+		AverageDailyConsumption: avgDaily,
+		Trend:                   trendStr,
+		PredictedStockOutDays:   predicted,
+	}, nil
 }

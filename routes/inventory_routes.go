@@ -22,5 +22,6 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.POST("/", inventoryController.CreateInventory)
 		route.PUT("/:id", inventoryController.UpdateInventory)
 		route.DELETE("/:id/:location", inventoryController.DeleteInventory)
+		route.GET("/:sku/trend", inventoryController.Trend)
 	}
 }

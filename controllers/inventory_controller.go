@@ -72,3 +72,15 @@ func (c *InventoryController) DeleteInventory(ctx *gin.Context) {
 
 	tools.Response(ctx, "DeleteInventory", true, "Inventory deleted successfully", "delete_inventory", nil, false, "")
 }
+
+func (c *InventoryController) Trend(ctx *gin.Context) {
+	sku := ctx.Param("sku")
+
+	trend, response := c.Service.Trend(sku)
+	if response != nil {
+		tools.Response(ctx, "Trend", false, response.Message, "inventory_trend", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "Trend", true, "Inventory trend retrieved successfully", "inventory_trend", trend, false, "")
+}

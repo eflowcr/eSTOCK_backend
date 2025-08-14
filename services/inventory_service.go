@@ -32,3 +32,7 @@ func (s *InventoryService) UpdateInventory(item *requests.UpdateInventory) *resp
 func (s *InventoryService) DeleteInventory(sku, location string) *responses.InternalResponse {
 	return s.Repository.DeleteInventory(sku, location)
 }
+
+func (s *InventoryService) Trend(sku string) (*dto.ConsumptionTrend, *responses.InternalResponse) {
+	return s.Repository.Trend(sku)
+}
