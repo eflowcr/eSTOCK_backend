@@ -43,3 +43,13 @@ func (c *StockAlertsController) Analyze(ctx *gin.Context) {
 
 	tools.Response(ctx, "Analyze", true, "Stock alerts analyzed successfully", "analyze_stock_alerts", responseData, false, "")
 }
+
+func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
+	response, errResponse := c.Service.LotExpiration()
+	if errResponse != nil {
+		tools.Response(ctx, "LotExpiration", false, errResponse.Message, "lot_expiration", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "LotExpiration", true, "Lot expiration alerts generated successfully", "lot_expiration", response, false, "")
+}

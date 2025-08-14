@@ -23,3 +23,7 @@ func (s *StockAlertsService) GetAllStockAlerts(resolved bool) ([]database.StockA
 func (s *StockAlertsService) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
 	return s.Repository.Analyze()
 }
+
+func (s *StockAlertsService) LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse) {
+	return s.Repository.LotExpiration()
+}

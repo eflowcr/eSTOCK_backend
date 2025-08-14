@@ -431,7 +431,6 @@ func GenerateAlertMessage(
 		}
 
 	case AlertTypePredictive:
-		// Manejo defensivo por si viene NaN/Inf
 		if math.IsNaN(predictedStockOutDays) || math.IsInf(predictedStockOutDays, 0) {
 			return fmt.Sprintf("Alert for SKU %s: Current stock %d, recommended restock %d units.", sku, currentStock, recommendedStock)
 		}
@@ -491,13 +490,13 @@ func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gor
 		shouldAlert := false
 
 		if daysToExpire <= 7 {
-			alertLevel = strptr("critical")
+			alertLevel = tools.StrPtr("critical")
 			shouldAlert = true
 		} else if daysToExpire <= 30 {
-			alertLevel = strptr("high")
+			alertLevel = tools.StrPtr("high")
 			shouldAlert = true
 		} else if daysToExpire <= 90 {
-			alertLevel = strptr("medium")
+			alertLevel = tools.StrPtr("medium")
 			shouldAlert = true
 		}
 
@@ -535,4 +534,65 @@ func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gor
 	return alerts, nil
 }
 
-func strptr(s string) *string { return &s }
+func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse) {
+	// Begin transaction
+	tx := r.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	alerts, err := r.generateLotExpirationAlertsInTransaction(tx)
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to generate lot expiration alerts",
+			Handled: false,
+		}
+	}
+
+	tx.Commit()
+
+	if len(alerts) == 0 {
+		return nil, &responses.InternalResponse{
+			Error:   nil,
+			Message: "No lot expiration alerts generated",
+			Handled: true,
+		}
+	}
+
+	criticalCount := 0
+	highCount := 0
+	mediumCount := 0
+	expiringCount := 0
+
+	for _, alert := range alerts {
+		switch strings.ToLower(strings.TrimSpace(alert.AlertLevel)) {
+		case "critical":
+			criticalCount++
+		case "high":
+			highCount++
+		case "medium":
+			mediumCount++
+		}
+
+		if strings.ToLower(strings.TrimSpace(alert.AlertType)) == "lot_expiration" {
+			expiringCount++
+		}
+	}
+
+	response := &responses.StockAlertResponse{
+		Message: "Lot expiration alerts generated successfully",
+		Alerts:  alerts,
+		Sumary: responses.StockAlertSumary{
+			Total:    len(alerts),
+			Critical: criticalCount,
+			High:     highCount,
+			Medium:   mediumCount,
+			Expiring: expiringCount,
+		},
+	}
+
+	return response, nil
+}
