@@ -789,3 +789,81 @@ func (r *InventoryRepository) ImportInventoryFromExcel(fileBytes []byte) ([]stri
 
 	return imported, errorsList
 }
+
+func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
+	inventory, errResp := r.GetAllInventory()
+	if errResp != nil {
+		return nil, errResp
+	}
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	f.SetSheetName("Sheet1", sheet)
+
+	headers := []string{
+		"SKU", "Name", "Description", "Location", "Quantity", "Unit Price",
+		"Track by Lot", "Track by Serial", "Track Expiration", "Min Quantity",
+		"Max Quantity", "Image URL", "Lot Number", "Lot Quantity", "Lot Expiration Date",
+		"Serial Number",
+	}
+
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, header)
+	}
+
+	for i, item := range inventory {
+		row := i + 2
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), item.SKU)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), item.Name)
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), item.Description)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), item.Location)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), item.Quantity)
+
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), item.UnitPrice)
+
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), boolToSiNo(item.TrackByLot))
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), boolToSiNo(item.TrackBySerial))
+		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), boolToSiNo(item.TrackExpiration))
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), item.MinQuantity)
+		f.SetCellValue(sheet, fmt.Sprintf("K%d", row), item.MaxQuantity)
+		f.SetCellValue(sheet, fmt.Sprintf("L%d", row), item.ImageURL)
+
+		if len(item.Lots) > 0 {
+			for j, lot := range item.Lots {
+				lotRow := row + j
+				f.SetCellValue(sheet, fmt.Sprintf("M%d", lotRow), lot.LotNumber)
+				f.SetCellValue(sheet, fmt.Sprintf("N%d", lotRow), lot.Quantity)
+				if lot.ExpirationDate != nil {
+					f.SetCellValue(sheet, fmt.Sprintf("O%d", lotRow), lot.ExpirationDate.Format("2006-01-02"))
+				} else {
+					f.SetCellValue(sheet, fmt.Sprintf("O%d", lotRow), "")
+				}
+			}
+		} else {
+			f.SetCellValue(sheet, fmt.Sprintf("M%d", row), "")
+			f.SetCellValue(sheet, fmt.Sprintf("N%d", row), "")
+			f.SetCellValue(sheet, fmt.Sprintf("O%d", row), "")
+		}
+
+		if len(item.Serials) > 0 {
+			for j, serial := range item.Serials {
+				serialRow := row + j
+				f.SetCellValue(sheet, fmt.Sprintf("P%d", serialRow), serial.SerialNumber)
+			}
+		} else {
+			f.SetCellValue(sheet, fmt.Sprintf("P%d", row), "")
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to write Excel file",
+			Handled: false,
+		}
+	}
+
+	return buf.Bytes(), nil
+}

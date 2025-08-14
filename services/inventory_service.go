@@ -40,3 +40,7 @@ func (s *InventoryService) Trend(sku string) (*dto.ConsumptionTrend, *responses.
 func (s *InventoryService) ImportInventoryFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
 	return s.Repository.ImportInventoryFromExcel(fileBytes)
 }
+
+func (s *InventoryService) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportInventoryToExcel()
+}

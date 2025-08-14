@@ -120,3 +120,15 @@ func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 		"errors":         errorResponses,
 	}, false, "")
 }
+
+func (c *InventoryController) ExportInventoryToExcel(ctx *gin.Context) {
+	fileBytes, response := c.Service.ExportInventoryToExcel()
+	if response != nil {
+		tools.Response(ctx, "ExportInventoryToExcel", false, response.Message, "export_inventory_to_excel", nil, false, "")
+		return
+	}
+
+	ctx.Header("Content-Description", "File Transfer")
+	ctx.Header("Content-Disposition", `attachment; filename="inventory.xlsx"`)
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
+}
