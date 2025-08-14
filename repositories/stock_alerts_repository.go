@@ -596,3 +596,38 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 
 	return response, nil
 }
+
+func (r *StockAlertsRepository) ResolveAlert(alertID int) *responses.InternalResponse {
+	var alert database.StockAlert
+	err := r.DB.First(&alert, alertID).Error
+	if err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to find alert",
+			Handled: false,
+		}
+	}
+
+	if alert.IsResolved {
+		return &responses.InternalResponse{
+			Error:   nil,
+			Message: "Alert already resolved",
+			Handled: true,
+		}
+	}
+
+	alert.IsResolved = true
+	resolveDate := tools.GetCurrentTime()
+	alert.ResolvedAt = &resolveDate
+
+	err = r.DB.Save(&alert).Error
+	if err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to resolve alert",
+			Handled: false,
+		}
+	}
+
+	return nil
+}

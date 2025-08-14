@@ -21,5 +21,6 @@ func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/:resolved", stockAlertsController.GetAllStockAlerts)
 		route.GET("/analyze", stockAlertsController.Analyze)
 		route.GET("/lot-expiration", stockAlertsController.LotExpiration)
+		route.PATCH("/:id/resolve", stockAlertsController.ResolveAlert)
 	}
 }

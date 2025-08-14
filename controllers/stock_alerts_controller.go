@@ -53,3 +53,23 @@ func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
 
 	tools.Response(ctx, "LotExpiration", true, "Lot expiration alerts generated successfully", "lot_expiration", response, false, "")
 }
+
+func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
+	alertID := ctx.Param("id")
+
+	alertIDInt, err := tools.StringToInt(alertID)
+
+	if err != nil {
+		tools.Response(ctx, "ResolveAlert", false, "Invalid alert ID", "resolve_stock_alert", nil, false, "")
+		return
+	}
+
+	response := c.Service.ResolveAlert(alertIDInt)
+
+	if response != nil {
+		tools.Response(ctx, "Resolve", false, response.Message, "resolve_stock_alert", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "Resolve", true, "Stock alert resolved successfully", "resolve_stock_alert", nil, false, "")
+}
