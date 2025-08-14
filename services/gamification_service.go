@@ -2,6 +2,7 @@ package services
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 )
@@ -26,4 +27,8 @@ func (s *GamificationService) Badges(userId string) ([]database.Badge, *response
 
 func (s *GamificationService) GetAllBadges() ([]database.Badge, *responses.InternalResponse) {
 	return s.Repository.GetAllBadges()
+}
+
+func (s *GamificationService) CompleteTasks(userId string, task requests.CompleteTasks) ([]database.UserBadge, *responses.InternalResponse) {
+	return s.Repository.CompleteTasks(userId, task)
 }

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
@@ -68,4 +69,29 @@ func (c *GamificationController) GetAllBadges(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "GetAllBadges", true, "All badges retrieved successfully", "all_badges", badges, false, "")
+}
+
+func (c *GamificationController) CompleteTasks(ctx *gin.Context) {
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	var task requests.CompleteTasks
+	if err := ctx.ShouldBindJSON(&task); err != nil {
+		tools.Response(ctx, "CompleteTasks", false, "Invalid request data", "complete_tasks", nil, false, "")
+		return
+	}
+
+	tasks, errResp := c.Service.CompleteTasks(userId, task)
+
+	if errResp != nil {
+		tools.Response(ctx, "CompleteTasks", false, errResp.Message, "complete_tasks", nil, false, "")
+		return
+	}
+
+	if tasks == nil {
+		tools.Response(ctx, "CompleteTasks", false, "No tasks completed or no badges awarded", "complete_tasks", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "CompleteTasks", true, "Tasks completed and badges awarded successfully", "complete_tasks", tasks, false, "")
 }
