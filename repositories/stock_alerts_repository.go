@@ -219,7 +219,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	response := &responses.StockAlertResponse{
 		Message: "Stock alerts generated successfully",
 		Alerts:  alerts,
-		Sumary: responses.StockAlertSumary{
+		Summary: responses.StockAlertSumary{
 			Total:    len(alerts),
 			Critical: 0,
 			High:     0,
@@ -562,36 +562,12 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 		}
 	}
 
-	criticalCount := 0
-	highCount := 0
-	mediumCount := 0
-	expiringCount := 0
-
-	for _, alert := range alerts {
-		switch strings.ToLower(strings.TrimSpace(alert.AlertLevel)) {
-		case "critical":
-			criticalCount++
-		case "high":
-			highCount++
-		case "medium":
-			mediumCount++
-		}
-
-		if strings.ToLower(strings.TrimSpace(alert.AlertType)) == "lot_expiration" {
-			expiringCount++
-		}
-	}
+	summary := sumarizeAlerts(alerts)
 
 	response := &responses.StockAlertResponse{
 		Message: "Lot expiration alerts generated successfully",
 		Alerts:  alerts,
-		Sumary: responses.StockAlertSumary{
-			Total:    len(alerts),
-			Critical: criticalCount,
-			High:     highCount,
-			Medium:   mediumCount,
-			Expiring: expiringCount,
-		},
+		Summary: summary,
 	}
 
 	return response, nil
@@ -630,4 +606,68 @@ func (r *StockAlertsRepository) ResolveAlert(alertID int) *responses.InternalRes
 	}
 
 	return nil
+}
+
+func (r *StockAlertsRepository) Summary() (*responses.StockAlertResponse, *responses.InternalResponse) {
+	var alerts []database.StockAlert
+
+	err := r.DB.
+		Table(database.StockAlert{}.TableName()).
+		Where("is_resolved = ?", false).
+		Order("created_at ASC").
+		Find(&alerts).Error
+
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch stock alerts",
+			Handled: false,
+		}
+	}
+
+	if len(alerts) == 0 {
+		return nil, &responses.InternalResponse{
+			Error:   nil,
+			Message: "No stock alerts found",
+			Handled: true,
+		}
+	}
+
+	summary := sumarizeAlerts(alerts)
+
+	return &responses.StockAlertResponse{
+		Message: "Stock alerts summary fetched successfully",
+		Alerts:  alerts,
+		Summary: summary,
+	}, nil
+}
+
+func sumarizeAlerts(alerts []database.StockAlert) responses.StockAlertSumary {
+	criticalCount := 0
+	highCount := 0
+	mediumCount := 0
+	expiringCount := 0
+
+	for _, alert := range alerts {
+		switch strings.ToLower(strings.TrimSpace(alert.AlertLevel)) {
+		case "critical":
+			criticalCount++
+		case "high":
+			highCount++
+		case "medium":
+			mediumCount++
+		}
+
+		if strings.ToLower(strings.TrimSpace(alert.AlertType)) == "lot_expiration" {
+			expiringCount++
+		}
+	}
+
+	return responses.StockAlertSumary{
+		Total:    len(alerts),
+		Critical: criticalCount,
+		High:     highCount,
+		Medium:   mediumCount,
+		Expiring: expiringCount,
+	}
 }
