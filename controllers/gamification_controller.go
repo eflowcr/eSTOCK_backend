@@ -95,3 +95,19 @@ func (c *GamificationController) CompleteTasks(ctx *gin.Context) {
 
 	tools.Response(ctx, "CompleteTasks", true, "Tasks completed and badges awarded successfully", "complete_tasks", tasks, false, "")
 }
+
+func (c *GamificationController) GetAllUserStats(ctx *gin.Context) {
+	stats, errResp := c.Service.GetAllUserStats()
+
+	if errResp != nil {
+		tools.Response(ctx, "GetAllUserStats", false, errResp.Message, "all_user_stats", nil, false, "")
+		return
+	}
+
+	if stats == nil {
+		tools.Response(ctx, "GetAllUserStats", false, "No user stats found", "all_user_stats", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetAllUserStats", true, "All user stats retrieved successfully", "all_user_stats", stats, false, "")
+}

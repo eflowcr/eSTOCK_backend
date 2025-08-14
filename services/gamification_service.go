@@ -32,3 +32,7 @@ func (s *GamificationService) GetAllBadges() ([]database.Badge, *responses.Inter
 func (s *GamificationService) CompleteTasks(userId string, task requests.CompleteTasks) ([]database.UserBadge, *responses.InternalResponse) {
 	return s.Repository.CompleteTasks(userId, task)
 }
+
+func (s *GamificationService) GetAllUserStats() ([]database.UserStat, *responses.InternalResponse) {
+	return s.Repository.GetAllStats()
+}

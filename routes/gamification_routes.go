@@ -22,5 +22,6 @@ func RegisterGamificationRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/badges", gamificationController.Badges)
 		route.GET("/all-badges", gamificationController.GetAllBadges)
 		route.POST("/complete-tasks", gamificationController.CompleteTasks)
+		route.GET("/operator-stats", gamificationController.GetAllUserStats)
 	}
 }
