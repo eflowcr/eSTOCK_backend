@@ -73,3 +73,20 @@ func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
 
 	tools.Response(ctx, "Resolve", true, "Stock alert resolved successfully", "resolve_stock_alert", nil, false, "")
 }
+
+func (c *StockAlertsController) ExportAlertsToExcel(ctx *gin.Context) {
+	data, response := c.Service.ExportAlertsToExcel()
+
+	if response != nil {
+		tools.Response(ctx, "ExportAlertsToExcel", false, response.Message, "export_stock_alerts_to_excel", nil, false, "")
+		return
+	}
+
+	if data == nil {
+		tools.Response(ctx, "ExportAlertsToExcel", true, "No stock alerts to export", "export_stock_alerts_to_excel", nil, false, "")
+		return
+	}
+
+	ctx.Header("Content-Disposition", "attachment; filename=stock_alerts.xlsx")
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}

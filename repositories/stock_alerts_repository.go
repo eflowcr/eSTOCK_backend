@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -670,4 +672,75 @@ func sumarizeAlerts(alerts []database.StockAlert) responses.StockAlertSumary {
 		Medium:   mediumCount,
 		Expiring: expiringCount,
 	}
+}
+
+func (r *StockAlertsRepository) ExportAlertsToExcel() ([]byte, *responses.InternalResponse) {
+	alerts, errResp := r.GetAllStockAlerts(false)
+	if errResp != nil {
+		return nil, errResp
+	}
+	if len(alerts) == 0 {
+		return nil, &responses.InternalResponse{
+			Error:   nil,
+			Message: "No stock alerts found to export",
+			Handled: true,
+		}
+	}
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	f.SetSheetName("Sheet1", sheet)
+
+	headers := []string{
+		"ID", "SKU", "Alert Type", "Current Stock", "Recommended Stock",
+		"Alert Level", "Message", "Created At", "Resolved At", "Is Resolved",
+	}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
+		_ = f.SetCellValue(sheet, cell, h)
+	}
+
+	timeOrEmpty := func(t *time.Time) string {
+		if t == nil {
+			return ""
+		}
+		return t.Format(time.RFC3339)
+	}
+	boolToSiNo := func(b bool) string {
+		if b {
+			return "Sí"
+		}
+		return "No"
+	}
+
+	for idx, alert := range alerts {
+		row := idx + 7
+		values := []interface{}{
+			alert.ID,
+			alert.SKU,
+			alert.AlertType,
+			alert.CurrentStock,
+			alert.RecommendedStock,
+			alert.AlertLevel,
+			alert.Message,
+			alert.CreatedAt.Format(time.RFC3339),
+			timeOrEmpty(alert.ResolvedAt),
+			boolToSiNo(alert.IsResolved),
+		}
+		for col, val := range values {
+			cell, _ := excelize.CoordinatesToCellName(col+1, row)
+			_ = f.SetCellValue(sheet, cell, val)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to generate Excel file",
+			Handled: false,
+		}
+	}
+
+	return buf.Bytes(), nil
 }

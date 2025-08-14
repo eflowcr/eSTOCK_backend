@@ -31,3 +31,7 @@ func (s *StockAlertsService) LotExpiration() (*responses.StockAlertResponse, *re
 func (s *StockAlertsService) ResolveAlert(alertID int) *responses.InternalResponse {
 	return s.Repository.ResolveAlert(alertID)
 }
+
+func (s *StockAlertsService) ExportAlertsToExcel() ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportAlertsToExcel()
+}
