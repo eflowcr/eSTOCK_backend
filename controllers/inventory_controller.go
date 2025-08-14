@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"io"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -83,4 +85,38 @@ func (c *InventoryController) Trend(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "Trend", true, "Inventory trend retrieved successfully", "inventory_trend", trend, false, "")
+}
+
+func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
+	fileHeader, err := ctx.FormFile("file")
+	if err != nil {
+		tools.Response(ctx, "ImportInventoryFromExcel", false, "File upload error", "import_inventory_from_excel", nil, false, "")
+		return
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		tools.Response(ctx, "ImportInventoryFromExcel", false, "Failed to open file: "+err.Error(), "import_inventory_from_excel", nil, false, "")
+		return
+	}
+	defer file.Close()
+
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		tools.Response(ctx, "ImportInventoryFromExcel", false, "Failed to read file content: "+err.Error(), "import_inventory_from_excel", nil, false, "")
+		return
+	}
+
+	imported, errorResponses := c.Service.ImportInventoryFromExcel(fileBytes)
+
+	if len(imported) == 0 && len(errorResponses) > 0 {
+		resp := errorResponses[0]
+		tools.Response(ctx, "ImportInventoryFromExcel", false, resp.Message, "import_inventory_from_excel", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "ImportInventoryFromExcel", true, "Inventory imported successfully", "import_inventory_from_excel", gin.H{
+		"imported_items": imported,
+		"errors":         errorResponses,
+	}, false, "")
 }

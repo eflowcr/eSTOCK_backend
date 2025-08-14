@@ -36,3 +36,7 @@ func (s *InventoryService) DeleteInventory(sku, location string) *responses.Inte
 func (s *InventoryService) Trend(sku string) (*dto.ConsumptionTrend, *responses.InternalResponse) {
 	return s.Repository.Trend(sku)
 }
+
+func (s *InventoryService) ImportInventoryFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+	return s.Repository.ImportInventoryFromExcel(fileBytes)
+}

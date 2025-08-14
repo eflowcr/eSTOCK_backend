@@ -1,9 +1,11 @@
 package repositories
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -652,4 +655,137 @@ func (r *InventoryRepository) Trend(sku string) (*dto.ConsumptionTrend, *respons
 		Trend:                   trendStr,
 		PredictedStockOutDays:   predicted,
 	}, nil
+}
+
+func (r *InventoryRepository) ImportInventoryFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+	imported := []string{}
+	errorsList := []*responses.InternalResponse{}
+
+	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
+	if err != nil {
+		return imported, []*responses.InternalResponse{{
+			Error:   err,
+			Message: "Failed to open Excel file",
+			Handled: false,
+		}}
+	}
+
+	rows, err := f.GetRows("Sheet1")
+	if err != nil {
+		return imported, []*responses.InternalResponse{{
+			Error:   err,
+			Message: "Failed to read rows from sheet",
+			Handled: false,
+		}}
+	}
+
+	for i, row := range rows {
+		if i < 7 || len(row) < 10 {
+			continue
+		}
+
+		sku := strings.TrimSpace(row[0])
+		name := strings.TrimSpace(row[1])
+		description := strings.TrimSpace(row[2])
+		location := strings.TrimSpace(row[3])
+		quantityStr := strings.TrimSpace(row[4])
+		unitPriceStr := strings.TrimSpace(row[5])
+		trackByLot := strings.EqualFold(strings.TrimSpace(row[6]), "Si")
+		trackBySerial := strings.EqualFold(strings.TrimSpace(row[7]), "Si")
+
+		if sku == "" || location == "" || quantityStr == "" {
+			continue
+		}
+
+		quantity, _ := strconv.Atoi(quantityStr)
+
+		var unitPrice *float64
+		if unitPriceStr != "" {
+			if f, err := strconv.ParseFloat(unitPriceStr, 64); err == nil {
+				unitPrice = &f
+			}
+		}
+
+		var descPtr *string
+		if description != "" {
+			descPtr = &description
+		}
+
+		// Armar la estructura de inventario
+		item := &requests.CreateInventory{
+			SKU:         sku,
+			Name:        name,
+			Description: descPtr,
+			Location:    location,
+			Quantity:    float64(quantity),
+			UnitPrice:   unitPrice,
+		}
+
+		// Lotes
+		if trackByLot {
+			var lots []database.Lot
+			for j := i; j < len(rows); j++ {
+				if len(rows[j]) < 14 {
+					continue
+				}
+				if strings.TrimSpace(rows[j][11]) != sku {
+					continue
+				}
+
+				lotQty, _ := strconv.Atoi(strings.TrimSpace(rows[j][12]))
+				expirationDate := strings.TrimSpace(rows[j][13])
+
+				// Convert expiration date to time.Time
+				var expDate *time.Time
+				if expirationDate != "" {
+					if date, err := time.Parse("2006-01-02", expirationDate); err == nil {
+						expDate = &date
+					}
+				}
+
+				lots = append(lots, database.Lot{
+					LotNumber:      strings.TrimSpace(rows[j][10]),
+					SKU:            sku,
+					Quantity:       float64(lotQty),
+					ExpirationDate: expDate,
+				})
+			}
+			item.Lots = lots
+		}
+
+		// Seriales
+		if trackBySerial {
+			var serials []database.Serial
+			for j := i; j < len(rows); j++ {
+				if len(rows[j]) < 16 {
+					continue
+				}
+				if strings.TrimSpace(rows[j][15]) != sku {
+					continue
+				}
+
+				serials = append(serials, database.Serial{
+					SerialNumber: strings.TrimSpace(rows[j][14]),
+					SKU:          sku,
+					Status:       "available",
+				})
+			}
+			item.Serials = serials
+		}
+
+		// Crear el inventario
+		resp := r.CreateInventory(item)
+		if resp != nil {
+			errorsList = append(errorsList, &responses.InternalResponse{
+				Error:   resp.Error,
+				Message: fmt.Sprintf("Row %d: %s", i+1, resp.Message),
+				Handled: resp.Handled,
+			})
+			continue
+		}
+
+		imported = append(imported, sku)
+	}
+
+	return imported, errorsList
 }
