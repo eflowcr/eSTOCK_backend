@@ -25,5 +25,6 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/:sku/trend", inventoryController.Trend)
 		route.POST("/import", inventoryController.ImportInventoryFromExcel)
 		route.GET("/export", inventoryController.ExportInventoryToExcel)
+		route.GET("/:id/lots", inventoryController.GetInventoryLots)
 	}
 }

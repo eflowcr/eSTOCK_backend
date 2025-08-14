@@ -44,3 +44,7 @@ func (s *InventoryService) ImportInventoryFromExcel(fileBytes []byte) ([]string,
 func (s *InventoryService) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportInventoryToExcel()
 }
+
+func (s *InventoryService) GetInventoryLots(inventoryID int) ([]responses.InventoryLot, *responses.InternalResponse) {
+	return s.Repository.GetInventoryLots(inventoryID)
+}

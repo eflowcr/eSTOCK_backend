@@ -867,3 +867,24 @@ func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.Inter
 
 	return buf.Bytes(), nil
 }
+
+func (r *InventoryRepository) GetInventoryLots(inventoryID int) ([]responses.InventoryLot, *responses.InternalResponse) {
+	var result []responses.InventoryLot
+
+	err := r.DB.
+		Table("inventory_lots").
+		Select("inventory_lots.*, lots.id as lot_id, lots.lot_number, lots.sku, lots.quantity as lot_quantity, lots.expiration_date, lots.created_at as lot_created_at, lots.updated_at as lot_updated_at").
+		Joins("INNER JOIN lots ON inventory_lots.lot_id = lots.id").
+		Where("inventory_lots.inventory_id = ?", inventoryID).
+		Scan(&result).Error
+
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to fetch inventory lots",
+			Handled: false,
+		}
+	}
+
+	return result, nil
+}

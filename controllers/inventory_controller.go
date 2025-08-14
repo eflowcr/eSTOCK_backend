@@ -132,3 +132,20 @@ func (c *InventoryController) ExportInventoryToExcel(ctx *gin.Context) {
 	ctx.Header("Content-Disposition", `attachment; filename="inventory.xlsx"`)
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
+
+func (c *InventoryController) GetInventoryLots(ctx *gin.Context) {
+	inventoryID, err := tools.StringToInt(ctx.Param("id"))
+
+	if err != nil {
+		tools.Response(ctx, "GetInventoryLots", false, "Invalid inventory ID", "get_inventory_lots", nil, false, "")
+		return
+	}
+
+	lots, response := c.Service.GetInventoryLots(inventoryID)
+	if response != nil {
+		tools.Response(ctx, "GetInventoryLots", false, response.Message, "get_inventory_lots", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "GetInventoryLots", true, "Inventory lots retrieved successfully", "get_inventory_lots", lots, false, "")
+}
