@@ -166,3 +166,19 @@ func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
 
 	tools.Response(ctx, "GetInventorySerials", true, "Inventory serials retrieved successfully", "get_inventory_serials", serials, false, "")
 }
+
+func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
+	var request requests.CreateInventoryLotRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		tools.Response(ctx, "CreateInventoryLot", false, "Invalid request payload", "create_inventory_lot", nil, false, "")
+		return
+	}
+
+	response := c.Service.CreateInventoryLot(&request)
+	if response != nil {
+		tools.Response(ctx, "CreateInventoryLot", false, response.Message, "create_inventory_lot", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "CreateInventoryLot", true, "Inventory lot created successfully", "create_inventory_lot", nil, false, "")
+}

@@ -52,3 +52,7 @@ func (s *InventoryService) GetInventoryLots(inventoryID int) ([]responses.Invent
 func (s *InventoryService) GetInventorySerials(inventoryID int) ([]responses.InventorySerialWithSerial, *responses.InternalResponse) {
 	return s.Repository.GetInventorySerials(inventoryID)
 }
+
+func (s *InventoryService) CreateInventoryLot(input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
+	return s.Repository.CreateInventoryLot(input)
+}

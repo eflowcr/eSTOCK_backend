@@ -914,3 +914,23 @@ func (r *InventoryRepository) GetInventorySerials(inventoryID int) ([]responses.
 
 	return result, nil
 }
+
+func (r *InventoryRepository) CreateInventoryLot(input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
+	inventoryLot := &database.InventoryLot{
+		InventoryID: input.InventoryID,
+		LotID:       input.LotID,
+		Quantity:    input.Quantity,
+		Location:    input.Location,
+		CreatedAt:   time.Now(),
+	}
+
+	if err := r.DB.Create(inventoryLot).Error; err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to create inventory lot",
+			Handled: false,
+		}
+	}
+
+	return nil
+}
