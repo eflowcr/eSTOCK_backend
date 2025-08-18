@@ -915,9 +915,9 @@ func (r *InventoryRepository) GetInventorySerials(inventoryID int) ([]responses.
 	return result, nil
 }
 
-func (r *InventoryRepository) CreateInventoryLot(input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
+func (r *InventoryRepository) CreateInventoryLot(id int, input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
 	inventoryLot := &database.InventoryLot{
-		InventoryID: input.InventoryID,
+		InventoryID: id,
 		LotID:       input.LotID,
 		Quantity:    input.Quantity,
 		Location:    input.Location,
@@ -940,6 +940,37 @@ func (r *InventoryRepository) DeleteInventoryLot(id int) *responses.InternalResp
 		return &responses.InternalResponse{
 			Error:   err,
 			Message: "Failed to delete inventory lot",
+			Handled: false,
+		}
+	}
+
+	return nil
+}
+
+func (r *InventoryRepository) CreateInventorySerial(id int, input *requests.CreateInventorySerial) *responses.InternalResponse {
+	inventorySerial := &database.InventorySerial{
+		InventoryID: id,
+		SerialID:    input.SerialID,
+		Location:    input.Location,
+		CreatedAt:   time.Now(),
+	}
+
+	if err := r.DB.Create(inventorySerial).Error; err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to create inventory serial",
+			Handled: false,
+		}
+	}
+
+	return nil
+}
+
+func (r *InventoryRepository) DeleteInventorySerial(id int) *responses.InternalResponse {
+	if err := r.DB.Where("id = ?", id).Delete(&database.InventorySerial{}).Error; err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to delete inventory serial",
 			Handled: false,
 		}
 	}

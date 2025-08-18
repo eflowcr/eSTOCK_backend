@@ -168,13 +168,15 @@ func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
 }
 
 func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
+	id, _ := tools.StringToInt(ctx.Param("id"))
+
 	var request requests.CreateInventoryLotRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
 		tools.Response(ctx, "CreateInventoryLot", false, "Invalid request payload", "create_inventory_lot", nil, false, "")
 		return
 	}
 
-	response := c.Service.CreateInventoryLot(&request)
+	response := c.Service.CreateInventoryLot(id, &request)
 	if response != nil {
 		tools.Response(ctx, "CreateInventoryLot", false, response.Message, "create_inventory_lot", nil, false, "")
 		return
@@ -197,4 +199,38 @@ func (c *InventoryController) DeleteInventoryLot(ctx *gin.Context) {
 	}
 
 	tools.Response(ctx, "DeleteInventoryLot", true, "Inventory lot deleted successfully", "delete_inventory_lot", nil, false, "")
+}
+
+func (c *InventoryController) CreateInventorySerial(ctx *gin.Context) {
+	id, _ := tools.StringToInt(ctx.Param("id"))
+
+	var request requests.CreateInventorySerial
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		tools.Response(ctx, "CreateInventorySerial", false, "Invalid request payload", "create_inventory_serial", nil, false, "")
+		return
+	}
+
+	response := c.Service.CreateInventorySerial(id, &request)
+	if response != nil {
+		tools.Response(ctx, "CreateInventorySerial", false, response.Message, "create_inventory_serial", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "CreateInventorySerial", true, "Inventory serial created successfully", "create_inventory_serial", nil, false, "")
+}
+
+func (c *InventoryController) DeleteInventorySerial(ctx *gin.Context) {
+	id, err := tools.StringToInt(ctx.Param("id"))
+	if err != nil {
+		tools.Response(ctx, "DeleteInventorySerial", false, "Invalid serial ID", "delete_inventory_serial", nil, false, "")
+		return
+	}
+
+	response := c.Service.DeleteInventorySerial(id)
+	if response != nil {
+		tools.Response(ctx, "DeleteInventorySerial", false, response.Message, "delete_inventory_serial", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "DeleteInventorySerial", true, "Inventory serial deleted successfully", "delete_inventory_serial", nil, false, "")
 }

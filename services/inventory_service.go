@@ -53,10 +53,18 @@ func (s *InventoryService) GetInventorySerials(inventoryID int) ([]responses.Inv
 	return s.Repository.GetInventorySerials(inventoryID)
 }
 
-func (s *InventoryService) CreateInventoryLot(input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
-	return s.Repository.CreateInventoryLot(input)
+func (s *InventoryService) CreateInventoryLot(id int, input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
+	return s.Repository.CreateInventoryLot(id, input)
 }
 
 func (s *InventoryService) DeleteInventoryLot(id int) *responses.InternalResponse {
 	return s.Repository.DeleteInventoryLot(id)
+}
+
+func (s *InventoryService) CreateInventorySerial(id int, input *requests.CreateInventorySerial) *responses.InternalResponse {
+	return s.Repository.CreateInventorySerial(id, input)
+}
+
+func (s *InventoryService) DeleteInventorySerial(id int) *responses.InternalResponse {
+	return s.Repository.DeleteInventorySerial(id)
 }
