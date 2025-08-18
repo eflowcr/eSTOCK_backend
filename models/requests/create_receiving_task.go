@@ -5,7 +5,7 @@ import (
 )
 
 type CreateReceivingTaskRequest struct {
-	InboundNumber string          `json:"inboundNumber" binding:"required"`
+	InboundNumber string          `json:"inbound_number" binding:"required"`
 	AssignedTo    *string         `json:"assignedTo" binding:"omitempty"`
 	Priority      string          `json:"priority"`
 	Notes         *string         `json:"notes" binding:"omitempty"`
