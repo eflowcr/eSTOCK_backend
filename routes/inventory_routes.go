@@ -12,24 +12,31 @@ import (
 func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	inventoryRepository := &repositories.InventoryRepository{DB: db}
 	inventoryService := services.NewInventoryService(inventoryRepository)
-
 	inventoryController := controllers.NewInventoryController(*inventoryService)
 
 	route := router.Group("/inventory")
 	route.Use(tools.JWTAuthMiddleware())
 	{
-		route.GET("/", inventoryController.GetAllInventory)
-		route.POST("/", inventoryController.CreateInventory)
-		route.PUT("/:id", inventoryController.UpdateInventory)
-		route.DELETE("/:id/:location", inventoryController.DeleteInventory)
-		route.GET("/:sku/trend", inventoryController.Trend)
 		route.POST("/import", inventoryController.ImportInventoryFromExcel)
 		route.GET("/export", inventoryController.ExportInventoryToExcel)
-		route.GET("/:id/lots", inventoryController.GetInventoryLots)
-		route.GET("/:id/serials", inventoryController.GetInventorySerials)
-		route.POST("/:id/lots", inventoryController.CreateInventoryLot)
-		route.DELETE("/:id/lots", inventoryController.DeleteInventoryLot)
-		route.POST("/:id/serials", inventoryController.CreateInventorySerial)
-		route.DELETE("/:id/serials", inventoryController.DeleteInventorySerial)
+
+		route.GET("/", inventoryController.GetAllInventory)
+		route.POST("/", inventoryController.CreateInventory)
+
+		id := route.Group("/id/:id")
+		{
+			id.PATCH("", inventoryController.UpdateInventory)
+			id.DELETE("/:location", inventoryController.DeleteInventory)
+
+			id.GET("/lots", inventoryController.GetInventoryLots)
+			id.POST("/lots", inventoryController.CreateInventoryLot)
+			id.DELETE("/lots/:lotId", inventoryController.DeleteInventoryLot)
+
+			id.GET("/serials", inventoryController.GetInventorySerials)
+			id.POST("/serials", inventoryController.CreateInventorySerial)
+			id.DELETE("/serials", inventoryController.DeleteInventorySerial)
+		}
+
+		route.GET("/sku/:sku/trend", inventoryController.Trend)
 	}
 }
