@@ -11,7 +11,7 @@ type DashboardRepository struct {
 
 func (r *DashboardRepository) GetDashboardStats() (map[string]interface{}, *responses.InternalResponse) {
 	var totalSkus int64
-	err := r.DB.Table("inventory").Count(&totalSkus).Error
+	err := r.DB.Table("inventory").Distinct("sku").Count(&totalSkus).Error
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Failed to count SKUs", Handled: false}
 	}
