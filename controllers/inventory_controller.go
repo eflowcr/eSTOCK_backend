@@ -182,3 +182,19 @@ func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
 
 	tools.Response(ctx, "CreateInventoryLot", true, "Inventory lot created successfully", "create_inventory_lot", nil, false, "")
 }
+
+func (c *InventoryController) DeleteInventoryLot(ctx *gin.Context) {
+	id, err := tools.StringToInt(ctx.Param("id"))
+	if err != nil {
+		tools.Response(ctx, "DeleteInventoryLot", false, "Invalid lot ID", "delete_inventory_lot", nil, false, "")
+		return
+	}
+
+	response := c.Service.DeleteInventoryLot(id)
+	if response != nil {
+		tools.Response(ctx, "DeleteInventoryLot", false, response.Message, "delete_inventory_lot", nil, false, "")
+		return
+	}
+
+	tools.Response(ctx, "DeleteInventoryLot", true, "Inventory lot deleted successfully", "delete_inventory_lot", nil, false, "")
+}

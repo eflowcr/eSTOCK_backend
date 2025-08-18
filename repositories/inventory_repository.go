@@ -934,3 +934,15 @@ func (r *InventoryRepository) CreateInventoryLot(input *requests.CreateInventory
 
 	return nil
 }
+
+func (r *InventoryRepository) DeleteInventoryLot(id int) *responses.InternalResponse {
+	if err := r.DB.Where("id = ?", id).Delete(&database.InventoryLot{}).Error; err != nil {
+		return &responses.InternalResponse{
+			Error:   err,
+			Message: "Failed to delete inventory lot",
+			Handled: false,
+		}
+	}
+
+	return nil
+}

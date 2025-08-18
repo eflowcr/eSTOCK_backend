@@ -56,3 +56,7 @@ func (s *InventoryService) GetInventorySerials(inventoryID int) ([]responses.Inv
 func (s *InventoryService) CreateInventoryLot(input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
 	return s.Repository.CreateInventoryLot(input)
 }
+
+func (s *InventoryService) DeleteInventoryLot(id int) *responses.InternalResponse {
+	return s.Repository.DeleteInventoryLot(id)
+}
