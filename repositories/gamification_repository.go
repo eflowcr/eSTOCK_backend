@@ -253,9 +253,28 @@ func (r *GamificationRepository) AwardBadge(userId string, badgeId int) (*databa
 	return &userBadge, nil
 }
 
-func (r *GamificationRepository) GetAllStats() ([]database.UserStat, *responses.InternalResponse) {
-	var stats []database.UserStat
-	if err := r.DB.Find(&stats).Error; err != nil {
+func (r *GamificationRepository) GetAllStats() ([]responses.UserStatsResponse, *responses.InternalResponse) {
+	var stats []responses.UserStatsResponse
+	query := `
+		SELECT 
+		us.id,
+		us.user_id,
+		us.receiving_tasks_completed,
+		us.picking_tasks_completed,
+		us.avg_pick_time,
+		us.pick_accuracy,
+		us.total_picking_time,
+		us.correct_picks,
+		us.total_picks,
+		u.first_name || ' ' || u.last_name AS username,
+		u.email,
+		us.created_at,
+		us.updated_at
+		FROM user_stats us
+		JOIN users u ON us.user_id = u.id
+	`
+
+	if err := r.DB.Raw(query).Scan(&stats).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
 			Message: "Failed to fetch all user stats",

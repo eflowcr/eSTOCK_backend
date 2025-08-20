@@ -33,6 +33,6 @@ func (s *GamificationService) CompleteTasks(userId string, task requests.Complet
 	return s.Repository.CompleteTasks(userId, task)
 }
 
-func (s *GamificationService) GetAllUserStats() ([]database.UserStat, *responses.InternalResponse) {
+func (s *GamificationService) GetAllUserStats() ([]responses.UserStatsResponse, *responses.InternalResponse) {
 	return s.Repository.GetAllStats()
 }
