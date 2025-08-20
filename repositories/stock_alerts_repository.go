@@ -109,7 +109,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		var movements []database.InventoryMovement
 		err = tx.
 			Table(database.InventoryMovement{}.TableName()).
-			Where("inventory_id = ?", inventory[i].ID).
+			Where("sku = ? AND location = ?", inventory[i].SKU, inventory[i].Location).
 			Order("created_at DESC").
 			Find(&movements).Error
 
