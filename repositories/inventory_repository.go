@@ -137,11 +137,6 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			Count(&inventoryCount).Error
 
 		if err != nil {
-			// return &responses.InternalResponse{
-			// 	Error:   err,
-			// 	Message: "Failed to check existing inventory",
-			// 	Handled: false,
-			// }
 			return errors.New("Failed to check existing inventory")
 		}
 
