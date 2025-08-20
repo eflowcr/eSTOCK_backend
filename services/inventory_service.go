@@ -21,8 +21,8 @@ func (s *InventoryService) GetAllInventory() ([]*dto.EnhancedInventory, *respons
 	return s.Repository.GetAllInventory()
 }
 
-func (s *InventoryService) CreateInventory(item *requests.CreateInventory) *responses.InternalResponse {
-	return s.Repository.CreateInventory(item)
+func (s *InventoryService) CreateInventory(userId string, item *requests.CreateInventory) *responses.InternalResponse {
+	return s.Repository.CreateInventory(userId, item)
 }
 
 func (s *InventoryService) UpdateInventory(item *requests.UpdateInventory) *responses.InternalResponse {
@@ -37,8 +37,8 @@ func (s *InventoryService) Trend(sku string) (*dto.ConsumptionTrend, *responses.
 	return s.Repository.Trend(sku)
 }
 
-func (s *InventoryService) ImportInventoryFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
-	return s.Repository.ImportInventoryFromExcel(fileBytes)
+func (s *InventoryService) ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
+	return s.Repository.ImportInventoryFromExcel(userId, fileBytes)
 }
 
 func (s *InventoryService) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {

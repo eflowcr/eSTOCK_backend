@@ -31,13 +31,16 @@ func (c *InventoryController) GetAllInventory(ctx *gin.Context) {
 }
 
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
 	var request requests.CreateInventory
 	if err := ctx.ShouldBindJSON(&request); err != nil {
 		tools.Response(ctx, "CreateInventory", false, "Invalid request payload", "create_inventory", nil, false, "")
 		return
 	}
 
-	response := c.Service.CreateInventory(&request)
+	response := c.Service.CreateInventory(userId, &request)
 	if response != nil {
 		tools.Response(ctx, "CreateInventory", false, response.Message, "create_inventory", nil, false, "")
 		return
@@ -88,6 +91,9 @@ func (c *InventoryController) Trend(ctx *gin.Context) {
 }
 
 func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
 		tools.Response(ctx, "ImportInventoryFromExcel", false, "File upload error", "import_inventory_from_excel", nil, false, "")
@@ -107,7 +113,7 @@ func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	imported, errorResponses := c.Service.ImportInventoryFromExcel(fileBytes)
+	imported, errorResponses := c.Service.ImportInventoryFromExcel(userId, fileBytes)
 
 	if len(imported) == 0 && len(errorResponses) > 0 {
 		resp := errorResponses[0]
