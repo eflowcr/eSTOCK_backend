@@ -3,6 +3,7 @@ package repositories
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"time"
@@ -144,9 +145,21 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 				CreatedAt:        time.Now(),
 			}
 
-			// Add predicted stock out days only if it's finite
-			if !math.IsInf(float64(analysis.PredictedStockOutDays), 0) && !math.IsNaN(float64(analysis.PredictedStockOutDays)) {
-				alert.PredictedStockOutDays = &analysis.PredictedStockOutDays
+			// Add predicted stock out days only if it's finite and within int4 range
+			if !math.IsInf(float64(analysis.PredictedStockOutDays), 0) &&
+				!math.IsNaN(float64(analysis.PredictedStockOutDays)) {
+
+				predictedDays := analysis.PredictedStockOutDays
+
+				// Check if value is within PostgreSQL int4 range
+				if predictedDays >= -2147483648 && predictedDays <= 2147483647 {
+					alert.PredictedStockOutDays = &predictedDays
+				} else {
+					// Handle out-of-range value (set to nil or use a default)
+					alert.PredictedStockOutDays = nil
+					// Optionally log this issue
+					log.Printf("Warning: PredictedStockOutDays out of range: %d", predictedDays)
+				}
 			} else {
 				alert.PredictedStockOutDays = nil
 			}
@@ -159,7 +172,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 				tx.Rollback()
 				return nil, &responses.InternalResponse{
 					Error:   err,
-					Message: "Failed to create stock alert",
+					Message: "Failed to create stock alert: " + err.Error(),
 					Handled: false,
 				}
 			}
@@ -191,11 +204,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 
 	// If no alerts were generated
 	if len(alerts) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No stock alerts generated",
-			Handled: true,
-		}
+		return nil, nil
 	}
 
 	criticialCount := 0
