@@ -27,4 +27,7 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.GET("/export", userController.ExportUsersToExcel)
 		route.PUT("/:id/:password", userController.UpdateUserPassword)
 	}
+
+	// Create user whitout token
+	route.POST("/register", userController.CreateUser)
 }
