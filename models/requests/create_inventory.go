@@ -8,7 +8,7 @@ type CreateInventory struct {
 	Description   *string           `json:"description"`
 	Location      string            `json:"location" validate:"required"`
 	Quantity      float64           `json:"quantity" validate:"required"`
-	UnitPrice     *float64          `json:"unit_price" validate:"required"`
+	UnitPrice     *float64          `json:"unitPrice" validate:"required"`
 	Lots          []database.Lot    `json:"lots,omitempty"`
 	Serials       []database.Serial `json:"serials,omitempty"`
 	TrackByLot    bool              `json:"trackByLot"`
