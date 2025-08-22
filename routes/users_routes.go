@@ -15,19 +15,19 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB) {
 
 	userController := controllers.NewUserController(*userService)
 
-	route := router.Group("/users")
-	route.Use(tools.JWTAuthMiddleware())
-	{
-		route.GET("/", userController.GetAllUsers)
-		route.GET("/:id", userController.GetUserByID)
-		route.POST("/", userController.CreateUser)
-		route.PUT("/:id", userController.UpdateUser)
-		route.DELETE("/:id", userController.DeleteUser)
-		route.POST("/import", userController.ImportUsersFromExcel)
-		route.GET("/export", userController.ExportUsersToExcel)
-		route.PUT("/:id/:password", userController.UpdateUserPassword)
-	}
+	public := router.Group("/users")
+	public.POST("/register", userController.CreateUser)
 
-	// Create user whitout token
-	route.POST("/register", userController.CreateUser)
+	protected := router.Group("/users")
+	protected.Use(tools.JWTAuthMiddleware())
+	{
+		protected.GET("/", userController.GetAllUsers)
+		protected.GET("/:id", userController.GetUserByID)
+		protected.POST("/", userController.CreateUser)
+		protected.PUT("/:id", userController.UpdateUser)
+		protected.DELETE("/:id", userController.DeleteUser)
+		protected.POST("/import", userController.ImportUsersFromExcel)
+		protected.GET("/export", userController.ExportUsersToExcel)
+		protected.PUT("/:id/:password", userController.UpdateUserPassword)
+	}
 }
