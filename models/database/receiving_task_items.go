@@ -4,6 +4,6 @@ type ReceivingTaskItem struct {
 	SKU              string           `json:"sku"`
 	ExpectedQuantity int              `json:"expectedQty"`
 	Location         string           `json:"location"`
-	LotNumbers       StringSliceOrCSV `json:"lotNumbers" gorm:"type:jsonb"`
-	SerialNumbers    StringSliceOrCSV `json:"serialNumbers" gorm:"type:jsonb"`
+	LotNumbers       StringSliceOrCSV `json:"lot_numbers" gorm:"type:jsonb"`
+	SerialNumbers    StringSliceOrCSV `json:"serial_numbers" gorm:"type:jsonb"`
 }
