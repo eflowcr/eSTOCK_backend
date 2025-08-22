@@ -36,14 +36,6 @@ func (r *AdjustmentsRepository) GetAllAdjustments() ([]database.Adjustment, *res
 		}
 	}
 
-	if len(adjustments) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No adjustments found",
-			Handled: true,
-		}
-	}
-
 	return adjustments, nil
 }
 
