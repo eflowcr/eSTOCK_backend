@@ -166,10 +166,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 		return &responses.InternalResponse{Error: err, Message: "Failed to create receiving task", Handled: true}
 	}
 
-	return &responses.InternalResponse{
-		Message: fmt.Sprintf("Receiving task created: %s", taskID),
-		Handled: true,
-	}
+	return nil
 }
 
 func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]interface{}) *responses.InternalResponse {
