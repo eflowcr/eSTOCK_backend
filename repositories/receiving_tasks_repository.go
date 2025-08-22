@@ -38,14 +38,6 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]database.ReceivingT
 		}
 	}
 
-	if len(tasks) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No receiving tasks found",
-			Handled: true,
-		}
-	}
-
 	return tasks, nil
 }
 

@@ -27,13 +27,5 @@ func (r *InventoryMovementsRepository) GetAllInventoryMovements(sku string) ([]d
 		}
 	}
 
-	if len(movements) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No inventory movements found",
-			Handled: true,
-		}
-	}
-
 	return movements, nil
 }

@@ -34,14 +34,6 @@ func (r *LocationsRepository) GetAllLocations() ([]database.Location, *responses
 		}
 	}
 
-	if len(locations) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No locations found",
-			Handled: true,
-		}
-	}
-
 	return locations, nil
 }
 

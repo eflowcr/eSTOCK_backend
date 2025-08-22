@@ -34,14 +34,6 @@ func (r *ArticlesRepository) GetAllArticles() ([]database.Article, *responses.In
 		}
 	}
 
-	if len(articles) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No articles found",
-			Handled: true,
-		}
-	}
-
 	return articles, nil
 }
 

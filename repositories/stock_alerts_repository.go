@@ -52,14 +52,6 @@ func (r *StockAlertsRepository) GetAllStockAlerts(resolved bool) ([]database.Sto
 		}
 	}
 
-	if len(stockAlerts) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No stock alerts found",
-			Handled: true,
-		}
-	}
-
 	return stockAlerts, nil
 }
 

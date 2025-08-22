@@ -34,14 +34,6 @@ func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalRes
 		}
 	}
 
-	if len(users) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No users found",
-			Handled: true,
-		}
-	}
-
 	return users, nil
 }
 

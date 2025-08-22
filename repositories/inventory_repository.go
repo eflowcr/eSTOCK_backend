@@ -36,14 +36,6 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 		}
 	}
 
-	if len(items) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No inventory found",
-			Handled: true,
-		}
-	}
-
 	var enhanced []*dto.EnhancedInventory
 
 	for _, item := range items {

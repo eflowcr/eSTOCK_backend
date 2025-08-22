@@ -34,14 +34,6 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]database.PickingTask, *r
 		}
 	}
 
-	if len(tasks) == 0 {
-		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "No picking tasks found",
-			Handled: true,
-		}
-	}
-
 	return tasks, nil
 }
 
