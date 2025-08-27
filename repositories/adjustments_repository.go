@@ -257,7 +257,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 					var lot database.Lot
 					err = tx.
 						Table(database.Lot{}.TableName()).
-						Where("sku = ? AND location = ? AND lot_number = ?", adjustment.SKU, adjustment.Location, adjustment.Lots[i].LotNumber).
+						Where("sku = ? AND lot_number = ?", adjustment.SKU, adjustment.Lots[i].LotNumber).
 						First(&lot).Error
 
 					if err != nil && err != gorm.ErrRecordNotFound {

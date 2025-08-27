@@ -245,17 +245,17 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					if err := r.DB.Create(newSerial).Error; err != nil {
 						return errors.New("Failed to create serial")
 					}
-				}
 
-				// Create inventory_serial association
-				inventorySerial := &database.InventorySerial{
-					InventoryID: inventory.ID,
-					SerialID:    item.Serials[i].ID,
-					Location:    item.Location,
-				}
+					// Create inventory_serial association
+					inventorySerial := &database.InventorySerial{
+						InventoryID: inventory.ID,
+						SerialID:    newSerial.ID,
+						Location:    item.Location,
+					}
 
-				if err := r.DB.Create(inventorySerial).Error; err != nil {
-					return errors.New("Failed to create inventory_serial association")
+					if err := r.DB.Create(inventorySerial).Error; err != nil {
+						return errors.New("Failed to create inventory_serial association")
+					}
 				}
 			}
 		}
