@@ -9,6 +9,7 @@ import (
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 func InitDB() *gorm.DB {
@@ -21,6 +22,12 @@ func InitDB() *gorm.DB {
 			configuration.DBHost, configuration.DBUser, configuration.DBPassword, configuration.DBName, configuration.DBPort)
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Info),
+			NamingStrategy: schema.NamingStrategy{
+				TablePrefix:   "",
+				SingularTable: false,
+				NoLowerCase:   false,
+				NameReplacer:  nil,
+			},
 		})
 	case "sqlserver":
 		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s",
