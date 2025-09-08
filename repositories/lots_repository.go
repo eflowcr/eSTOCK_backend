@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"errors"
+	"time"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
@@ -55,11 +56,18 @@ func (r *LotsRepository) GetLotsBySKU(sku *string) ([]database.Lot, *responses.I
 func (r *LotsRepository) CreateLot(data *requests.CreateLotRequest) *responses.InternalResponse {
 	now := tools.GetCurrentTime()
 
+	// Parse string to time.Time
+	var expirationDate time.Time
+
+	if data.ExpirationDate != nil {
+		expirationDate, _ = time.Parse("2006-01-02", *data.ExpirationDate)
+	}
+
 	lot := &database.Lot{
 		LotNumber:      data.LotNumber,
 		SKU:            data.SKU,
 		Quantity:       data.Quantity,
-		ExpirationDate: data.ExpirationDate,
+		ExpirationDate: &expirationDate,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
