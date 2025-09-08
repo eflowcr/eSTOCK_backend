@@ -190,12 +190,19 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 				}
 
 				if lotCount == 0 {
+					// String to time.Time
+					var expirationDate time.Time
+
+					if item.Lots[i].ExpirationDate != nil {
+						expirationDate, _ = time.Parse("2006-01-02", *item.Lots[i].ExpirationDate)
+					}
+
 					// Create new lot
 					lot := &database.Lot{
 						LotNumber:      item.Lots[i].LotNumber,
 						SKU:            item.SKU,
 						Quantity:       item.Lots[i].Quantity,
-						ExpirationDate: item.Lots[i].ExpirationDate,
+						ExpirationDate: &expirationDate,
 						CreatedAt:      tools.GetCurrentTime(),
 						UpdatedAt:      tools.GetCurrentTime(),
 					}
@@ -715,7 +722,7 @@ func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes 
 
 		// Lotes
 		if trackByLot {
-			var lots []database.Lot
+			var lots []requests.CreateLotRequest
 			for j := i; j < len(rows); j++ {
 				if len(rows[j]) < 14 {
 					continue
@@ -735,11 +742,18 @@ func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes 
 					}
 				}
 
-				lots = append(lots, database.Lot{
+				// expDate as *string
+				var expDateStr *string
+				if expDate != nil {
+					formatted := expDate.Format("2006-01-02")
+					expDateStr = &formatted
+				}
+
+				lots = append(lots, requests.CreateLotRequest{
 					LotNumber:      strings.TrimSpace(rows[j][10]),
 					SKU:            sku,
 					Quantity:       float64(lotQty),
-					ExpirationDate: expDate,
+					ExpirationDate: expDateStr,
 				})
 			}
 			item.Lots = lots
