@@ -68,7 +68,7 @@ func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.Recei
 }
 
 func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
-	var items []database.ReceivingTaskItem
+	var items []requests.ReceivingTaskItemRequest
 	if err := json.Unmarshal(task.Items, &items); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
 	}
@@ -126,10 +126,13 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 
 			if article.TrackByLot && len(items[i].LotNumbers) > 0 {
 				for j := 0; j < len(items[i].LotNumbers); j++ {
+					parsedDate := tools.ParseDate(*items[i].LotNumbers[j].ExpirationDate)
+
 					lot := database.Lot{
-						LotNumber: items[i].LotNumbers[j],
-						SKU:       sku,
-						CreatedAt: time.Now(),
+						LotNumber:      items[i].LotNumbers[j].LotNumber,
+						SKU:            sku,
+						CreatedAt:      time.Now(),
+						ExpirationDate: parsedDate,
 					}
 
 					if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&lot).Error; err != nil {
@@ -141,7 +144,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 			if article.TrackBySerial && len(items[i].SerialNumbers) > 0 {
 				for j := 0; j < len(items[i].SerialNumbers); j++ {
 					serial := database.Serial{
-						SerialNumber: items[i].SerialNumbers[j],
+						SerialNumber: items[i].SerialNumbers[j].SerialNumber,
 						SKU:          sku,
 						CreatedAt:    time.Now(),
 					}
