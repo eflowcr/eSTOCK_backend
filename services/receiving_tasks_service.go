@@ -40,3 +40,7 @@ func (s *ReceivingTasksService) ImportReceivingTaskFromExcel(userID string, file
 func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportReceivingTaskToExcel()
 }
+
+func (s *ReceivingTasksService) CompleteFullTask(id int, location string) *responses.InternalResponse {
+	return s.Repository.CompleteFullTask(id, location)
+}
