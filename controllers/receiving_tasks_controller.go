@@ -143,3 +143,22 @@ func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) 
 	ctx.Header("Content-Disposition", `attachment; filename="receiving_tasks.xlsx"`)
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
+
+func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "CompleteFullTask", false, "Invalid task ID", "complete_full_task", nil, false, "")
+		return
+	}
+
+	location := ctx.Request.Header.Get("Location")
+
+	response := c.Service.CompleteFullTask(id, location)
+	if response != nil {
+		tools.Response(ctx, "CompleteFullTask", false, response.Message, "complete_full_task", nil, response.Handled, "")
+		return
+	}
+
+	tools.Response(ctx, "CompleteFullTask", true, "Receiving task marked as complete successfully", "complete_full_task", nil, false, "")
+}

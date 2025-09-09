@@ -445,3 +445,169 @@ func (r *ReceivingTasksRepository) ExportReceivingTaskToExcel() ([]byte, *respon
 
 	return buf.Bytes(), nil
 }
+
+func (r *ReceivingTasksRepository) CompleteFullTask(id int, location string) *responses.InternalResponse {
+	handledResp := &responses.InternalResponse{}
+
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		// Get the task
+		var task database.ReceivingTask
+
+		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				*handledResp = responses.InternalResponse{Message: "Receiving task not found", Handled: true}
+				return nil
+			}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			return nil
+		}
+
+		// Update task fields
+		clean := map[string]interface{}{
+			"status":       "completed",
+			"completed_at": tools.GetCurrentTime(),
+			"updated_at":   tools.GetCurrentTime(),
+		}
+
+		if task.Status == "completed" {
+			*handledResp = responses.InternalResponse{Message: "Receiving task is already completed", Handled: true}
+			return nil
+		}
+
+		if err := tx.Model(&task).Updates(clean).Error; err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+			return nil
+		}
+
+		// Process items
+		var items []requests.ReceivingTaskItemRequest
+		if err := json.Unmarshal(task.Items, &items); err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			return nil
+		}
+
+		// Create inventory
+		for i := 0; i < len(items); i++ {
+			sku := items[i].SKU
+
+			var article database.Article
+			if err := tx.Where("sku = ?", sku).First(&article).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					continue
+				}
+				return fmt.Errorf("find article %s: %w", sku, err)
+			}
+
+			var inventory database.Inventory
+
+			inventory.SKU = sku
+			inventory.Name = article.Name
+			inventory.Description = article.Description
+			inventory.Location = location
+			inventory.Quantity = tools.IntToFloat64(items[i].ExpectedQuantity)
+			inventory.Status = "available"
+			inventory.Presentation = article.Presentation
+			inventory.UnitPrice = article.UnitPrice
+			inventory.CreatedAt = time.Now()
+			inventory.UpdatedAt = time.Now()
+
+			if err := tx.Create(&inventory).Error; err != nil {
+				return errors.New("Failed to create inventory")
+			}
+
+			if article.TrackByLot && items[i].LotNumbers != nil {
+				for j := 0; j < len(items[i].LotNumbers); j++ {
+					lotNum := items[i].LotNumbers[j]
+
+					var lotCount int64
+					err := tx.Model(&database.Lot{}).
+						Where("lot_number = ? AND sku = ?", lotNum.LotNumber, items[i].SKU).
+						Count(&lotCount).Error
+					if err != nil {
+						return errors.New("Failed to check existing lot")
+					}
+
+					if lotCount == 0 {
+						var expirationDate *time.Time
+						if lotNum.ExpirationDate != nil {
+							parsed, _ := time.Parse("2006-01-02", *lotNum.ExpirationDate)
+							expirationDate = &parsed
+						}
+
+						lot := &database.Lot{
+							LotNumber:      lotNum.LotNumber,
+							SKU:            items[i].SKU,
+							Quantity:       lotNum.Quantity,
+							ExpirationDate: expirationDate,
+							CreatedAt:      tools.GetCurrentTime(),
+							UpdatedAt:      tools.GetCurrentTime(),
+						}
+
+						if err := tx.Create(lot).Error; err != nil {
+							return errors.New("Failed to create lot")
+						}
+
+						inventoryLot := &database.InventoryLot{
+							InventoryID: inventory.ID,
+							LotID:       lot.ID,
+							Quantity:    lotNum.Quantity,
+							Location:    items[i].Location,
+						}
+
+						if err := tx.Create(inventoryLot).Error; err != nil {
+							return errors.New("Failed to create inventory_lot association")
+						}
+					}
+				}
+			}
+
+			if article.TrackBySerial && items[i].SerialNumbers != nil {
+				for k := 0; k < len(items[i].SerialNumbers); k++ {
+					serial := items[i].SerialNumbers[k]
+
+					var serialCount int64
+					err := tx.Model(&database.Serial{}).
+						Where("serial_number = ? AND sku = ?", serial.SerialNumber, items[i].SKU).
+						Count(&serialCount).Error
+					if err != nil {
+						return errors.New("Failed to check existing serial")
+					}
+
+					if serialCount == 0 {
+						newSerial := &database.Serial{
+							SerialNumber: serial.SerialNumber,
+							SKU:          items[i].SKU,
+							CreatedAt:    tools.GetCurrentTime(),
+							UpdatedAt:    tools.GetCurrentTime(),
+							Status:       "available",
+						}
+						if err := tx.Create(newSerial).Error; err != nil {
+							return errors.New("Failed to create serial")
+						}
+
+						inventorySerial := &database.InventorySerial{
+							InventoryID: inventory.ID,
+							SerialID:    newSerial.ID,
+							Location:    items[i].Location,
+						}
+						if err := tx.Create(inventorySerial).Error; err != nil {
+							return errors.New("Failed to create inventory_serial association")
+						}
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+	}
+
+	if handledResp.Error != nil || handledResp.Handled {
+		return handledResp
+	}
+
+	return nil
+}
