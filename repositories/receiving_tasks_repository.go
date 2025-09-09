@@ -105,17 +105,6 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 		for i := 0; i < len(items); i++ {
 			sku := items[i].SKU
 
-			var invCount int64
-			if err := tx.Model(&database.Inventory{}).
-				Where("sku = ?", sku).
-				Limit(1).
-				Count(&invCount).Error; err != nil {
-				return fmt.Errorf("check inventory %s: %w", sku, err)
-			}
-			if invCount == 0 {
-				continue
-			}
-
 			var article database.Article
 			if err := tx.Where("sku = ?", sku).First(&article).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
@@ -126,11 +115,16 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 
 			if article.TrackByLot && len(items[i].LotNumbers) > 0 {
 				for j := 0; j < len(items[i].LotNumbers); j++ {
-					parsedDate := tools.ParseDate(*items[i].LotNumbers[j].ExpirationDate)
+					parsedDate := (*time.Time)(nil)
+
+					if items[i].LotNumbers[j].ExpirationDate != nil {
+						parsedDate = tools.ParseDate(*items[i].LotNumbers[j].ExpirationDate)
+					}
 
 					lot := database.Lot{
 						LotNumber:      items[i].LotNumbers[j].LotNumber,
 						SKU:            sku,
+						Quantity:       items[i].LotNumbers[j].Quantity,
 						CreatedAt:      time.Now(),
 						ExpirationDate: parsedDate,
 					}
@@ -165,76 +159,90 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 }
 
 func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]interface{}) *responses.InternalResponse {
-	var task database.ReceivingTask
-	if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &responses.InternalResponse{Message: "Receiving task not found", Handled: true}
-		}
-		return &responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
-	}
+	var handledResp *responses.InternalResponse
 
-	protected := map[string]bool{
-		"id":         true,
-		"task_id":    true,
-		"created_at": true,
-	}
-
-	whitelist := map[string]bool{
-		"assigned_to":    true,
-		"priority":       true,
-		"status":         true,
-		"notes":          true,
-		"items":          true,
-		"inbound_number": true,
-		"updated_at":     true,
-		"completed_at":   true,
-	}
-
-	clean := make(map[string]interface{}, len(data)+2)
-	for k, v := range data {
-		key := strings.ToLower(k)
-		key = strings.ReplaceAll(key, "inboundnumber", "inbound_number")
-		key = strings.ReplaceAll(key, "assignedto", "assigned_to")
-		key = strings.ReplaceAll(key, "completedat", "completed_at")
-		key = strings.ReplaceAll(key, "updatedat", "updated_at")
-
-		if protected[key] {
-			continue
-		}
-		if !whitelist[key] {
-			continue
-		}
-		clean[key] = v
-	}
-
-	clean["updated_at"] = tools.GetCurrentTime()
-
-	if raw, ok := clean["status"]; ok {
-		if s, ok := raw.(string); ok {
-			sLower := strings.ToLower(strings.TrimSpace(s))
-			switch sLower {
-			case "completed":
-				clean["completed_at"] = tools.GetCurrentTime()
-			default:
-				clean["completed_at"] = gorm.Expr("NULL")
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var task database.ReceivingTask
+		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				*handledResp = responses.InternalResponse{Message: "Receiving task not found", Handled: true}
+				return nil
 			}
-			clean["status"] = sLower
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			return nil
 		}
-	}
 
-	if items, ok := clean["items"]; ok {
-		switch it := items.(type) {
-		case map[string]interface{}, []interface{}:
-			b, err := json.Marshal(it)
-			if err != nil {
-				return &responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+		protected := map[string]bool{
+			"id":         true,
+			"task_id":    true,
+			"created_at": true,
+		}
+
+		whitelist := map[string]bool{
+			"assigned_to":    true,
+			"priority":       true,
+			"status":         true,
+			"notes":          true,
+			"items":          true,
+			"inbound_number": true,
+			"updated_at":     true,
+			"completed_at":   true,
+		}
+
+		clean := make(map[string]interface{}, len(data)+2)
+		for k, v := range data {
+			key := strings.ToLower(k)
+			key = strings.ReplaceAll(key, "inboundnumber", "inbound_number")
+			key = strings.ReplaceAll(key, "assignedto", "assigned_to")
+			key = strings.ReplaceAll(key, "completedat", "completed_at")
+			key = strings.ReplaceAll(key, "updatedat", "updated_at")
+
+			if protected[key] {
+				continue
 			}
-			clean["items"] = b
+			if !whitelist[key] {
+				continue
+			}
+			clean[key] = v
 		}
-	}
 
-	if err := r.DB.Model(&task).Updates(clean).Error; err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+		clean["updated_at"] = tools.GetCurrentTime()
+
+		if raw, ok := clean["status"]; ok {
+			if s, ok := raw.(string); ok {
+				sLower := strings.ToLower(strings.TrimSpace(s))
+				switch sLower {
+				case "completed":
+					clean["completed_at"] = tools.GetCurrentTime()
+				default:
+					clean["completed_at"] = gorm.Expr("NULL")
+				}
+				clean["status"] = sLower
+			}
+		}
+
+		if items, ok := clean["items"]; ok {
+			switch it := items.(type) {
+			case map[string]interface{}, []interface{}:
+				b, err := json.Marshal(it)
+				if err != nil {
+					*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+					return nil
+				}
+				clean["items"] = b
+			}
+		}
+
+		if err := r.DB.Model(&task).Updates(clean).Error; err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+			return nil
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
 	}
 
 	return nil
