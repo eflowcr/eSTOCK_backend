@@ -44,3 +44,7 @@ func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses
 func (s *ReceivingTasksService) CompleteFullTask(id int, location string) *responses.InternalResponse {
 	return s.Repository.CompleteFullTask(id, location)
 }
+
+func (s *ReceivingTasksService) CompleteReceivingLine(id int, location string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
+	return s.Repository.CompleteReceivingLine(id, location, item)
+}
