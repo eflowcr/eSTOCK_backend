@@ -8,4 +8,6 @@ type ReceivingTaskItemRequest struct {
 	Location         string             `json:"location"`
 	LotNumbers       []CreateLotRequest `json:"lots,omitempty"`
 	SerialNumbers    []database.Serial  `json:"serials,omitempty"`
+	Status           *string            `json:"status,omitempty"`
+	ReceivedQuantity *int               `json:"received_qty,omitempty"`
 }

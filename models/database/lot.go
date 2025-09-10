@@ -10,6 +10,7 @@ type Lot struct {
 	ExpirationDate *time.Time `gorm:"column:expiration_date" json:"expiration_date"`
 	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	Status         *string    `gorm:"column:status;default:'pending'" json:"status,omitempty"`
 }
 
 func (Lot) TableName() string {

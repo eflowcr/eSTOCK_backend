@@ -24,5 +24,6 @@ func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.POST("/import", receivingTasksController.ImportReceivingTaskFromExcel)
 		route.GET("/export", receivingTasksController.ExportReceivingTaskToExcel)
 		route.PATCH("/complete-full-task/:id/:location", receivingTasksController.CompleteFullTask)
+		route.PATCH("/complete-receiving-line/:id/:location", receivingTasksController.CompleteReceivingLine)
 	}
 }
