@@ -70,6 +70,7 @@ func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.Recei
 
 func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	var items []requests.ReceivingTaskItemRequest
+
 	if err := json.Unmarshal(task.Items, &items); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
 	}
