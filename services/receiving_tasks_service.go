@@ -41,10 +41,10 @@ func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses
 	return s.Repository.ExportReceivingTaskToExcel()
 }
 
-func (s *ReceivingTasksService) CompleteFullTask(id int, location string) *responses.InternalResponse {
-	return s.Repository.CompleteFullTask(id, location)
+func (s *ReceivingTasksService) CompleteFullTask(id int, location, userId string) *responses.InternalResponse {
+	return s.Repository.CompleteFullTask(id, location, userId)
 }
 
-func (s *ReceivingTasksService) CompleteReceivingLine(id int, location string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
-	return s.Repository.CompleteReceivingLine(id, location, item)
+func (s *ReceivingTasksService) CompleteReceivingLine(id int, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
+	return s.Repository.CompleteReceivingLine(id, location, userId, item)
 }

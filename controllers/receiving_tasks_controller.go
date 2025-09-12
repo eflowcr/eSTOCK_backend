@@ -152,9 +152,11 @@ func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
 		return
 	}
 
-	location := ctx.Request.Header.Get("Location")
+	location := ctx.Param("location")
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
 
-	response := c.Service.CompleteFullTask(id, location)
+	response := c.Service.CompleteFullTask(id, location, userId)
 	if response != nil {
 		tools.Response(ctx, "CompleteFullTask", false, response.Message, "complete_full_task", nil, response.Handled, "")
 		return
@@ -173,13 +175,16 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 
 	location := ctx.Param("location")
 
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
 	var item requests.ReceivingTaskItemRequest
 	if err := ctx.ShouldBindJSON(&item); err != nil {
 		tools.Response(ctx, "CompleteReceivingLine", false, "Invalid request format", "complete_receiving_line", nil, true, "")
 		return
 	}
 
-	response := c.Service.CompleteReceivingLine(id, location, item)
+	response := c.Service.CompleteReceivingLine(id, location, userId, item)
 	if response != nil {
 		tools.Response(ctx, "CompleteReceivingLine", false, response.Message, "complete_receiving_line", nil, response.Handled, "")
 		return
