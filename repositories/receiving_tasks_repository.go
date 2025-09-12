@@ -753,7 +753,6 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location string
 
 			clean := map[string]interface{}{
 				"items":      updatedItems,
-				"status":     "open",
 				"updated_at": tools.GetCurrentTime(),
 			}
 
