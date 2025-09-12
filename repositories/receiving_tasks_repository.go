@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -110,7 +109,6 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 					return fmt.Errorf("SKU %s is lot-tracked: lots are required", sku)
 				}
 
-				var sumLots float64
 				seen := make(map[string]bool) // optional: avoid duplicates in the same payload
 				for _, ln := range items[idx].LotNumbers {
 					if ln.LotNumber == "" {
@@ -120,15 +118,10 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 						return fmt.Errorf("SKU %s: duplicated lot_number '%s' in payload", sku, ln.LotNumber)
 					}
 					seen[ln.LotNumber] = true
-					sumLots += ln.Quantity
-				}
-
-				if math.Abs(sumLots-expected) > 1e-9 {
-					// The sum of lot quantities must match expected quantity
-					return fmt.Errorf("The sum of lot quantities does not match expected_qty")
 				}
 
 				items[idx].Status = tools.StrPtr("open")
+
 				for i := 0; i < len(items[idx].LotNumbers); i++ {
 					items[idx].LotNumbers[i].Status = tools.StrPtr("open")
 				}

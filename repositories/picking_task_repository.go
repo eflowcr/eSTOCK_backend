@@ -487,3 +487,31 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 
 	return buf.Bytes(), nil
 }
+
+func (r *PickingTaskRepository) CompletePickingTask(id int, location string) *responses.InternalResponse {
+	handledResp := &responses.InternalResponse{}
+
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		// Get the task
+		var task database.PickingTask
+		if err := tx.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				*handledResp = responses.InternalResponse{Message: "Picking task not found", Handled: true}
+				return nil
+			}
+			return fmt.Errorf("retrieve picking task: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+	}
+
+	if handledResp.Error != nil || handledResp.Handled {
+		return handledResp
+	}
+
+	return nil
+}
