@@ -40,3 +40,7 @@ func (s *PickingTaskService) ImportPickingTaskFromExcel(userID string, fileBytes
 func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportPickingTasksToExcel()
 }
+
+func (s *PickingTaskService) CompletePickingTask(id int, location string) *responses.InternalResponse {
+	return s.Repository.CompletePickingTask(id, location)
+}
