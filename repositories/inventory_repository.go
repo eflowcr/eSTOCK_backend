@@ -129,22 +129,22 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			Count(&inventoryCount).Error
 
 		if err != nil {
-			return errors.New("Failed to check existing inventory")
+			return errors.New("failed to check existing inventory")
 		}
 
 		if inventoryCount > 0 {
-			return errors.New("Inventory with this SKU already exists in the specified location")
+			return errors.New("inventory with this SKU already exists in the specified location")
 		}
 
 		// 2 - Get article information
 		var article database.Article
 		err = r.DB.Where("sku = ?", item.SKU).First(&article).Error
 		if err != nil {
-			return errors.New("Failed to fetch article for inventory creation")
+			return errors.New("failed to fetch article for inventory creation")
 		}
 
 		if article.ID == 0 {
-			return errors.New("Article not found for the provided SKU")
+			return errors.New("article not found for the provided SKU")
 		}
 
 		var inventory database.Inventory
@@ -173,7 +173,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 		}
 
 		if err := r.DB.Create(&inventory).Error; err != nil {
-			return errors.New("Failed to create inventory")
+			return errors.New("failed to create inventory")
 		}
 
 		// 3 - Create lots if applicable
@@ -186,7 +186,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					Count(&lotCount).Error
 
 				if err != nil {
-					return errors.New("Failed to check existing lot")
+					return errors.New("failed to check existing lot")
 				}
 
 				if lotCount == 0 {
@@ -208,7 +208,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(lot).Error; err != nil {
-						return errors.New("Failed to create lot")
+						return errors.New("failed to create lot")
 					}
 
 					// Create inventory_lot association
@@ -220,7 +220,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(inventoryLot).Error; err != nil {
-						return errors.New("Failed to create inventory_lot association")
+						return errors.New("failed to create inventory_lot association")
 					}
 				}
 			}
@@ -236,7 +236,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					Count(&serialCount).Error
 
 				if err != nil {
-					return errors.New("Failed to check existing serial")
+					return errors.New("failed to check existing serial")
 				}
 
 				if serialCount == 0 {
@@ -250,7 +250,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(newSerial).Error; err != nil {
-						return errors.New("Failed to create serial")
+						return errors.New("failed to create serial")
 					}
 
 					// Create inventory_serial association
@@ -261,7 +261,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(inventorySerial).Error; err != nil {
-						return errors.New("Failed to create inventory_serial association")
+						return errors.New("failed to create inventory_serial association")
 					}
 				}
 			}
@@ -283,7 +283,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 		}
 
 		if err := r.DB.Create(inventoryMovement).Error; err != nil {
-			return errors.New("Failed to create inventory movement")
+			return errors.New("failed to create inventory movement")
 		}
 
 		return nil

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -65,26 +64,23 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	handledResp := &responses.InternalResponse{}
 
 	var items []requests.PickingTaskItemRequest
-
 	if err := json.Unmarshal(task.Items, &items); err != nil {
 		*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
-		return nil
+		return handledResp
 	}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
-
 		nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
 		taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
 
 		articleCache := make(map[string]database.Article)
 
-		for i := 0; i < len(items); i++ {
+		for i := range items {
+			// Asignar status inicial una sola vez
 			items[i].Status = tools.StrPtr("open")
-
 			sku := items[i].SKU
 
 			art, ok := articleCache[sku]
-
 			if !ok {
 				if err := tx.Where("sku = ?", sku).First(&art).Error; err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -95,57 +91,23 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 				articleCache[sku] = art
 			}
 
-			expected := float64(items[i].ExpectedQuantity)
-
 			if art.TrackByLot {
-				if len(items[i].LotNumbers) == 0 {
-					return fmt.Errorf("SKU %s is lot-tracked: lots are required", sku)
-				}
-
-				var sumLots float64
-				seen := make(map[string]bool) // optional: avoid duplicates in the same payload
-				for _, ln := range items[i].LotNumbers {
-					if ln.LotNumber == "" {
-						*handledResp = responses.InternalResponse{Error: fmt.Errorf("SKU %s: lot_number is required for lot-tracked items", sku),
-							Message: "Lot number is required for lot-tracked items",
-							Handled: true,
-						}
-
-						return nil
-					}
-					if seen[ln.LotNumber] {
-						*handledResp = responses.InternalResponse{Error: fmt.Errorf("SKU %s: duplicated lot_number '%s' in payload", sku, ln.LotNumber),
-							Message: "Duplicated lot numbers in payload",
-							Handled: true,
-						}
-
-						return nil
-					}
-
-					seen[ln.LotNumber] = true
-					sumLots += ln.Quantity
-				}
-
-				if math.Abs(sumLots-expected) > 1e-9 {
-					*handledResp = responses.InternalResponse{Error: fmt.Errorf("sum of lot quantities %.2f does not match expected quantity %.2f for SKU %s", sumLots, expected, sku),
-						Message: "Lot quantities do not match expected quantity",
-						Handled: true,
-					}
-
-					return nil
-				}
-
-				items[i].Status = tools.StrPtr("open")
-				for j := 0; j < len(items[i].LotNumbers); j++ {
+				for j := range items[i].LotNumbers {
 					items[i].LotNumbers[j].Status = tools.StrPtr("open")
+				}
+			}
+
+			if art.TrackBySerial { 
+				for j := range items[i].SerialNumbers {
+					// ⚠️ Esto depende del tipo de Status
+					items[i].SerialNumbers[j].Status = *tools.StrPtr("open")
 				}
 			}
 		}
 
 		itemsJSON, err := json.Marshal(items)
 		if err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to marshal items", Handled: true}
-			return nil
+			return fmt.Errorf("marshal items: %w", err)
 		}
 
 		priority := task.Priority
@@ -164,15 +126,8 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 			Items:       json.RawMessage(itemsJSON),
 		}
 
-		if err := r.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Create(&pickingTask).Error; err != nil {
-				return fmt.Errorf("create picking task: %w", err)
-			}
-			return nil
-		}); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to create picking task", Handled: true}
-
-			return nil
+		if err := tx.Create(&pickingTask).Error; err != nil {
+			return fmt.Errorf("create picking task: %w", err)
 		}
 		return nil
 	})
@@ -180,11 +135,9 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
 	}
-
 	if handledResp.Error != nil || handledResp.Handled {
 		return handledResp
 	}
-
 	return nil
 }
 
