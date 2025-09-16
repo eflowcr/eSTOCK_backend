@@ -154,7 +154,10 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 
 	location := ctx.Param("location")
 
-	response := c.Service.CompletePickingTask(id, location)
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	response := c.Service.CompletePickingTask(id, location, userId)
 	if response != nil {
 		tools.Response(ctx, "CompletePickingTask", false, response.Message, "complete_picking_task", nil, response.Handled, "")
 		return

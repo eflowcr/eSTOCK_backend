@@ -97,7 +97,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 				}
 			}
 
-			if art.TrackBySerial { 
+			if art.TrackBySerial {
 				for j := range items[i].SerialNumbers {
 					// ⚠️ Esto depende del tipo de Status
 					items[i].SerialNumbers[j].Status = *tools.StrPtr("open")
@@ -441,7 +441,7 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	return buf.Bytes(), nil
 }
 
-func (r *PickingTaskRepository) CompletePickingTask(id int, location string) *responses.InternalResponse {
+func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId string) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -453,6 +453,85 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location string) *re
 				return nil
 			}
 			return fmt.Errorf("retrieve picking task: %w", err)
+		}
+
+		var items []requests.PickingTaskItemRequest
+
+		if err := json.Unmarshal(task.Items, &items); err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			return nil
+		}
+
+		for i := 0; i < len(items); i++ {
+			sku := items[i].SKU
+
+			items[i].Status = tools.StrPtr("completed")
+			items[i].DeliveredQuantity = tools.IntToPtr(int(items[i].ExpectedQuantity))
+
+			var article database.Article
+
+			if err := tx.Where("sku = ?", sku).First(&article).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					continue
+				}
+				return fmt.Errorf("find article %s: %w", sku, err)
+			}
+
+			var intentory database.Inventory
+
+			// Check if there is enough stock in the specified location
+			if err := tx.Where("sku = ? AND location = ?", sku, location).First(&intentory).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return fmt.Errorf("not enough stock for SKU %s in location %s", sku, location)
+				}
+				return fmt.Errorf("find inventory %s in %s: %w", sku, location, err)
+			}
+
+			if intentory.Quantity < float64(items[i].ExpectedQuantity) {
+				return fmt.Errorf("not enough stock for SKU %s in location %s", sku, location)
+			}
+
+			// Deduct the stock
+			newQty := intentory.Quantity - float64(items[i].ExpectedQuantity)
+
+			if err := tx.Model(&database.Inventory{}).Where("id = ?", intentory.ID).
+				Update("quantity", newQty).Error; err != nil {
+				return fmt.Errorf("update inventory %s in %s: %w", sku, location, err)
+			}
+
+			// Create inventory movement record
+			movement := database.InventoryMovement{
+				SKU:            sku,
+				Location:       location,
+				MovementType:   "picking",
+				Quantity:       float64(items[i].ExpectedQuantity),
+				RemainingStock: newQty,
+				Reason:         tools.StrPtr(fmt.Sprintf("Picking Task %s", task.TaskID)),
+				CreatedBy:      task.CreatedBy,
+				CreatedAt:      tools.GetCurrentTime(),
+			}
+
+			if err := tx.Create(&movement).Error; err != nil {
+				return fmt.Errorf("create inventory movement for %s in %s: %w", sku, location, err)
+			}
+		}
+
+		updatedItems, err := json.Marshal(items)
+		if err != nil {
+			return fmt.Errorf("marshal updated items: %w", err)
+		}
+
+		task.Items = updatedItems
+
+		clean := map[string]interface{}{
+			"status":       "completed",
+			"items":        updatedItems,
+			"completed_at": tools.GetCurrentTime(),
+			"updated_at":   tools.GetCurrentTime(),
+		}
+
+		if err := tx.Model(&task).Updates(clean).Error; err != nil {
+			return fmt.Errorf("update picking task: %w", err)
 		}
 
 		return nil
