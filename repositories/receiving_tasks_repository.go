@@ -88,6 +88,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 
 		for idx := range items {
 			sku := items[idx].SKU
+			items[idx].Status = tools.StrPtr("open")
 
 			// Resolve article (cached)
 			art, ok := articleCache[sku]
@@ -101,27 +102,8 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 				articleCache[sku] = art
 			}
 
-			expected := float64(items[idx].ExpectedQuantity)
-
 			// If tracked by lot: sum of lots must equal expected
 			if art.TrackByLot {
-				if len(items[idx].LotNumbers) == 0 {
-					return fmt.Errorf("SKU %s is lot-tracked: lots are required", sku)
-				}
-
-				seen := make(map[string]bool) // optional: avoid duplicates in the same payload
-				for _, ln := range items[idx].LotNumbers {
-					if ln.LotNumber == "" {
-						return fmt.Errorf("SKU %s: lot_number is required for lot-tracked items", sku)
-					}
-					if seen[ln.LotNumber] {
-						return fmt.Errorf("SKU %s: duplicated lot_number '%s' in payload", sku, ln.LotNumber)
-					}
-					seen[ln.LotNumber] = true
-				}
-
-				items[idx].Status = tools.StrPtr("open")
-
 				for i := 0; i < len(items[idx].LotNumbers); i++ {
 					items[idx].LotNumbers[i].Status = tools.StrPtr("open")
 				}
@@ -129,12 +111,8 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 
 			// If tracked by serial: count of serials must equal expected
 			if art.TrackBySerial {
-				if len(items[idx].SerialNumbers) == 0 {
-					return fmt.Errorf("SKU %s is serial-tracked: serials[] are required", sku)
-				}
-				if float64(len(items[idx].SerialNumbers)) != expected {
-					return fmt.Errorf("SKU %s: len(serials)=%d does not match expected_qty=%.0f",
-						sku, len(items[idx].SerialNumbers), expected)
+				for i := 0; i < len(items[idx].SerialNumbers); i++ {
+					items[idx].SerialNumbers[i].Status = "open"
 				}
 			}
 		}
@@ -598,6 +576,55 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 				return fmt.Errorf("create inventory movement: %w", err)
 			}
 
+			if article.TrackBySerial && items[i].SerialNumbers != nil {
+				// Check if given serials count matches expected quantity
+				if len(items[i].SerialNumbers) != items[i].ExpectedQuantity {
+					// If not, then this task can't be completed fully
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial numbers count (%d) does not match expected quantity (%d) for SKU %s", len(items[i].SerialNumbers), items[i].ExpectedQuantity, sku), Handled: true}
+					return nil
+				}
+
+				for k := 0; k < len(items[i].SerialNumbers); k++ {
+					serial := items[i].SerialNumbers[k]
+
+					// Check if serial was created before
+					var serialItem database.Serial
+
+					if err := tx.Where("serial_number = ? AND sku = ?", serial.SerialNumber, items[i].SKU).First(&serialItem).Error; err != nil {
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							// Create new serial
+							serialItem = database.Serial{
+								SerialNumber: serial.SerialNumber,
+								SKU:          items[i].SKU,
+								CreatedAt:    tools.GetCurrentTime(),
+								UpdatedAt:    tools.GetCurrentTime(),
+								Status:       "available",
+							}
+							if err := tx.Create(&serialItem).Error; err != nil {
+								return errors.New("Failed to create serial")
+							}
+						}
+					}
+
+					inventorySerial := &database.InventorySerial{
+						InventoryID: inventory.ID,
+						SerialID:    serialItem.ID,
+						Location:    items[i].Location,
+					}
+
+					if err := tx.Create(inventorySerial).Error; err != nil {
+						return errors.New("Failed to create inventory_serial association")
+					}
+
+					// Mark serial as completed
+					items[i].SerialNumbers[k].Status = "completed"
+					items[i].SerialNumbers[k].ID = serialItem.ID
+				}
+
+				// Mark item as completed
+				items[i].Status = tools.StrPtr("completed")
+			}
+
 			// if article.TrackByLot && items[i].LotNumbers != nil {
 			// 	for j := 0; j < len(items[i].LotNumbers); j++ {
 			// 		lotNum := items[i].LotNumbers[j]
@@ -630,42 +657,6 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 			// 		// Set lotNum.Status to completed
 			// 		items[i].LotNumbers[j].Status = tools.StrPtr("completed")
 			// 		items[i].LotNumbers[j].ReceivedQuantity = &lotNum.Quantity
-			// 	}
-			// }
-
-			// if article.TrackBySerial && items[i].SerialNumbers != nil {
-			// 	for k := 0; k < len(items[i].SerialNumbers); k++ {
-			// 		serial := items[i].SerialNumbers[k]
-
-			// 		var serialCount int64
-			// 		err := tx.Model(&database.Serial{}).
-			// 			Where("serial_number = ? AND sku = ?", serial.SerialNumber, items[i].SKU).
-			// 			Count(&serialCount).Error
-			// 		if err != nil {
-			// 			return errors.New("Failed to check existing serial")
-			// 		}
-
-			// 		if serialCount == 0 {
-			// 			newSerial := &database.Serial{
-			// 				SerialNumber: serial.SerialNumber,
-			// 				SKU:          items[i].SKU,
-			// 				CreatedAt:    tools.GetCurrentTime(),
-			// 				UpdatedAt:    tools.GetCurrentTime(),
-			// 				Status:       "available",
-			// 			}
-			// 			if err := tx.Create(newSerial).Error; err != nil {
-			// 				return errors.New("Failed to create serial")
-			// 			}
-
-			// 			inventorySerial := &database.InventorySerial{
-			// 				InventoryID: inventory.ID,
-			// 				SerialID:    newSerial.ID,
-			// 				Location:    items[i].Location,
-			// 			}
-			// 			if err := tx.Create(inventorySerial).Error; err != nil {
-			// 				return errors.New("Failed to create inventory_serial association")
-			// 			}
-			// 		}
 			// 	}
 			// }
 		}
@@ -795,6 +786,15 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 				*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
 				return nil
 			}
+		} else {
+			// If given quantity meets or exceeds expected, mark item as completed
+			for i := 0; i < len(items); i++ {
+				if items[i].SKU == item.SKU {
+					items[i].Status = tools.StrPtr("completed")
+					items[i].ReceivedQuantity = tools.IntToPtr(int(qty))
+					break
+				}
+			}
 		}
 
 		var inventory database.Inventory
@@ -850,6 +850,95 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 
 		if err := tx.Create(mov).Error; err != nil {
 			return fmt.Errorf("create inventory movement: %w", err)
+		}
+
+		if article.TrackBySerial && item.SerialNumbers != nil {
+			for k := 0; k < len(item.SerialNumbers); k++ {
+				serial := item.SerialNumbers[k]
+
+				var serialItem database.Serial
+
+				if err := tx.Where("serial_number = ? AND sku = ?", serial.SerialNumber, item.SKU).First(&serialItem).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						// Create new serial
+						serialItem = database.Serial{
+							SerialNumber: serial.SerialNumber,
+							SKU:          item.SKU,
+							CreatedAt:    tools.GetCurrentTime(),
+							UpdatedAt:    tools.GetCurrentTime(),
+							Status:       "available",
+						}
+
+						if err := tx.Create(&serialItem).Error; err != nil {
+							return errors.New("Failed to create serial")
+						}
+
+						for i := 0; i < len(items); i++ {
+							if items[i].SKU == item.SKU {
+								items[i].SerialNumbers = append(items[i].SerialNumbers, database.Serial{
+									ID:           serialItem.ID,
+									SerialNumber: serial.SerialNumber,
+									SKU:          item.SKU,
+									Status:       "completed",
+									CreatedAt:    serialItem.CreatedAt,
+									UpdatedAt:    serialItem.UpdatedAt,
+								})
+								break
+							}
+						}
+					}
+				}
+
+				inventorySerial := &database.InventorySerial{
+					InventoryID: inventory.ID,
+					SerialID:    serialItem.ID,
+					Location:    item.Location,
+				}
+
+				if err := tx.Create(inventorySerial).Error; err != nil {
+					return errors.New("Failed to create inventory_serial association")
+				}
+
+				// Mark serial as completed in items
+				for i := 0; i < len(items); i++ {
+					if items[i].SKU == item.SKU {
+						for j := 0; j < len(items[i].SerialNumbers); j++ {
+							if items[i].SerialNumbers[j].SerialNumber == serial.SerialNumber {
+								items[i].SerialNumbers[j].Status = "completed"
+								items[i].SerialNumbers[j].ID = serialItem.ID
+								break
+							}
+						}
+						break
+					}
+				}
+			}
+
+			// If given serials count matches expected quantity, mark item as completed
+			if len(item.SerialNumbers) == foundItem.ExpectedQuantity {
+				item.Status = tools.StrPtr("completed")
+			} else {
+				item.Status = tools.StrPtr("partial")
+			}
+		}
+
+		// Update items
+		updatedItems, err := json.Marshal(items)
+		if err != nil {
+			return fmt.Errorf("marshal updated items: %w", err)
+		}
+
+		task.Items = updatedItems
+
+		// Update task fields
+		clean := map[string]interface{}{
+			"items":      updatedItems,
+			"updated_at": tools.GetCurrentTime(),
+		}
+
+		if err := tx.Model(&task).Updates(clean).Error; err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+			return nil
 		}
 
 		// if article.TrackByLot && item.LotNumbers != nil {
@@ -981,42 +1070,6 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 
 		// 		if err := tx.Create(inventoryLot).Error; err != nil {
 		// 			return errors.New("Failed to create inventory_lot association")
-		// 		}
-		// 	}
-		// }
-
-		// if article.TrackBySerial && item.SerialNumbers != nil {
-		// 	for k := 0; k < len(item.SerialNumbers); k++ {
-		// 		serial := item.SerialNumbers[k]
-
-		// 		var serialCount int64
-		// 		err := tx.Model(&database.Serial{}).
-		// 			Where("serial_number = ? AND sku = ?", serial.SerialNumber, item.SKU).
-		// 			Count(&serialCount).Error
-		// 		if err != nil {
-		// 			return errors.New("Failed to check existing serial")
-		// 		}
-
-		// 		if serialCount == 0 {
-		// 			newSerial := &database.Serial{
-		// 				SerialNumber: serial.SerialNumber,
-		// 				SKU:          item.SKU,
-		// 				CreatedAt:    tools.GetCurrentTime(),
-		// 				UpdatedAt:    tools.GetCurrentTime(),
-		// 				Status:       "available",
-		// 			}
-		// 			if err := tx.Create(newSerial).Error; err != nil {
-		// 				return errors.New("Failed to create serial")
-		// 			}
-
-		// 			inventorySerial := &database.InventorySerial{
-		// 				InventoryID: inventory.ID,
-		// 				SerialID:    newSerial.ID,
-		// 				Location:    item.Location,
-		// 			}
-		// 			if err := tx.Create(inventorySerial).Error; err != nil {
-		// 				return errors.New("Failed to create inventory_serial association")
-		// 			}
 		// 		}
 		// 	}
 		// }
