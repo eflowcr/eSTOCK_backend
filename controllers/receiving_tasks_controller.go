@@ -143,3 +143,52 @@ func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) 
 	ctx.Header("Content-Disposition", `attachment; filename="receiving_tasks.xlsx"`)
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
+
+func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "CompleteFullTask", false, "Invalid task ID", "complete_full_task", nil, false, "")
+		return
+	}
+
+	location := ctx.Param("location")
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	response := c.Service.CompleteFullTask(id, location, userId)
+	if response != nil {
+		tools.Response(ctx, "CompleteFullTask", false, response.Message, "complete_full_task", nil, response.Handled, "")
+		return
+	}
+
+	tools.Response(ctx, "CompleteFullTask", true, "Receiving task marked as complete successfully", "complete_full_task", nil, false, "")
+}
+
+func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "CompleteReceivingLine", false, "Invalid task ID", "complete_receiving_line", nil, false, "")
+		return
+	}
+
+	location := ctx.Param("location")
+
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	var item requests.ReceivingTaskItemRequest
+	if err := ctx.ShouldBindJSON(&item); err != nil {
+		tools.Response(ctx, "CompleteReceivingLine", false, "Invalid request format", "complete_receiving_line", nil, true, "")
+		return
+	}
+
+	response := c.Service.CompleteReceivingLine(id, location, userId, item)
+	if response != nil {
+		tools.Response(ctx, "CompleteReceivingLine", false, response.Message, "complete_receiving_line", nil, response.Handled, "")
+		return
+	}
+
+	tools.Response(ctx, "CompleteReceivingLine", true, "Receiving line marked as complete successfully", "complete_receiving_line", nil, false, "")
+}

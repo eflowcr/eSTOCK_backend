@@ -143,3 +143,22 @@ func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
 	ctx.Header("Content-Disposition", "attachment; filename=picking_tasks.xlsx")
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
+
+func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "CompletePickingTask", false, "Invalid task ID", "complete_picking_task", nil, false, "")
+		return
+	}
+
+	location := ctx.Param("location")
+
+	response := c.Service.CompletePickingTask(id, location)
+	if response != nil {
+		tools.Response(ctx, "CompletePickingTask", false, response.Message, "complete_picking_task", nil, response.Handled, "")
+		return
+	}
+
+	tools.Response(ctx, "CompletePickingTask", true, "Picking task completed successfully", "complete_picking_task", nil, false, "")
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -61,43 +62,127 @@ func (r *PickingTaskRepository) GetPickingTaskByID(id int) (*database.PickingTas
 }
 
 func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
-	var items []database.PickingTaskItem
+	handledResp := &responses.InternalResponse{}
+
+	var items []requests.PickingTaskItemRequest
 
 	if err := json.Unmarshal(task.Items, &items); err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+		*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+		return nil
 	}
 
-	nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
-	taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
 
-	itemsJSON, err := json.Marshal(items)
-	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to marshal items", Handled: true}
-	}
+		nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
+		taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
 
-	priority := task.Priority
-	if priority == "" {
-		priority = "normal"
-	}
+		articleCache := make(map[string]database.Article)
 
-	pickingTask := database.PickingTask{
-		TaskID:      taskID,
-		OrderNumber: task.OutboundNumber,
-		CreatedBy:   userId,
-		AssignedTo:  task.AssignedTo,
-		Status:      "open",
-		Priority:    priority,
-		Notes:       task.Notes,
-		Items:       json.RawMessage(itemsJSON),
-	}
+		for i := 0; i < len(items); i++ {
+			items[i].Status = tools.StrPtr("open")
 
-	if err := r.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&pickingTask).Error; err != nil {
-			return fmt.Errorf("create picking task: %w", err)
+			sku := items[i].SKU
+
+			art, ok := articleCache[sku]
+
+			if !ok {
+				if err := tx.Where("sku = ?", sku).First(&art).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return fmt.Errorf("article not found for SKU %s", sku)
+					}
+					return fmt.Errorf("find article %s: %w", sku, err)
+				}
+				articleCache[sku] = art
+			}
+
+			expected := float64(items[i].ExpectedQuantity)
+
+			if art.TrackByLot {
+				if len(items[i].LotNumbers) == 0 {
+					return fmt.Errorf("SKU %s is lot-tracked: lots are required", sku)
+				}
+
+				var sumLots float64
+				seen := make(map[string]bool) // optional: avoid duplicates in the same payload
+				for _, ln := range items[i].LotNumbers {
+					if ln.LotNumber == "" {
+						*handledResp = responses.InternalResponse{Error: fmt.Errorf("SKU %s: lot_number is required for lot-tracked items", sku),
+							Message: "Lot number is required for lot-tracked items",
+							Handled: true,
+						}
+
+						return nil
+					}
+					if seen[ln.LotNumber] {
+						*handledResp = responses.InternalResponse{Error: fmt.Errorf("SKU %s: duplicated lot_number '%s' in payload", sku, ln.LotNumber),
+							Message: "Duplicated lot numbers in payload",
+							Handled: true,
+						}
+
+						return nil
+					}
+
+					seen[ln.LotNumber] = true
+					sumLots += ln.Quantity
+				}
+
+				if math.Abs(sumLots-expected) > 1e-9 {
+					*handledResp = responses.InternalResponse{Error: fmt.Errorf("sum of lot quantities %.2f does not match expected quantity %.2f for SKU %s", sumLots, expected, sku),
+						Message: "Lot quantities do not match expected quantity",
+						Handled: true,
+					}
+
+					return nil
+				}
+
+				items[i].Status = tools.StrPtr("open")
+				for j := 0; j < len(items[i].LotNumbers); j++ {
+					items[i].LotNumbers[j].Status = tools.StrPtr("open")
+				}
+			}
+		}
+
+		itemsJSON, err := json.Marshal(items)
+		if err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to marshal items", Handled: true}
+			return nil
+		}
+
+		priority := task.Priority
+		if priority == "" {
+			priority = "normal"
+		}
+
+		pickingTask := database.PickingTask{
+			TaskID:      taskID,
+			OrderNumber: task.OutboundNumber,
+			CreatedBy:   userId,
+			AssignedTo:  task.AssignedTo,
+			Status:      "open",
+			Priority:    priority,
+			Notes:       task.Notes,
+			Items:       json.RawMessage(itemsJSON),
+		}
+
+		if err := r.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&pickingTask).Error; err != nil {
+				return fmt.Errorf("create picking task: %w", err)
+			}
+			return nil
+		}); err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to create picking task", Handled: true}
+
+			return nil
 		}
 		return nil
-	}); err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to create picking task", Handled: true}
+	})
+
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+	}
+
+	if handledResp.Error != nil || handledResp.Handled {
+		return handledResp
 	}
 
 	return nil
@@ -401,4 +486,32 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	}
 
 	return buf.Bytes(), nil
+}
+
+func (r *PickingTaskRepository) CompletePickingTask(id int, location string) *responses.InternalResponse {
+	handledResp := &responses.InternalResponse{}
+
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		// Get the task
+		var task database.PickingTask
+		if err := tx.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				*handledResp = responses.InternalResponse{Message: "Picking task not found", Handled: true}
+				return nil
+			}
+			return fmt.Errorf("retrieve picking task: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+	}
+
+	if handledResp.Error != nil || handledResp.Handled {
+		return handledResp
+	}
+
+	return nil
 }
