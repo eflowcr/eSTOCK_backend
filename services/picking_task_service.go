@@ -41,6 +41,6 @@ func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.Int
 	return s.Repository.ExportPickingTasksToExcel()
 }
 
-func (s *PickingTaskService) CompletePickingTask(id int, location string) *responses.InternalResponse {
-	return s.Repository.CompletePickingTask(id, location)
+func (s *PickingTaskService) CompletePickingTask(id int, location, userId string) *responses.InternalResponse {
+	return s.Repository.CompletePickingTask(id, location, userId)
 }
