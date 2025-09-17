@@ -24,5 +24,6 @@ func RegisterPickingTasksRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		route.POST("/import", pickingTasksController.ImportPickingTaskFromExcel)
 		route.GET("/export", pickingTasksController.ExportPickingTasksToExcel)
 		route.PATCH("/complete-full-task/:id/:location", pickingTasksController.CompletePickingTask)
+		route.PATCH("/complete-picking-line/:id/:location", pickingTasksController.CompletePickingLine)
 	}
 }

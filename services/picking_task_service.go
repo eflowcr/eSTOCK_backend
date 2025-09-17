@@ -44,3 +44,7 @@ func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.Int
 func (s *PickingTaskService) CompletePickingTask(id int, location, userId string) *responses.InternalResponse {
 	return s.Repository.CompletePickingTask(id, location, userId)
 }
+
+func (s *PickingTaskService) CompletePickingLine(id int, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+	return s.Repository.CompletePickingLine(id, location, userId, item)
+}
