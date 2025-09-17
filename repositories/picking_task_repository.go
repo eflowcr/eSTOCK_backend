@@ -747,6 +747,37 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 				serialItem.Status = "picked"
 				serialItem.UpdatedAt = tools.GetCurrentTime()
 
+				// Iterate over items for this SKU and then itereate over serials to check if already in task
+				alreadyInTask := false
+				for i := 0; i < len(items); i++ {
+					if items[i].SKU == item.SKU {
+						for j := 0; j < len(items[i].SerialNumbers); j++ {
+							if items[i].SerialNumbers[j].SerialNumber == serial.SerialNumber {
+								alreadyInTask = true
+								break
+							}
+						}
+						break
+					}
+				}
+
+				// If not, append it
+				if !alreadyInTask {
+					for i := 0; i < len(items); i++ {
+						if items[i].SKU == item.SKU {
+							items[i].SerialNumbers = append(items[i].SerialNumbers, database.Serial{
+								ID:           serialItem.ID,
+								SerialNumber: serial.SerialNumber,
+								SKU:          item.SKU,
+								Status:       "completed",
+								CreatedAt:    serialItem.CreatedAt,
+								UpdatedAt:    serialItem.UpdatedAt,
+							})
+							break
+						}
+					}
+				}
+
 				if err := tx.Save(&serialItem).Error; err != nil {
 					return fmt.Errorf("update serial %s for SKU %s: %w", serial.SerialNumber, item.SKU, err)
 				}
