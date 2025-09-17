@@ -554,6 +554,57 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 				// Mark item as completed
 				items[i].Status = tools.StrPtr("completed")
 			}
+
+			if article.TrackByLot && items[i].LotNumbers != nil {
+				// Check if given lots sum matches expected quantity
+				var totalLotQty float64
+
+				for _, lot := range items[i].LotNumbers {
+					totalLotQty += lot.Quantity
+				}
+
+				if int(totalLotQty) != items[i].ExpectedQuantity {
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot numbers total quantity (%.2f) does not match expected quantity (%d) for SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
+
+					return nil
+				}
+
+				for j := 0; j < len(items[i].LotNumbers); j++ {
+					lotNum := items[i].LotNumbers[j]
+
+					var lot database.Lot
+
+					// Check if lot exists for this SKU
+					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, sku).First(&lot).Error; err != nil {
+						if err == gorm.ErrRecordNotFound {
+							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot number %s for SKU %s not found in inventory", lotNum.LotNumber, sku), Handled: true}
+							return nil
+						}
+						return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
+					}
+
+					// Check if lot has enough quantity
+					if lot.Quantity < lotNum.Quantity {
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough quantity in lot number %s for SKU %s (available: %.2f, required: %.2f)", lotNum.LotNumber, sku, lot.Quantity, lotNum.Quantity), Handled: true}
+						return nil
+					}
+
+					// Deduct lot quantity
+					lot.Quantity -= lotNum.Quantity
+					lot.UpdatedAt = tools.GetCurrentTime()
+
+					if err := tx.Save(&lot).Error; err != nil {
+						return fmt.Errorf("update lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
+					}
+
+					// Mark lot as completed in the task and deliverd quantity
+					items[i].LotNumbers[j].Status = tools.StrPtr("completed")
+					items[i].LotNumbers[j].ReceivedQuantity = &lotNum.Quantity
+				}
+
+				// Mark item as completed
+				items[i].Status = tools.StrPtr("completed")
+			}
 		}
 
 		updatedItems, err := json.Marshal(items)
