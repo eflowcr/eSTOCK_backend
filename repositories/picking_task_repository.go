@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -65,26 +64,23 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	handledResp := &responses.InternalResponse{}
 
 	var items []requests.PickingTaskItemRequest
-
 	if err := json.Unmarshal(task.Items, &items); err != nil {
 		*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
-		return nil
+		return handledResp
 	}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
-
 		nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
 		taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
 
 		articleCache := make(map[string]database.Article)
 
-		for i := 0; i < len(items); i++ {
+		for i := range items {
+			// Asignar status inicial una sola vez
 			items[i].Status = tools.StrPtr("open")
-
 			sku := items[i].SKU
 
 			art, ok := articleCache[sku]
-
 			if !ok {
 				if err := tx.Where("sku = ?", sku).First(&art).Error; err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -95,57 +91,23 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 				articleCache[sku] = art
 			}
 
-			expected := float64(items[i].ExpectedQuantity)
-
 			if art.TrackByLot {
-				if len(items[i].LotNumbers) == 0 {
-					return fmt.Errorf("SKU %s is lot-tracked: lots are required", sku)
-				}
-
-				var sumLots float64
-				seen := make(map[string]bool) // optional: avoid duplicates in the same payload
-				for _, ln := range items[i].LotNumbers {
-					if ln.LotNumber == "" {
-						*handledResp = responses.InternalResponse{Error: fmt.Errorf("SKU %s: lot_number is required for lot-tracked items", sku),
-							Message: "Lot number is required for lot-tracked items",
-							Handled: true,
-						}
-
-						return nil
-					}
-					if seen[ln.LotNumber] {
-						*handledResp = responses.InternalResponse{Error: fmt.Errorf("SKU %s: duplicated lot_number '%s' in payload", sku, ln.LotNumber),
-							Message: "Duplicated lot numbers in payload",
-							Handled: true,
-						}
-
-						return nil
-					}
-
-					seen[ln.LotNumber] = true
-					sumLots += ln.Quantity
-				}
-
-				if math.Abs(sumLots-expected) > 1e-9 {
-					*handledResp = responses.InternalResponse{Error: fmt.Errorf("sum of lot quantities %.2f does not match expected quantity %.2f for SKU %s", sumLots, expected, sku),
-						Message: "Lot quantities do not match expected quantity",
-						Handled: true,
-					}
-
-					return nil
-				}
-
-				items[i].Status = tools.StrPtr("open")
-				for j := 0; j < len(items[i].LotNumbers); j++ {
+				for j := range items[i].LotNumbers {
 					items[i].LotNumbers[j].Status = tools.StrPtr("open")
+				}
+			}
+
+			if art.TrackBySerial {
+				for j := range items[i].SerialNumbers {
+					// ⚠️ Esto depende del tipo de Status
+					items[i].SerialNumbers[j].Status = *tools.StrPtr("open")
 				}
 			}
 		}
 
 		itemsJSON, err := json.Marshal(items)
 		if err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to marshal items", Handled: true}
-			return nil
+			return fmt.Errorf("marshal items: %w", err)
 		}
 
 		priority := task.Priority
@@ -164,15 +126,8 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 			Items:       json.RawMessage(itemsJSON),
 		}
 
-		if err := r.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Create(&pickingTask).Error; err != nil {
-				return fmt.Errorf("create picking task: %w", err)
-			}
-			return nil
-		}); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to create picking task", Handled: true}
-
-			return nil
+		if err := tx.Create(&pickingTask).Error; err != nil {
+			return fmt.Errorf("create picking task: %w", err)
 		}
 		return nil
 	})
@@ -180,11 +135,9 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
 	}
-
 	if handledResp.Error != nil || handledResp.Handled {
 		return handledResp
 	}
-
 	return nil
 }
 
@@ -488,7 +441,7 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	return buf.Bytes(), nil
 }
 
-func (r *PickingTaskRepository) CompletePickingTask(id int, location string) *responses.InternalResponse {
+func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId string) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -500,6 +453,509 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location string) *re
 				return nil
 			}
 			return fmt.Errorf("retrieve picking task: %w", err)
+		}
+
+		var items []requests.PickingTaskItemRequest
+
+		if err := json.Unmarshal(task.Items, &items); err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			return nil
+		}
+
+		for i := 0; i < len(items); i++ {
+			sku := items[i].SKU
+
+			items[i].Status = tools.StrPtr("completed")
+			items[i].DeliveredQuantity = tools.IntToPtr(int(items[i].ExpectedQuantity))
+
+			var article database.Article
+
+			if err := tx.Where("sku = ?", sku).First(&article).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					continue
+				}
+				return fmt.Errorf("find article %s: %w", sku, err)
+			}
+
+			var inventory database.Inventory
+
+			// Check if there is enough stock in the specified location
+			if err := tx.Where("sku = ? AND location = ?", sku, location).First(&inventory).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return fmt.Errorf("not enough stock for SKU %s in location %s", sku, location)
+				}
+				return fmt.Errorf("find inventory %s in %s: %w", sku, location, err)
+			}
+
+			if inventory.Quantity < float64(items[i].ExpectedQuantity) {
+				return fmt.Errorf("not enough stock for SKU %s in location %s", sku, location)
+			}
+
+			// Deduct the stock
+			newQty := inventory.Quantity - float64(items[i].ExpectedQuantity)
+
+			if err := tx.Model(&database.Inventory{}).Where("id = ?", inventory.ID).
+				Update("quantity", newQty).Error; err != nil {
+				return fmt.Errorf("update inventory %s in %s: %w", sku, location, err)
+			}
+
+			// Create inventory movement record
+			movement := database.InventoryMovement{
+				SKU:            sku,
+				Location:       location,
+				MovementType:   "picking",
+				Quantity:       float64(items[i].ExpectedQuantity),
+				RemainingStock: newQty,
+				Reason:         tools.StrPtr(fmt.Sprintf("Picking Task %s", task.TaskID)),
+				CreatedBy:      task.CreatedBy,
+				CreatedAt:      tools.GetCurrentTime(),
+			}
+
+			if err := tx.Create(&movement).Error; err != nil {
+				return fmt.Errorf("create inventory movement for %s in %s: %w", sku, location, err)
+			}
+
+			if article.TrackBySerial && items[i].SerialNumbers != nil {
+				// Check if given serials count matches expected quantity
+				if len(items[i].SerialNumbers) != items[i].ExpectedQuantity {
+					// If not, then this task can't be completed fully
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial numbers count (%d) does not match expected quantity (%d) for SKU %s", len(items[i].SerialNumbers), items[i].ExpectedQuantity, sku), Handled: true}
+					return nil
+				}
+
+				for k := 0; k < len(items[i].SerialNumbers); k++ {
+					serial := items[i].SerialNumbers[k]
+
+					// Check if serial was created before
+					var serialItem database.Serial
+
+					// Check if serial exists and is in stock and its available
+					if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, sku).First(&serialItem).Error; err != nil {
+						if err == gorm.ErrRecordNotFound {
+							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial number %s for SKU %s not found in inventory", serial.SerialNumber, sku), Handled: true}
+							return nil
+						}
+						return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
+					}
+
+					// Mark serial as picked
+					serialItem.Status = "picked"
+					serialItem.UpdatedAt = tools.GetCurrentTime()
+
+					if err := tx.Save(&serialItem).Error; err != nil {
+						return fmt.Errorf("update serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
+					}
+
+					// Mark serial as completed in the task
+					items[i].SerialNumbers[k].Status = "completed"
+					items[i].SerialNumbers[k].ID = serialItem.ID
+				}
+
+				// Mark item as completed
+				items[i].Status = tools.StrPtr("completed")
+			}
+
+			if article.TrackByLot && items[i].LotNumbers != nil {
+				// Check if given lots sum matches expected quantity
+				var totalLotQty float64
+
+				for _, lot := range items[i].LotNumbers {
+					totalLotQty += lot.Quantity
+				}
+
+				if int(totalLotQty) != items[i].ExpectedQuantity {
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot numbers total quantity (%.2f) does not match expected quantity (%d) for SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
+
+					return nil
+				}
+
+				for j := 0; j < len(items[i].LotNumbers); j++ {
+					lotNum := items[i].LotNumbers[j]
+
+					var lot database.Lot
+
+					// Check if lot exists for this SKU
+					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, sku).First(&lot).Error; err != nil {
+						if err == gorm.ErrRecordNotFound {
+							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot number %s for SKU %s not found in inventory", lotNum.LotNumber, sku), Handled: true}
+							return nil
+						}
+						return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
+					}
+
+					// Check if lot has enough quantity
+					if lot.Quantity < lotNum.Quantity {
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough quantity in lot number %s for SKU %s (available: %.2f, required: %.2f)", lotNum.LotNumber, sku, lot.Quantity, lotNum.Quantity), Handled: true}
+						return nil
+					}
+
+					// Deduct lot quantity
+					lot.Quantity -= lotNum.Quantity
+					lot.UpdatedAt = tools.GetCurrentTime()
+
+					if err := tx.Save(&lot).Error; err != nil {
+						return fmt.Errorf("update lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
+					}
+
+					// Mark lot as completed in the task and deliverd quantity
+					items[i].LotNumbers[j].Status = tools.StrPtr("completed")
+					items[i].LotNumbers[j].ReceivedQuantity = &lotNum.Quantity
+				}
+
+				// Mark item as completed
+				items[i].Status = tools.StrPtr("completed")
+			}
+		}
+
+		updatedItems, err := json.Marshal(items)
+		if err != nil {
+			return fmt.Errorf("marshal updated items: %w", err)
+		}
+
+		task.Items = updatedItems
+
+		clean := map[string]interface{}{
+			"status":       "completed",
+			"items":        updatedItems,
+			"completed_at": tools.GetCurrentTime(),
+			"updated_at":   tools.GetCurrentTime(),
+		}
+
+		if err := tx.Model(&task).Updates(clean).Error; err != nil {
+			return fmt.Errorf("update picking task: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+	}
+
+	if handledResp.Error != nil || handledResp.Handled {
+		return handledResp
+	}
+
+	return nil
+}
+
+func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+	handledResp := &responses.InternalResponse{}
+
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var task database.PickingTask
+
+		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				*handledResp = responses.InternalResponse{Message: "Picking task not found", Handled: true}
+				return nil
+			}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			return nil
+		}
+
+		var items []requests.PickingTaskItemRequest
+		var foundItem *requests.PickingTaskItemRequest
+
+		if err := json.Unmarshal(task.Items, &items); err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			return nil
+		}
+
+		found := false
+
+		for i := 0; i < len(items); i++ {
+			if items[i].SKU == item.SKU && items[i].Location == item.Location {
+				foundItem = &items[i]
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			*handledResp = responses.InternalResponse{Message: "Item not found in picking task", Handled: true}
+			return nil
+		}
+
+		var article database.Article
+
+		if err := tx.Where("sku = ?", foundItem.SKU).First(&article).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				*handledResp = responses.InternalResponse{Message: "Article not found for SKU " + foundItem.SKU, Handled: true}
+				return nil
+			}
+			return fmt.Errorf("find article %s: %w", foundItem.SKU, err)
+		}
+
+		if foundItem.Status != nil && *foundItem.Status == "completed" {
+			*handledResp = responses.InternalResponse{Message: "Item already completed", Handled: true}
+			return nil
+		}
+
+		var qty float64
+		if article.TrackByLot && item.LotNumbers != nil {
+			for _, lot := range item.LotNumbers {
+				qty += lot.Quantity
+			}
+		} else if article.TrackBySerial && item.SerialNumbers != nil {
+			qty = float64(len(item.SerialNumbers))
+		} else {
+			qty = tools.IntToFloat64(item.ExpectedQuantity)
+		}
+
+		if qty <= 0 || qty < float64(foundItem.ExpectedQuantity) {
+			// Update items status to partial for this SKU
+			for i := 0; i < len(items); i++ {
+				if items[i].SKU == item.SKU {
+					items[i].Status = tools.StrPtr("partial")
+					items[i].DeliveredQuantity = tools.IntToPtr(int(qty))
+					break
+				}
+			}
+
+			updatedItems, err := json.Marshal(items)
+			if err != nil {
+				return fmt.Errorf("marshal updated items: %w", err)
+			}
+
+			task.Items = updatedItems
+
+			clean := map[string]interface{}{
+				"items":      updatedItems,
+				"updated_at": tools.GetCurrentTime(),
+			}
+
+			if err := tx.Model(&task).Updates(clean).Error; err != nil {
+				*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update picking task"}
+				return nil
+			}
+		} else {
+			// If given quantity meets or exceeds expected, mark item as completed
+			for i := 0; i < len(items); i++ {
+				if items[i].SKU == item.SKU {
+					items[i].Status = tools.StrPtr("completed")
+					items[i].DeliveredQuantity = tools.IntToPtr(int(qty))
+					break
+				}
+			}
+		}
+
+		var inventory database.Inventory
+
+		// Check if there is enough stock in the specified location
+		if err := tx.Where("sku = ? AND location = ?", item.SKU, location).First(&inventory).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return fmt.Errorf("not enough stock for SKU %s in location %s", item.SKU, location)
+			}
+			return fmt.Errorf("find inventory %s in %s: %w", item.SKU, location, err)
+		}
+
+		if inventory.Quantity < qty {
+			*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough stock for SKU %s in location %s", item.SKU, location), Handled: true}
+
+			return nil
+		}
+
+		// Deduct the stock
+		newQty := inventory.Quantity - qty
+
+		if err := tx.Model(&database.Inventory{}).Where("id = ?", inventory.ID).
+			Update("quantity", newQty).Error; err != nil {
+			return fmt.Errorf("update inventory %s in %s: %w", item.SKU, location, err)
+		}
+
+		// Create inventory movement record
+		movement := database.InventoryMovement{
+			SKU:            item.SKU,
+			Location:       location,
+			MovementType:   "picking",
+			Quantity:       qty,
+			RemainingStock: newQty,
+			Reason:         tools.StrPtr(fmt.Sprintf("Picking Task %s", task.TaskID)),
+			CreatedBy:      task.CreatedBy,
+			CreatedAt:      tools.GetCurrentTime(),
+		}
+
+		if err := tx.Create(&movement).Error; err != nil {
+			return fmt.Errorf("create inventory movement for %s in %s: %w", item.SKU, location, err)
+		}
+
+		if article.TrackBySerial && item.SerialNumbers != nil {
+			for k := 0; k < len(item.SerialNumbers); k++ {
+				serial := item.SerialNumbers[k]
+
+				// Check if serial is in stock and available
+				var serialItem database.Serial
+				if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, item.SKU).First(&serialItem).Error; err != nil {
+					if err == gorm.ErrRecordNotFound {
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial number %s for SKU %s not found in inventory", serial.SerialNumber, item.SKU), Handled: true}
+						return nil
+					}
+					return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, item.SKU, err)
+				}
+
+				// Mark serial as picked
+				serialItem.Status = "picked"
+				serialItem.UpdatedAt = tools.GetCurrentTime()
+
+				// Iterate over items for this SKU and then itereate over serials to check if already in task
+				alreadyInTask := false
+				for i := 0; i < len(items); i++ {
+					if items[i].SKU == item.SKU {
+						for j := 0; j < len(items[i].SerialNumbers); j++ {
+							if items[i].SerialNumbers[j].SerialNumber == serial.SerialNumber {
+								alreadyInTask = true
+								break
+							}
+						}
+						break
+					}
+				}
+
+				// If not, append it
+				if !alreadyInTask {
+					for i := 0; i < len(items); i++ {
+						if items[i].SKU == item.SKU {
+							items[i].SerialNumbers = append(items[i].SerialNumbers, database.Serial{
+								ID:           serialItem.ID,
+								SerialNumber: serial.SerialNumber,
+								SKU:          item.SKU,
+								Status:       "completed",
+								CreatedAt:    serialItem.CreatedAt,
+								UpdatedAt:    serialItem.UpdatedAt,
+							})
+							break
+						}
+					}
+				}
+
+				if err := tx.Save(&serialItem).Error; err != nil {
+					return fmt.Errorf("update serial %s for SKU %s: %w", serial.SerialNumber, item.SKU, err)
+				}
+
+				// Mark items serial as completed
+				for i := 0; i < len(items); i++ {
+					if items[i].SKU == item.SKU {
+						for j := 0; j < len(items[i].SerialNumbers); j++ {
+							if items[i].SerialNumbers[j].SerialNumber == serial.SerialNumber {
+								items[i].SerialNumbers[j].Status = "completed"
+								items[i].SerialNumbers[j].ID = serialItem.ID
+								break
+							}
+						}
+						break
+					}
+				}
+			}
+
+			if len(item.SerialNumbers) == foundItem.ExpectedQuantity {
+				item.Status = tools.StrPtr("completed")
+			} else {
+				item.Status = tools.StrPtr("partial")
+			}
+		}
+
+		if article.TrackByLot && item.LotNumbers != nil {
+			for j := 0; j < len(item.LotNumbers); j++ {
+				lotNum := item.LotNumbers[j]
+
+				var lot database.Lot
+
+				// Check if lot exists for this SKU
+				if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
+					if err == gorm.ErrRecordNotFound {
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot number %s for SKU %s not found in inventory", lotNum.LotNumber, item.SKU), Handled: true}
+						return nil
+					}
+					return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
+				}
+
+				// Check if lot has enough quantity
+				if lot.Quantity < lotNum.Quantity {
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough quantity in lot number %s for SKU %s (available: %.2f, required: %.2f)", lotNum.LotNumber, item.SKU, lot.Quantity, lotNum.Quantity), Handled: true}
+					return nil
+				}
+
+				// Deduct lot quantity
+				lot.Quantity -= lotNum.Quantity
+				lot.UpdatedAt = tools.GetCurrentTime()
+
+				if err := tx.Save(&lot).Error; err != nil {
+					return fmt.Errorf("update lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
+				}
+
+				if lot.Quantity != item.LotNumbers[j].Quantity {
+					for i := 0; i < len(items); i++ {
+						if items[i].SKU == item.SKU {
+							for k := 0; k < len(items[i].LotNumbers); k++ {
+								if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
+									items[i].LotNumbers[k].Status = tools.StrPtr("partial")
+									items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
+									break
+								}
+							}
+							items[i].Status = tools.StrPtr("partial")
+							break
+						}
+					}
+				}
+
+				// Mark lot as completed in the task and deliverd quantity
+				for i := 0; i < len(items); i++ {
+					if items[i].SKU == item.SKU {
+						alreadyInTask := false
+						for k := 0; k < len(items[i].LotNumbers); k++ {
+							if items[i].LotNumbers[k].LotNumber == lotNum.LotNumber {
+								items[i].LotNumbers[k].Status = tools.StrPtr("completed")
+								items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
+								alreadyInTask = true
+								break
+							}
+						}
+
+						if !alreadyInTask {
+							items[i].LotNumbers = append(items[i].LotNumbers, requests.CreateLotRequest{
+								LotNumber:        lotNum.LotNumber,
+								SKU:              item.SKU,
+								Quantity:         lotNum.Quantity,
+								ReceivedQuantity: &lotNum.Quantity,
+								Status:           tools.StrPtr("completed"),
+							})
+						}
+
+						break
+					}
+				}
+			}
+
+			// If total lot quantity meets expected, mark item as completed
+			for i := 0; i < len(items); i++ {
+				if items[i].SKU == item.SKU {
+					if qty >= float64(foundItem.ExpectedQuantity) {
+						items[i].Status = tools.StrPtr("completed")
+					} else {
+						items[i].Status = tools.StrPtr("partial")
+					}
+					break
+				}
+			}
+		}
+
+		updatedItems, err := json.Marshal(items)
+		if err != nil {
+			return fmt.Errorf("marshal updated items: %w", err)
+		}
+
+		task.Items = updatedItems
+
+		clean := map[string]interface{}{
+			"items":        updatedItems,
+			"completed_at": tools.GetCurrentTime(),
+			"updated_at":   tools.GetCurrentTime(),
+		}
+
+		if err := tx.Model(&task).Updates(clean).Error; err != nil {
+			return fmt.Errorf("update picking task: %w", err)
 		}
 
 		return nil

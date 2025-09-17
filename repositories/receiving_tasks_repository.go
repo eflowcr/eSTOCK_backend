@@ -549,7 +549,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 				inventory.UpdatedAt = time.Now()
 
 				if err := tx.Create(&inventory).Error; err != nil {
-					return errors.New("Failed to create inventory")
+					return errors.New("failed to create inventory")
 				}
 			} else {
 				if err := tx.First(&inventory, "sku = ? AND location = ?", sku, location).Error; err != nil {
@@ -561,7 +561,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 				inventory.UpdatedAt = time.Now()
 
 				if err := tx.Save(&inventory).Error; err != nil {
-					return errors.New("Failed to update inventory")
+					return errors.New("failed to update inventory")
 				}
 			}
 
@@ -606,7 +606,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 								Status:       "available",
 							}
 							if err := tx.Create(&serialItem).Error; err != nil {
-								return errors.New("Failed to create serial")
+								return errors.New("failed to create serial")
 							}
 						}
 					}
@@ -618,7 +618,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 					}
 
 					if err := tx.Create(inventorySerial).Error; err != nil {
-						return errors.New("Failed to create inventory_serial association")
+						return errors.New("failed to create inventory_serial association")
 					}
 
 					// Mark serial as completed
@@ -650,7 +650,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 					var lot database.Lot
 
 					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, items[i].SKU).First(&lot).Error; err != nil {
-						return errors.New("Failed to retrieve existing lot")
+						return errors.New("failed to retrieve existing lot")
 					}
 
 					// Update lot status to available
@@ -658,7 +658,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 					lot.UpdatedAt = tools.GetCurrentTime()
 
 					if err := tx.Save(&lot).Error; err != nil {
-						return errors.New("Failed to update lot status")
+						return errors.New("failed to update lot status")
 					}
 
 					inventoryLot := &database.InventoryLot{
@@ -669,7 +669,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 					}
 
 					if err := tx.Create(inventoryLot).Error; err != nil {
-						return errors.New("Failed to create inventory_lot association")
+						return errors.New("failed to create inventory_lot association")
 					}
 
 					// Set lotNum.Status to completed
@@ -838,7 +838,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 			inventory.UpdatedAt = time.Now()
 
 			if err := tx.Create(&inventory).Error; err != nil {
-				return errors.New("Failed to create inventory")
+				return errors.New("failed to create inventory")
 			}
 		} else {
 			if err := tx.Where("sku = ? AND location = ?", item.SKU, location).First(&inventory).Error; err != nil {
@@ -850,7 +850,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 			inventory.UpdatedAt = time.Now()
 
 			if err := tx.Save(&inventory).Error; err != nil {
-				return errors.New("Failed to update inventory")
+				return errors.New("failed to update inventory")
 			}
 		}
 
@@ -888,7 +888,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 						}
 
 						if err := tx.Create(&serialItem).Error; err != nil {
-							return errors.New("Failed to create serial")
+							return errors.New("failed to create serial")
 						}
 
 						for i := 0; i < len(items); i++ {
@@ -914,7 +914,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 				}
 
 				if err := tx.Create(inventorySerial).Error; err != nil {
-					return errors.New("Failed to create inventory_serial association")
+					return errors.New("failed to create inventory_serial association")
 				}
 
 				// Mark serial as completed in items
@@ -949,7 +949,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 					Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).
 					Count(&lotCount).Error
 				if err != nil {
-					return errors.New("Failed to check existing lot")
+					return errors.New("failed to check existing lot")
 				}
 
 				lotId := 0
@@ -972,7 +972,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 					}
 
 					if err := tx.Create(lot).Error; err != nil {
-						return errors.New("Failed to create lot")
+						return errors.New("failed to create lot")
 					}
 
 					lotId = lot.ID
@@ -994,7 +994,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 				} else {
 					var lot database.Lot
 					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
-						return errors.New("Failed to retrieve existing lot")
+						return errors.New("failed to retrieve existing lot")
 					}
 
 					if lot.Quantity != item.LotNumbers[j].Quantity {
@@ -1068,7 +1068,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 						lot.UpdatedAt = tools.GetCurrentTime()
 
 						if err := tx.Save(&lot).Error; err != nil {
-							return errors.New("Failed to update lot status")
+							return errors.New("failed to update lot status")
 						}
 					}
 
@@ -1083,7 +1083,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 				}
 
 				if err := tx.Create(inventoryLot).Error; err != nil {
-					return errors.New("Failed to create inventory_lot association")
+					return errors.New("failed to create inventory_lot association")
 				}
 			}
 
