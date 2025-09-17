@@ -165,3 +165,31 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 
 	tools.Response(ctx, "CompletePickingTask", true, "Picking task completed successfully", "complete_picking_task", nil, false, "")
 }
+
+func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil || id <= 0 {
+		tools.Response(ctx, "CompletePickingLine", false, "Invalid task ID", "complete_picking_line", nil, false, "")
+		return
+	}
+
+	location := ctx.Param("location")
+
+	var item requests.PickingTaskItemRequest
+	if err := ctx.ShouldBindJSON(&item); err != nil {
+		tools.Response(ctx, "CompletePickingLine", false, "Invalid request data", "complete_picking_line", nil, false, "")
+		return
+	}
+
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(token)
+
+	response := c.Service.CompletePickingLine(id, location, userId, item)
+	if response != nil {
+		tools.Response(ctx, "CompletePickingLine", false, response.Message, "complete_picking_line", nil, response.Handled, "")
+		return
+	}
+
+	tools.Response(ctx, "CompletePickingLine", true, "Picking line completed successfully", "complete_picking_line", nil, false, "")
+}
