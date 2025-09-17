@@ -514,6 +514,46 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 			if err := tx.Create(&movement).Error; err != nil {
 				return fmt.Errorf("create inventory movement for %s in %s: %w", sku, location, err)
 			}
+
+			if article.TrackBySerial && items[i].SerialNumbers != nil {
+				// Check if given serials count matches expected quantity
+				if len(items[i].SerialNumbers) != items[i].ExpectedQuantity {
+					// If not, then this task can't be completed fully
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial numbers count (%d) does not match expected quantity (%d) for SKU %s", len(items[i].SerialNumbers), items[i].ExpectedQuantity, sku), Handled: true}
+					return nil
+				}
+
+				for k := 0; k < len(items[i].SerialNumbers); k++ {
+					serial := items[i].SerialNumbers[k]
+
+					// Check if serial was created before
+					var serialItem database.Serial
+
+					// Check if serial exists and is in stock and its available
+					if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, sku).First(&serialItem).Error; err != nil {
+						if err == gorm.ErrRecordNotFound {
+							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial number %s for SKU %s not found in inventory", serial.SerialNumber, sku), Handled: true}
+							return nil
+						}
+						return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
+					}
+
+					// Mark serial as picked
+					serialItem.Status = "picked"
+					serialItem.UpdatedAt = tools.GetCurrentTime()
+
+					if err := tx.Save(&serialItem).Error; err != nil {
+						return fmt.Errorf("update serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
+					}
+
+					// Mark serial as completed in the task
+					items[i].SerialNumbers[k].Status = "completed"
+					items[i].SerialNumbers[k].ID = serialItem.ID
+				}
+
+				// Mark item as completed
+				items[i].Status = tools.StrPtr("completed")
+			}
 		}
 
 		updatedItems, err := json.Marshal(items)
