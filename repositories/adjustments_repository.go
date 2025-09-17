@@ -188,10 +188,10 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return errors.New("Inventory not found for this adjustment")
+				return errors.New("inventory not found for this adjustment")
 			}
 
-			return errors.New("Failed to fetch inventory details")
+			return errors.New("failed to fetch inventory details")
 		}
 
 		adjustmentQuantity := adjustment.AdjustmentQuantity
@@ -199,7 +199,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 		newQuantity := currentQuantity + adjustmentQuantity
 
 		if newQuantity < 0 {
-			return errors.New("Adjustment quantity results in negative inventory")
+			return errors.New("adjustment quantity results in negative inventory")
 		}
 
 		// Create the adjustment record
@@ -219,7 +219,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Create(&newAdjustment).Error
 
 		if err != nil {
-			return errors.New("Failed to create adjustment")
+			return errors.New("failed to create adjustment")
 		}
 
 		// Update inventory
@@ -229,7 +229,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Save(&inventory).Error
 
 		if err != nil {
-			return errors.New("Failed to update inventory")
+			return errors.New("failed to update inventory")
 		}
 
 		// Handle lots and serials
@@ -244,9 +244,9 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 			if err != nil {
 				if err == gorm.ErrRecordNotFound {
-					return errors.New("Article not found for this adjustment")
+					return errors.New("article not found for this adjustment")
 				}
-				return errors.New("Failed to fetch article details")
+				return errors.New("failed to fetch article details")
 			}
 
 			if article.TrackByLot && adjustment.Lots != nil {
@@ -261,7 +261,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 						First(&lot).Error
 
 					if err != nil && err != gorm.ErrRecordNotFound {
-						return errors.New("Failed to fetch lot details")
+						return errors.New("failed to fetch lot details")
 					}
 
 					// If lot does not exist, create it
@@ -275,7 +275,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 						err = tx.Table(lot.TableName()).Create(&lot).Error
 						if err != nil {
-							return errors.New("Failed to create lot")
+							return errors.New("failed to create lot")
 						}
 
 						// Create associate the lot with the adjustment
@@ -288,14 +288,14 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 						err = tx.Table(inventoryLot.TableName()).Create(&inventoryLot).Error
 						if err != nil {
-							return errors.New("Failed to associate lot with inventory")
+							return errors.New("failed to associate lot with inventory")
 						}
 					} else {
 						// Update existing lot
 						lot.Quantity += lotQuantity
 						err = tx.Table(lot.TableName()).Save(&lot).Error
 						if err != nil {
-							return errors.New("Failed to update lot")
+							return errors.New("failed to update lot")
 						}
 					}
 				}
@@ -311,7 +311,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 					err = tx.Table(newSerial.TableName()).Create(&newSerial).Error
 					if err != nil {
-						return errors.New("Failed to create serial")
+						return errors.New("failed to create serial")
 					}
 
 					// Associate the serial with the inventory
@@ -323,7 +323,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 					err = tx.Table(inventorySerial.TableName()).Create(&inventorySerial).Error
 					if err != nil {
-						return errors.New("Failed to associate serial with inventory")
+						return errors.New("failed to associate serial with inventory")
 					}
 				}
 			}
@@ -343,7 +343,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 		err = tx.Table(database.InventoryMovement{}.TableName()).Create(&movements).Error
 		if err != nil {
-			return errors.New("Failed to create inventory movement")
+			return errors.New("failed to create inventory movement")
 		}
 
 		return nil
