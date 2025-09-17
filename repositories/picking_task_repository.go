@@ -855,6 +855,92 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 			}
 		}
 
+		if article.TrackByLot && item.LotNumbers != nil {
+			for j := 0; j < len(item.LotNumbers); j++ {
+				lotNum := item.LotNumbers[j]
+
+				var lot database.Lot
+
+				// Check if lot exists for this SKU
+				if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
+					if err == gorm.ErrRecordNotFound {
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot number %s for SKU %s not found in inventory", lotNum.LotNumber, item.SKU), Handled: true}
+						return nil
+					}
+					return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
+				}
+
+				// Check if lot has enough quantity
+				if lot.Quantity < lotNum.Quantity {
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough quantity in lot number %s for SKU %s (available: %.2f, required: %.2f)", lotNum.LotNumber, item.SKU, lot.Quantity, lotNum.Quantity), Handled: true}
+					return nil
+				}
+
+				// Deduct lot quantity
+				lot.Quantity -= lotNum.Quantity
+				lot.UpdatedAt = tools.GetCurrentTime()
+
+				if err := tx.Save(&lot).Error; err != nil {
+					return fmt.Errorf("update lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
+				}
+
+				if lot.Quantity != item.LotNumbers[j].Quantity {
+					for i := 0; i < len(items); i++ {
+						if items[i].SKU == item.SKU {
+							for k := 0; k < len(items[i].LotNumbers); k++ {
+								if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
+									items[i].LotNumbers[k].Status = tools.StrPtr("partial")
+									items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
+									break
+								}
+							}
+							items[i].Status = tools.StrPtr("partial")
+							break
+						}
+					}
+				}
+
+				// Mark lot as completed in the task and deliverd quantity
+				for i := 0; i < len(items); i++ {
+					if items[i].SKU == item.SKU {
+						alreadyInTask := false
+						for k := 0; k < len(items[i].LotNumbers); k++ {
+							if items[i].LotNumbers[k].LotNumber == lotNum.LotNumber {
+								items[i].LotNumbers[k].Status = tools.StrPtr("completed")
+								items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
+								alreadyInTask = true
+								break
+							}
+						}
+
+						if !alreadyInTask {
+							items[i].LotNumbers = append(items[i].LotNumbers, requests.CreateLotRequest{
+								LotNumber:        lotNum.LotNumber,
+								SKU:              item.SKU,
+								Quantity:         lotNum.Quantity,
+								ReceivedQuantity: &lotNum.Quantity,
+								Status:           tools.StrPtr("completed"),
+							})
+						}
+
+						break
+					}
+				}
+			}
+
+			// If total lot quantity meets expected, mark item as completed
+			for i := 0; i < len(items); i++ {
+				if items[i].SKU == item.SKU {
+					if qty >= float64(foundItem.ExpectedQuantity) {
+						items[i].Status = tools.StrPtr("completed")
+					} else {
+						items[i].Status = tools.StrPtr("partial")
+					}
+					break
+				}
+			}
+		}
+
 		updatedItems, err := json.Marshal(items)
 		if err != nil {
 			return fmt.Errorf("marshal updated items: %w", err)

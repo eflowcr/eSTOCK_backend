@@ -8,3 +8,4 @@ type CreateLotRequest struct {
 	ExpirationDate   *string  `json:"expiration_date,omitempty"`
 	Status           *string  `json:"status,omitempty"`
 }
+ 
