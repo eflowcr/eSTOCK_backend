@@ -687,8 +687,8 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 			return fmt.Errorf("find article %s: %w", foundItem.SKU, err)
 		}
 
-		if foundItem.Status != nil && *foundItem.Status == "completed" {
-			*handledResp = responses.InternalResponse{Message: "Item already completed", Handled: true}
+		if foundItem.Status != nil && (*foundItem.Status == "completed" || *foundItem.Status == "closed" || *foundItem.Status == "partial") {
+			*handledResp = responses.InternalResponse{Message: "Item already processed", Handled: true}
 			return nil
 		}
 

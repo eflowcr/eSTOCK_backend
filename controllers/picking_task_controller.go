@@ -186,7 +186,12 @@ func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
 	userId, _ := tools.GetUserId(token)
 
 	response := c.Service.CompletePickingLine(id, location, userId, item)
+
 	if response != nil {
+		if response.Handled {
+			tools.Response(ctx, "CompletePickingLine", true, response.Message, "complete_picking_line", nil, true, "")
+		}
+
 		tools.Response(ctx, "CompletePickingLine", false, response.Message, "complete_picking_line", nil, response.Handled, "")
 		return
 	}

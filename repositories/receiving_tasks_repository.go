@@ -761,8 +761,8 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 			return fmt.Errorf("find article %s: %w", item.SKU, err)
 		}
 
-		if foundItem.Status != nil && *foundItem.Status == "completed" {
-			*handledResp = responses.InternalResponse{Message: "Receiving line is already completed", Handled: true}
+		if foundItem.Status != nil && (*foundItem.Status == "completed" || *foundItem.Status == "closed" || *foundItem.Status == "partial") {
+			*handledResp = responses.InternalResponse{Message: "Receiving line is already processed", Handled: true}
 			return nil
 		}
 

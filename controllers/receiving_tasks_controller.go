@@ -186,6 +186,11 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 
 	response := c.Service.CompleteReceivingLine(id, location, userId, item)
 	if response != nil {
+		if response.Handled {
+			tools.Response(ctx, "CompleteReceivingLine", true, response.Message, "complete_receiving_line", nil, true, "")
+			return
+		}
+
 		tools.Response(ctx, "CompleteReceivingLine", false, response.Message, "complete_receiving_line", nil, response.Handled, "")
 		return
 	}
