@@ -27,7 +27,7 @@ func (c *UserController) GetAllUsers(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetAllUsers", true, "Users retrieved successfully", "get_all_users", users, false, "", false)
+	tools.Response(ctx, "GetAllUsers", true, "Usuarios obtenidos con éxito", "get_all_users", users, false, "", false)
 }
 
 func (c *UserController) GetUserByID(ctx *gin.Context) {
@@ -40,18 +40,18 @@ func (c *UserController) GetUserByID(ctx *gin.Context) {
 	}
 
 	if user == nil {
-		tools.Response(ctx, "GetUserByID", false, "User not found", "get_user_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetUserByID", false, "Usuario no encontrado", "get_user_by_id", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetUserByID", true, "User retrieved successfully", "get_user_by_id", user, false, "", false)
+	tools.Response(ctx, "GetUserByID", true, "Usuario obtenido con éxito", "get_user_by_id", user, false, "", false)
 }
 
 func (c *UserController) CreateUser(ctx *gin.Context) {
 	var user requests.User
 
 	if err := ctx.ShouldBindJSON(&user); err != nil {
-		tools.Response(ctx, "CreateUser", false, "Invalid request body", "create_user", nil, false, "", false)
+		tools.Response(ctx, "CreateUser", false, "Cuerpo de solicitud inválido", "create_user", nil, false, "", false)
 		return
 	}
 
@@ -62,13 +62,13 @@ func (c *UserController) CreateUser(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateUser", true, "User created successfully", "create_user", nil, false, "", false)
+	tools.Response(ctx, "CreateUser", true, "Usuario creado con éxito", "create_user", nil, false, "", false)
 }
 
 func (c *UserController) UpdateUser(ctx *gin.Context) {
 	var data map[string]interface{}
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		tools.Response(ctx, "UpdateUser", false, "Invalid request body", "update_user", nil, false, "", false)
+		tools.Response(ctx, "UpdateUser", false, "Cuerpo de solicitud inválido", "update_user", nil, false, "", false)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (c *UserController) UpdateUser(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "UpdateUser", true, "User updated successfully", "update_user", nil, false, "", false)
+	tools.Response(ctx, "UpdateUser", true, "Usuario actualizado con éxito", "update_user", nil, false, "", false)
 }
 
 func (c *UserController) DeleteUser(ctx *gin.Context) {
@@ -92,19 +92,19 @@ func (c *UserController) DeleteUser(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DeleteUser", true, "User deleted successfully", "delete_user", nil, false, "", false)
+	tools.Response(ctx, "DeleteUser", true, "Usuario eliminado con éxito", "delete_user", nil, false, "", false)
 }
 
 func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		tools.Response(ctx, "ImportUsersFromExcel", false, "File upload error: "+err.Error(), "import_users_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportUsersFromExcel", false, "Error al subir el archivo: "+err.Error(), "import_users_from_excel", nil, false, "", false)
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportUsersFromExcel", false, "Failed to open file: "+err.Error(), "import_users_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportUsersFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_users_from_excel", nil, false, "", false)
 		return
 	}
 	defer file.Close()
@@ -112,7 +112,7 @@ func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
 	// Leer archivo como []byte
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportUsersFromExcel", false, "Failed to read file content: "+err.Error(), "import_users_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportUsersFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_users_from_excel", nil, false, "", false)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "ImportUsersFromExcel", true, "Users imported successfully", "import_users_from_excel", gin.H{
+	tools.Response(ctx, "ImportUsersFromExcel", true, "Usuarios importados con éxito", "import_users_from_excel", gin.H{
 		"imported_users": importedUsers,
 		"errors":         errorResponses,
 	}, false, "", false)
@@ -154,5 +154,5 @@ func (c *UserController) UpdateUserPassword(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "ChangePassword", true, "Password changed successfully", "change_password", nil, true, "", false)
+	tools.Response(ctx, "ChangePassword", true, "Contraseña cambiada con éxito", "change_password", nil, true, "", false)
 }
