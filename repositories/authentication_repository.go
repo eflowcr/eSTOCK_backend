@@ -20,8 +20,8 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 	err := a.DB.Where("email = ?", login.Email).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &responses.InternalResponse{
-			Error:   errors.New("user not found"),
-			Message: "Invalid credentials",
+			Error:   errors.New("usuario no encontrado"),
+			Message: "Credenciales inválidas",
 			Handled: true,
 		}
 	}
@@ -29,23 +29,23 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch user",
+			Message: "Error al obtener el usuario",
 			Handled: false,
 		}
 	}
 
 	if !user.IsActive {
 		return nil, &responses.InternalResponse{
-			Error:   errors.New("inactive account"),
-			Message: "Your account is inactive",
+			Error:   errors.New("cuenta inactiva"),
+			Message: "Su cuenta está inactiva. Por favor, contacte al administrador.",
 			Handled: true,
 		}
 	}
 
 	if user.Password == nil || !tools.ComparePasswords(*user.Password, login.Password) {
 		return nil, &responses.InternalResponse{
-			Error:   errors.New("invalid password"),
-			Message: "Invalid credentials",
+			Error:   errors.New("contraseña inválida"),
+			Message: "Credenciales inválidas",
 			Handled: true,
 		}
 	}
@@ -54,7 +54,7 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate token",
+			Message: "Error al generar el token",
 			Handled: false,
 		}
 	}
