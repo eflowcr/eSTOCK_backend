@@ -23,16 +23,16 @@ func (c *AdjustmentsController) GetAllAdjustments(ctx *gin.Context) {
 	adjustments, response := c.Service.GetAllAdjustments()
 
 	if response != nil {
-		tools.Response(ctx, "GetAllAdjustments", false, response.Message, "get_all_adjustments", nil, false, "")
+		tools.Response(ctx, "GetAllAdjustments", false, response.Message, "get_all_adjustments", nil, false, "", response.Handled)
 		return
 	}
 
 	if len(adjustments) == 0 {
-		tools.Response(ctx, "GetAllAdjustments", true, "No adjustments found", "get_all_adjustments", nil, false, "")
+		tools.Response(ctx, "GetAllAdjustments", true, "No adjustments found", "get_all_adjustments", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAllAdjustments", true, "Adjustments retrieved successfully", "get_all_adjustments", adjustments, false, "")
+	tools.Response(ctx, "GetAllAdjustments", true, "Adjustments retrieved successfully", "get_all_adjustments", adjustments, false, "", false)
 }
 
 func (c *AdjustmentsController) GetAdjustmentByID(ctx *gin.Context) {
@@ -40,22 +40,22 @@ func (c *AdjustmentsController) GetAdjustmentByID(ctx *gin.Context) {
 
 	adjustmentId, err := strconv.Atoi(id)
 	if err != nil {
-		tools.Response(ctx, "GetAdjustmentByID", false, "Invalid ID provided", "get_adjustment_by_id", nil, false, "")
+		tools.Response(ctx, "GetAdjustmentByID", false, "Invalid ID provided", "get_adjustment_by_id", nil, false, "", false)
 		return
 	}
 
 	adjustment, response := c.Service.GetAdjustmentByID(adjustmentId)
 	if response != nil {
-		tools.Response(ctx, "GetAdjustmentByID", false, response.Message, "get_adjustment_by_id", nil, false, "")
+		tools.Response(ctx, "GetAdjustmentByID", false, response.Message, "get_adjustment_by_id", nil, false, "", response.Handled)
 		return
 	}
 
 	if adjustment == nil {
-		tools.Response(ctx, "GetAdjustmentByID", true, "Adjustment not found", "get_adjustment_by_id", nil, false, "")
+		tools.Response(ctx, "GetAdjustmentByID", true, "Adjustment not found", "get_adjustment_by_id", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAdjustmentByID", true, "Adjustment retrieved successfully", "get_adjustment_by_id", adjustment, false, "")
+	tools.Response(ctx, "GetAdjustmentByID", true, "Adjustment retrieved successfully", "get_adjustment_by_id", adjustment, false, "", false)
 }
 
 func (c *AdjustmentsController) GetAdjustmentDetails(ctx *gin.Context) {
@@ -63,29 +63,29 @@ func (c *AdjustmentsController) GetAdjustmentDetails(ctx *gin.Context) {
 
 	adjustmentId, err := strconv.Atoi(id)
 	if err != nil {
-		tools.Response(ctx, "GetAdjustmentDetails", false, "Invalid ID provided", "get_adjustment_details", nil, false, "")
+		tools.Response(ctx, "GetAdjustmentDetails", false, "Invalid ID provided", "get_adjustment_details", nil, false, "", false)
 		return
 	}
 
 	details, response := c.Service.GetAdjustmentDetails(adjustmentId)
 	if response != nil {
-		tools.Response(ctx, "GetAdjustmentDetails", false, response.Message, "get_adjustment_details", nil, false, "")
+		tools.Response(ctx, "GetAdjustmentDetails", false, response.Message, "get_adjustment_details", nil, false, "", response.Handled)
 		return
 	}
 
 	if details == nil {
-		tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details not found", "get_adjustment_details", nil, false, "")
+		tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details not found", "get_adjustment_details", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details retrieved successfully", "get_adjustment_details", details, false, "")
+	tools.Response(ctx, "GetAdjustmentDetails", true, "Adjustment details retrieved successfully", "get_adjustment_details", details, false, "", false)
 }
 
 func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 	var adjustment requests.CreateAdjustment
 
 	if err := ctx.ShouldBindJSON(&adjustment); err != nil {
-		tools.Response(ctx, "CreateAdjustment", false, "Invalid request payload", "create_adjustment", nil, false, "")
+		tools.Response(ctx, "CreateAdjustment", false, "Invalid request payload", "create_adjustment", nil, false, "", false)
 		return
 	}
 
@@ -94,22 +94,22 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 
 	response := c.Service.CreateAdjustment(userId, adjustment)
 	if response != nil {
-		tools.Response(ctx, "CreateAdjustment", false, response.Message, "create_adjustment", nil, false, "")
+		tools.Response(ctx, "CreateAdjustment", false, response.Message, "create_adjustment", nil, false, "", response.Handled)
 		return
 	}
 
-	tools.Response(ctx, "CreateAdjustment", true, "Adjustment created successfully", "create_adjustment", adjustment, false, "")
+	tools.Response(ctx, "CreateAdjustment", true, "Adjustment created successfully", "create_adjustment", adjustment, false, "", false)
 }
 
 func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
 	data, response := c.Service.ExportAdjustmentsToExcel()
 	if response != nil {
-		tools.Response(ctx, "ExportAdjustmentsToExcel", false, response.Message, "export_adjustments_to_excel", nil, false, "")
+		tools.Response(ctx, "ExportAdjustmentsToExcel", false, response.Message, "export_adjustments_to_excel", nil, false, "", response.Handled)
 		return
 	}
 
 	if data == nil {
-		tools.Response(ctx, "ExportAdjustmentsToExcel", true, "No adjustments to export", "export_adjustments_to_excel", nil, false, "")
+		tools.Response(ctx, "ExportAdjustmentsToExcel", true, "No adjustments to export", "export_adjustments_to_excel", nil, false, "", false)
 		return
 	}
 

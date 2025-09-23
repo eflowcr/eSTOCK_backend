@@ -28,9 +28,9 @@ func (c *AuthenticationController) Login(ctx *gin.Context) {
 	loginResponse, response := c.Service.Login(login)
 
 	if response != nil {
-		tools.Response(ctx, "Login", false, response.Message, "login", nil, false, "")
+		tools.Response(ctx, "Login", false, response.Message, "login", nil, false, "", response.Handled)
 		return
 	}
 
-	tools.Response(ctx, "Login", true, "Login successful", "login", loginResponse, true, loginResponse.Token)
+	tools.Response(ctx, "Login", true, "Login successful", "login", loginResponse, true, loginResponse.Token, false)
 }
