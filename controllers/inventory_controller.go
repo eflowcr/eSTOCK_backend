@@ -27,7 +27,7 @@ func (c *InventoryController) GetAllInventory(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetAllInventory", true, "Inventory retrieved successfully", "get_all_inventory", inventory, false, "", false)
+	tools.Response(ctx, "GetAllInventory", true, "Inventario obtenido con éxito", "get_all_inventory", inventory, false, "", false)
 }
 
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
@@ -36,7 +36,7 @@ func (c *InventoryController) CreateInventory(ctx *gin.Context) {
 
 	var request requests.CreateInventory
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		tools.Response(ctx, "CreateInventory", false, "Invalid request payload", "create_inventory", nil, false, "", false)
+		tools.Response(ctx, "CreateInventory", false, "Carga útil de solicitud no válida", "create_inventory", nil, false, "", false)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (c *InventoryController) CreateInventory(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateInventory", true, "Inventory created successfully", "create_inventory", nil, false, "", false)
+	tools.Response(ctx, "CreateInventory", true, "Inventario creado con éxito", "create_inventory", nil, false, "", false)
 }
 
 func (c *InventoryController) UpdateInventory(ctx *gin.Context) {
@@ -62,7 +62,7 @@ func (c *InventoryController) UpdateInventory(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "UpdateInventory", true, "Inventory updated successfully", "update_inventory", nil, false, "", false)
+	tools.Response(ctx, "UpdateInventory", true, "Inventario actualizado con éxito", "update_inventory", nil, false, "", false)
 }
 
 func (c *InventoryController) DeleteInventory(ctx *gin.Context) {
@@ -75,7 +75,7 @@ func (c *InventoryController) DeleteInventory(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DeleteInventory", true, "Inventory deleted successfully", "delete_inventory", nil, false, "", false)
+	tools.Response(ctx, "DeleteInventory", true, "Inventario eliminado con éxito", "delete_inventory", nil, false, "", false)
 }
 
 func (c *InventoryController) Trend(ctx *gin.Context) {
@@ -87,7 +87,7 @@ func (c *InventoryController) Trend(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "Trend", true, "Inventory trend retrieved successfully", "inventory_trend", trend, false, "", false)
+	tools.Response(ctx, "Trend", true, "Tendencia de inventario obtenida con éxito", "inventory_trend", trend, false, "", false)
 }
 
 func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
@@ -96,20 +96,20 @@ func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		tools.Response(ctx, "ImportInventoryFromExcel", false, "File upload error", "import_inventory_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportInventoryFromExcel", false, "Error de carga de archivo", "import_inventory_from_excel", nil, false, "", false)
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportInventoryFromExcel", false, "Failed to open file: "+err.Error(), "import_inventory_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportInventoryFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_inventory_from_excel", nil, false, "", false)
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportInventoryFromExcel", false, "Failed to read file content: "+err.Error(), "import_inventory_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportInventoryFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_inventory_from_excel", nil, false, "", false)
 		return
 	}
 
@@ -121,7 +121,7 @@ func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "ImportInventoryFromExcel", true, "Inventory imported successfully", "import_inventory_from_excel", gin.H{
+	tools.Response(ctx, "ImportInventoryFromExcel", true, "Inventario importado con éxito", "import_inventory_from_excel", gin.H{
 		"imported_items": imported,
 		"errors":         errorResponses,
 	}, false, "", false)
@@ -153,14 +153,14 @@ func (c *InventoryController) GetInventoryLots(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetInventoryLots", true, "Inventory lots retrieved successfully", "get_inventory_lots", lots, false, "", false)
+	tools.Response(ctx, "GetInventoryLots", true, "Lotes de inventario recuperados con éxito", "get_inventory_lots", lots, false, "", false)
 }
 
 func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
 	inventoryID, err := tools.StringToInt(ctx.Param("id"))
 
 	if err != nil {
-		tools.Response(ctx, "GetInventorySerials", false, "Invalid inventory ID", "get_inventory_serials", nil, false, "", false)
+		tools.Response(ctx, "GetInventorySerials", false, "ID de inventario no válido", "get_inventory_serials", nil, false, "", false)
 		return
 	}
 
@@ -170,7 +170,7 @@ func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "GetInventorySerials", true, "Inventory serials retrieved successfully", "get_inventory_serials", serials, false, "", false)
+	tools.Response(ctx, "GetInventorySerials", true, "Seriales de inventario obtenidos con éxito", "get_inventory_serials", serials, false, "", false)
 }
 
 func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
@@ -178,7 +178,7 @@ func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
 
 	var request requests.CreateInventoryLotRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		tools.Response(ctx, "CreateInventoryLot", false, "Invalid request payload", "create_inventory_lot", nil, false, "", false)
+		tools.Response(ctx, "CreateInventoryLot", false, "Carga útil de solicitud no válida", "create_inventory_lot", nil, false, "", false)
 		return
 	}
 
@@ -188,13 +188,13 @@ func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateInventoryLot", true, "Inventory lot created successfully", "create_inventory_lot", nil, false, "", false)
+	tools.Response(ctx, "CreateInventoryLot", true, "Lote de inventario creado con éxito", "create_inventory_lot", nil, false, "", false)
 }
 
 func (c *InventoryController) DeleteInventoryLot(ctx *gin.Context) {
 	id, err := tools.StringToInt(ctx.Param("id"))
 	if err != nil {
-		tools.Response(ctx, "DeleteInventoryLot", false, "Invalid lot ID", "delete_inventory_lot", nil, false, "", false)
+		tools.Response(ctx, "DeleteInventoryLot", false, "ID de lote no válido", "delete_inventory_lot", nil, false, "", false)
 		return
 	}
 
@@ -204,7 +204,7 @@ func (c *InventoryController) DeleteInventoryLot(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DeleteInventoryLot", true, "Inventory lot deleted successfully", "delete_inventory_lot", nil, false, "", false)
+	tools.Response(ctx, "DeleteInventoryLot", true, "Lote de inventario eliminado con éxito", "delete_inventory_lot", nil, false, "", false)
 }
 
 func (c *InventoryController) CreateInventorySerial(ctx *gin.Context) {
@@ -212,7 +212,7 @@ func (c *InventoryController) CreateInventorySerial(ctx *gin.Context) {
 
 	var request requests.CreateInventorySerial
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		tools.Response(ctx, "CreateInventorySerial", false, "Invalid request payload", "create_inventory_serial", nil, false, "", false)
+		tools.Response(ctx, "CreateInventorySerial", false, "Carga útil de solicitud no válida", "create_inventory_serial", nil, false, "", false)
 		return
 	}
 
@@ -222,13 +222,13 @@ func (c *InventoryController) CreateInventorySerial(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateInventorySerial", true, "Inventory serial created successfully", "create_inventory_serial", nil, false, "", false)
+	tools.Response(ctx, "CreateInventorySerial", true, "Serial de inventario creado con éxito", "create_inventory_serial", nil, false, "", false)
 }
 
 func (c *InventoryController) DeleteInventorySerial(ctx *gin.Context) {
 	id, err := tools.StringToInt(ctx.Param("id"))
 	if err != nil {
-		tools.Response(ctx, "DeleteInventorySerial", false, "Invalid serial ID", "delete_inventory_serial", nil, false, "", false)
+		tools.Response(ctx, "DeleteInventorySerial", false, "ID de serie no válido", "delete_inventory_serial", nil, false, "", false)
 		return
 	}
 
@@ -238,5 +238,5 @@ func (c *InventoryController) DeleteInventorySerial(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DeleteInventorySerial", true, "Inventory serial deleted successfully", "delete_inventory_serial", nil, false, "", false)
+	tools.Response(ctx, "DeleteInventorySerial", true, "Serial de inventario eliminado con éxito", "delete_inventory_serial", nil, false, "", false)
 }

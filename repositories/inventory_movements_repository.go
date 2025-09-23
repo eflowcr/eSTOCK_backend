@@ -22,7 +22,7 @@ func (r *InventoryMovementsRepository) GetAllInventoryMovements(sku string) ([]d
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory movements",
+			Message: "Error al obtener los movimientos de inventario",
 			Handled: false,
 		}
 	}
