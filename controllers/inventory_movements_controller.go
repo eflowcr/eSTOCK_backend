@@ -27,9 +27,9 @@ func (c *InventoryMovementsController) GetAllInventoryMovements(ctx *gin.Context
 	}
 
 	if len(movements) == 0 {
-		tools.Response(ctx, "GetAllInventoryMovements", true, "No inventory movements found", "get_all_inventory_movements", nil, false, "", false)
+		tools.Response(ctx, "GetAllInventoryMovements", true, "No se encontraron movimientos de inventario", "get_all_inventory_movements", nil, false, "", true)
 		return
 	}
 
-	tools.Response(ctx, "GetAllInventoryMovements", true, "Inventory movements retrieved successfully", "get_all_inventory_movements", movements, false, "", false)
+	tools.Response(ctx, "GetAllInventoryMovements", true, "Movimientos de inventario obtenidos con éxito", "get_all_inventory_movements", movements, false, "", false)
 }

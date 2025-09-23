@@ -31,7 +31,7 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory",
+			Message: "Error al obtener inventario",
 			Handled: false,
 		}
 	}
@@ -45,7 +45,7 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to fetch article for inventory item",
+				Message: "Error al obtener artículo para el elemento de inventario",
 				Handled: false,
 			}
 		}
@@ -63,7 +63,7 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			if err != nil {
 				return nil, &responses.InternalResponse{
 					Error:   err,
-					Message: "Failed to fetch lots for inventory item",
+					Message: "Error al obtener lotes para el elemento de inventario",
 					Handled: false,
 				}
 			}
@@ -82,7 +82,7 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			if err != nil {
 				return nil, &responses.InternalResponse{
 					Error:   err,
-					Message: "Failed to fetch serials for inventory item",
+					Message: "Error al obtener seriales para el elemento de inventario",
 					Handled: false,
 				}
 			}
@@ -129,22 +129,22 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			Count(&inventoryCount).Error
 
 		if err != nil {
-			return errors.New("failed to check existing inventory")
+			return errors.New("error al verificar inventario existente")
 		}
 
 		if inventoryCount > 0 {
-			return errors.New("inventory with this SKU already exists in the specified location")
+			return errors.New("el inventario con este SKU ya existe en la ubicación especificada")
 		}
 
 		// 2 - Get article information
 		var article database.Article
 		err = r.DB.Where("sku = ?", item.SKU).First(&article).Error
 		if err != nil {
-			return errors.New("failed to fetch article for inventory creation")
+			return errors.New("error al obtener artículo para la creación de inventario")
 		}
 
 		if article.ID == 0 {
-			return errors.New("article not found for the provided SKU")
+			return errors.New("artículo no encontrado para el SKU proporcionado")
 		}
 
 		var inventory database.Inventory
@@ -173,7 +173,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 		}
 
 		if err := r.DB.Create(&inventory).Error; err != nil {
-			return errors.New("failed to create inventory")
+			return errors.New("error al crear inventario")
 		}
 
 		// 3 - Create lots if applicable
@@ -186,7 +186,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					Count(&lotCount).Error
 
 				if err != nil {
-					return errors.New("failed to check existing lot")
+					return errors.New("error al verificar lote existente")
 				}
 
 				if lotCount == 0 {
@@ -208,7 +208,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(lot).Error; err != nil {
-						return errors.New("failed to create lot")
+						return errors.New("error al crear lote")
 					}
 
 					// Create inventory_lot association
@@ -220,7 +220,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(inventoryLot).Error; err != nil {
-						return errors.New("failed to create inventory_lot association")
+						return errors.New("error al crear asociación de inventario_lote")
 					}
 				}
 			}
@@ -236,7 +236,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					Count(&serialCount).Error
 
 				if err != nil {
-					return errors.New("failed to check existing serial")
+					return errors.New("error al verificar serial existente")
 				}
 
 				if serialCount == 0 {
@@ -250,7 +250,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(newSerial).Error; err != nil {
-						return errors.New("failed to create serial")
+						return errors.New("error al crear serial")
 					}
 
 					// Create inventory_serial association
@@ -261,7 +261,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					if err := r.DB.Create(inventorySerial).Error; err != nil {
-						return errors.New("failed to create inventory_serial association")
+						return errors.New("error al crear asociación de inventario_serial")
 					}
 				}
 			}
@@ -283,7 +283,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 		}
 
 		if err := r.DB.Create(inventoryMovement).Error; err != nil {
-			return errors.New("failed to create inventory movement")
+			return errors.New("error al crear movimiento de inventario")
 		}
 
 		return nil
@@ -291,8 +291,8 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 
 	if err != nil {
 		handledErrors := map[string]bool{
-			"inventory with this SKU already exists in the specified location": true,
-			"article not found for the provided SKU":                           true,
+			"el inventario con este SKU ya existe en la ubicación especificada": true,
+			"artículo no encontrado para el SKU proporcionado":                  true,
 		}
 
 		errorMessage := err.Error()
@@ -321,13 +321,13 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &responses.InternalResponse{
 				Error:   nil,
-				Message: "Inventory item not found",
+				Message: "Artículo de inventario no encontrado",
 				Handled: true,
 			}
 		}
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory item",
+			Message: "Error al obtener artículo de inventario",
 			Handled: false,
 		}
 	}
@@ -339,7 +339,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 		Count(&count).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to check for duplicate inventory",
+			Message: "Error al verificar inventario duplicado",
 			Handled: false,
 		}
 	}
@@ -347,7 +347,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 	if count > 0 {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: fmt.Sprintf(`SKU %q already exists in location %q. Use a different location or update the existing entry.`, item.SKU, item.Location),
+			Message: fmt.Sprintf(`SKU %q ya existe en la ubicación %q. Use una ubicación diferente o actualice la entrada existente.`, item.SKU, item.Location),
 			Handled: true,
 		}
 	}
@@ -356,7 +356,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 	if err := r.DB.Model(&inventory).Updates(&inventory).Where("id = ?", inventory.ID).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update inventory",
+			Message: "Error al actualizar inventario",
 			Handled: false,
 		}
 	}
@@ -367,7 +367,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch article for inventory update",
+			Message: "Error al obtener artículo para actualización de inventario",
 			Handled: false,
 		}
 	}
@@ -375,7 +375,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 	if article.ID == 0 {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Article not found for the provided SKU",
+			Message: "Artículo no encontrado para el SKU proporcionado",
 			Handled: true,
 		}
 	}
@@ -391,7 +391,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 		if err != nil {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to check existing lot",
+				Message: "Error al verificar lote existente",
 				Handled: false,
 			}
 		}
@@ -409,7 +409,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 			if err := r.DB.Create(lot).Error; err != nil {
 				return &responses.InternalResponse{
 					Error:   err,
-					Message: "Failed to create lot",
+					Message: "Error al crear lote",
 					Handled: false,
 				}
 			}
@@ -427,7 +427,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 		if err != nil {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to check existing serial",
+				Message: "Error al verificar número de serie existente",
 				Handled: false,
 			}
 		}
@@ -445,7 +445,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 			if err := r.DB.Create(newSerial).Error; err != nil {
 				return &responses.InternalResponse{
 					Error:   err,
-					Message: "Failed to create serial",
+					Message: "Error al crear número de serie",
 					Handled: false,
 				}
 			}
@@ -463,13 +463,13 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &responses.InternalResponse{
 				Error:   nil,
-				Message: "Inventory item not found",
+				Message: "Artículo de inventario no encontrado",
 				Handled: true,
 			}
 		}
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory item",
+			Message: "Error al obtener artículo de inventario",
 			Handled: false,
 		}
 	}
@@ -480,7 +480,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory serials",
+			Message: "Error al obtener números de serie de inventario",
 			Handled: false,
 		}
 	}
@@ -490,7 +490,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 		if err != nil {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to delete inventory serial association",
+				Message: "Error al eliminar asociación de número de serie de inventario",
 				Handled: false,
 			}
 		}
@@ -501,7 +501,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory serials",
+			Message: "Error al obtener números de serie de inventario",
 			Handled: false,
 		}
 	}
@@ -511,7 +511,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 		if err != nil {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to delete inventory serial association",
+				Message: "Error al eliminar asociación de número de serie de inventario",
 				Handled: false,
 			}
 		}
@@ -523,7 +523,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory lots",
+			Message: "Error al obtener lotes de inventario",
 			Handled: false,
 		}
 	}
@@ -533,7 +533,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 		if err != nil {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to delete inventory lot association",
+				Message: "Error al eliminar asociación de lote de inventario",
 				Handled: false,
 			}
 		}
@@ -544,7 +544,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory lots",
+			Message: "Error al obtener lotes de inventario",
 			Handled: false,
 		}
 	}
@@ -554,7 +554,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 		if err != nil {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to delete inventory lot association",
+				Message: "Error al eliminar asociación de lote de inventario",
 				Handled: false,
 			}
 		}
@@ -564,7 +564,7 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	if err := s.DB.Delete(&inventory).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete inventory item",
+			Message: "Error al eliminar artículo de inventario",
 			Handled: false,
 		}
 	}
@@ -589,7 +589,7 @@ func (r *InventoryRepository) Trend(sku string) (*dto.ConsumptionTrend, *respons
 		Find(&movements).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory movements",
+			Message: "Error al obtener movimientos de inventario",
 			Handled: false,
 		}
 	}
@@ -664,7 +664,7 @@ func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes 
 	if err != nil {
 		return imported, []*responses.InternalResponse{{
 			Error:   err,
-			Message: "Failed to open Excel file",
+			Message: "Error al abrir archivo Excel",
 			Handled: false,
 		}}
 	}
@@ -673,7 +673,7 @@ func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes 
 	if err != nil {
 		return imported, []*responses.InternalResponse{{
 			Error:   err,
-			Message: "Failed to read rows from sheet",
+			Message: "Error al leer filas de la hoja de Excel",
 			Handled: false,
 		}}
 	}
@@ -866,7 +866,7 @@ func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.Inter
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to write Excel file",
+			Message: "Error al escribir archivo Excel",
 			Handled: false,
 		}
 	}
@@ -887,7 +887,7 @@ func (r *InventoryRepository) GetInventoryLots(inventoryID int) ([]responses.Inv
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory lots",
+			Message: "Error al obtener lotes de inventario",
 			Handled: false,
 		}
 	}
@@ -913,7 +913,7 @@ func (r *InventoryRepository) GetInventorySerials(inventoryID int) ([]responses.
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory serials",
+			Message: "Error al obtener números de serie de inventario",
 			Handled: false,
 		}
 	}
@@ -933,7 +933,7 @@ func (r *InventoryRepository) CreateInventoryLot(id int, input *requests.CreateI
 	if err := r.DB.Create(inventoryLot).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to create inventory lot",
+			Message: "Error al crear lote de inventario",
 			Handled: false,
 		}
 	}
@@ -945,7 +945,7 @@ func (r *InventoryRepository) DeleteInventoryLot(id int) *responses.InternalResp
 	if err := r.DB.Where("id = ?", id).Delete(&database.InventoryLot{}).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete inventory lot",
+			Message: "Error al eliminar lote de inventario",
 			Handled: false,
 		}
 	}
@@ -964,7 +964,7 @@ func (r *InventoryRepository) CreateInventorySerial(id int, input *requests.Crea
 	if err := r.DB.Create(inventorySerial).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to create inventory serial",
+			Message: "Error al crear número de serie de inventario",
 			Handled: false,
 		}
 	}
@@ -976,7 +976,7 @@ func (r *InventoryRepository) DeleteInventorySerial(id int) *responses.InternalR
 	if err := r.DB.Where("id = ?", id).Delete(&database.InventorySerial{}).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete inventory serial",
+			Message: "Error al eliminar número de serie de inventario",
 			Handled: false,
 		}
 	}

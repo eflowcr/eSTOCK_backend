@@ -29,11 +29,11 @@ func (c *LocationsController) GetAllLocations(ctx *gin.Context) {
 	}
 
 	if len(locations) == 0 {
-		tools.Response(ctx, "GetAllLocations", true, "No locations found", "get_all_locations", nil, false, "", false)
+		tools.Response(ctx, "GetAllLocations", true, "No se encontraron ubicaciones", "get_all_locations", nil, false, "", true)
 		return
 	}
 
-	tools.Response(ctx, "GetAllLocations", true, "Locations retrieved successfully", "get_all_locations", locations, false, "", false)
+	tools.Response(ctx, "GetAllLocations", true, "Ubicaciones obtenidas con éxito", "get_all_locations", locations, false, "", false)
 }
 
 func (c *LocationsController) GetLocationByID(ctx *gin.Context) {
@@ -46,18 +46,18 @@ func (c *LocationsController) GetLocationByID(ctx *gin.Context) {
 	}
 
 	if location == nil {
-		tools.Response(ctx, "GetLocationByID", true, "Location not found", "get_location_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetLocationByID", true, "Ubicación no encontrada", "get_location_by_id", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetLocationByID", true, "Location retrieved successfully", "get_location_by_id", location, false, "", false)
+	tools.Response(ctx, "GetLocationByID", true, "Ubicación obtenida con éxito", "get_location_by_id", location, false, "", false)
 }
 
 func (c *LocationsController) CreateLocation(ctx *gin.Context) {
 	var body requests.Location
 
 	if err := ctx.ShouldBindJSON(&body); err != nil {
-		tools.Response(ctx, "CreateLocation", false, "Invalid request body", "create_location", nil, false, "", false)
+		tools.Response(ctx, "CreateLocation", false, "Cuerpo de solicitud inválido", "create_location", nil, false, "", false)
 		return
 	}
 
@@ -68,20 +68,20 @@ func (c *LocationsController) CreateLocation(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateLocation", true, "Location created successfully", "create_location", nil, false, "", false)
+	tools.Response(ctx, "CreateLocation", true, "Ubicación creada con éxito", "create_location", nil, false, "", false)
 }
 
 func (c *LocationsController) UpdateLocation(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil {
-		tools.Response(ctx, "UpdateLocation", false, "Invalid location ID", "update_location", nil, false, "", false)
+		tools.Response(ctx, "UpdateLocation", false, "ID de ubicación inválido", "update_location", nil, false, "", false)
 		return
 	}
 
 	var data map[string]interface{}
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		tools.Response(ctx, "UpdateLocation", false, "Invalid request body", "update_location", nil, false, "", false)
+		tools.Response(ctx, "UpdateLocation", false, "Cuerpo de solicitud inválido", "update_location", nil, false, "", false)
 		return
 	}
 
@@ -91,14 +91,14 @@ func (c *LocationsController) UpdateLocation(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "UpdateLocation", true, "Location updated successfully", "update_location", nil, false, "", false)
+	tools.Response(ctx, "UpdateLocation", true, "Ubicación actualizada con éxito", "update_location", nil, false, "", false)
 }
 
 func (c *LocationsController) DeleteLocation(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil {
-		tools.Response(ctx, "DeleteLocation", false, "Invalid location ID", "delete_location", nil, false, "", false)
+		tools.Response(ctx, "DeleteLocation", false, "ID de ubicación inválido", "delete_location", nil, false, "", false)
 		return
 	}
 
@@ -108,26 +108,26 @@ func (c *LocationsController) DeleteLocation(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DeleteLocation", true, "Location deleted successfully", "delete_location", nil, false, "", false)
+	tools.Response(ctx, "DeleteLocation", true, "Ubicación eliminada con éxito", "delete_location", nil, false, "", false)
 }
 
 func (c *LocationsController) ImportLocationsFromExcel(ctx *gin.Context) {
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "File upload error: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al subir el archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to open file: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to read file content: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 
@@ -139,7 +139,7 @@ func (c *LocationsController) ImportLocationsFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "ImportLocationsFromExcel", true, "Locations imported successfully", "import_locations_from_excel", gin.H{
+	tools.Response(ctx, "ImportLocationsFromExcel", true, "Ubicaciones importadas con éxito", "import_locations_from_excel", gin.H{
 		"imported_locations": importedLocations,
 		"errors":             errorResponses,
 	}, false, "", false)

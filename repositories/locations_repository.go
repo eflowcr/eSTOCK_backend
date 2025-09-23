@@ -29,7 +29,7 @@ func (r *LocationsRepository) GetAllLocations() ([]database.Location, *responses
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch locations",
+			Message: "Error al obtener las ubicaciones",
 			Handled: false,
 		}
 	}
@@ -49,13 +49,13 @@ func (r *LocationsRepository) GetLocationByID(id string) (*database.Location, *r
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Location not found",
+				Message: "Ubicación no encontrada",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch location",
+			Message: "Error al obtener la ubicación",
 			Handled: false,
 		}
 	}
@@ -70,7 +70,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 
 	if err == nil {
 		return &responses.InternalResponse{
-			Message: "Location code already exists",
+			Message: "El código de ubicación ya existe",
 			Handled: true,
 		}
 	}
@@ -78,7 +78,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to check existing location",
+			Message: "Error al verificar la existencia de la ubicación",
 			Handled: false,
 		}
 	}
@@ -97,7 +97,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to create location",
+			Message: "Error al crear la ubicación",
 			Handled: false,
 		}
 	}
@@ -112,14 +112,14 @@ func (r *LocationsRepository) UpdateLocation(id int, data map[string]interface{}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Location not found",
+			Message: "Ubicación no encontrada",
 			Handled: true,
 		}
 	}
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to retrieve location",
+			Message: "Error al obtener la ubicación",
 			Handled: false,
 		}
 	}
@@ -138,7 +138,7 @@ func (r *LocationsRepository) UpdateLocation(id int, data map[string]interface{}
 	if err := r.DB.Model(&location).Updates(data).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update location",
+			Message: "Error al actualizar la ubicación",
 			Handled: false,
 		}
 	}
@@ -153,14 +153,14 @@ func (r *LocationsRepository) DeleteLocation(id int) *responses.InternalResponse
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Location not found",
+			Message: "Ubicación no encontrada",
 			Handled: true,
 		}
 	}
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to retrieve location",
+			Message: "Error al obtener la ubicación",
 			Handled: false,
 		}
 	}
@@ -169,7 +169,7 @@ func (r *LocationsRepository) DeleteLocation(id int) *responses.InternalResponse
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete location",
+			Message: "Error al eliminar la ubicación",
 			Handled: false,
 		}
 	}
@@ -185,7 +185,7 @@ func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]stri
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to open Excel file",
+			Message: "Error al abrir el archivo de Excel",
 			Handled: false,
 		})
 		return imported, errorsList
@@ -195,7 +195,7 @@ func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]stri
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to read rows",
+			Message: "Error al leer las filas del archivo de Excel",
 			Handled: false,
 		})
 		return imported, errorsList
@@ -286,7 +286,7 @@ func (l *LocationsRepository) ExportLocationsToExcel() ([]byte, *responses.Inter
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo de Excel",
 			Handled: false,
 		}
 	}
