@@ -70,7 +70,14 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 
 	response := c.Service.CreatePickingTask(userId, &request)
 	if response != nil {
+		if response.Handled {
+			tools.Response(ctx, "CreatePickingTask", true, response.Message, "create_picking_task", nil, true, "")
+
+			return
+		}
+
 		tools.Response(ctx, "CreatePickingTask", false, response.Message, "create_picking_task", nil, response.Handled, "")
+
 		return
 	}
 
