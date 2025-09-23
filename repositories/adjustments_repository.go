@@ -31,7 +31,7 @@ func (r *AdjustmentsRepository) GetAllAdjustments() ([]database.Adjustment, *res
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch adjustments",
+			Message: "Error al obtener los ajustes",
 			Handled: false,
 		}
 	}
@@ -51,13 +51,13 @@ func (r *AdjustmentsRepository) GetAdjustmentByID(id int) (*database.Adjustment,
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Adjustment not found",
+				Message: "Ajuste no encontrado",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch adjustment",
+			Message: "Error al obtener el ajuste",
 			Handled: false,
 		}
 	}
@@ -77,13 +77,13 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Adjustment not found",
+				Message: "Ajuste no encontrado",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch adjustment details",
+			Message: "Error al obtener los detalles del ajuste",
 			Handled: false,
 		}
 	}
@@ -100,13 +100,13 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Inventory not found for this adjustment",
+				Message: "Inventario no encontrado para este ajuste",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory details",
+			Message: "Error al obtener los detalles del inventario",
 			Handled: false,
 		}
 	}
@@ -122,7 +122,7 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch lots for inventory",
+			Message: "Error al obtener los lotes para el inventario",
 			Handled: false,
 		}
 	}
@@ -137,7 +137,7 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch serials for inventory",
+			Message: "Error al obtener los seriales para el inventario",
 			Handled: false,
 		}
 	}
@@ -153,13 +153,13 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Article not found for this adjustment",
+				Message: "Artículo no encontrado para este ajuste",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch article details",
+			Message: "Error al obtener los detalles del artículo",
 			Handled: false,
 		}
 	}
@@ -188,10 +188,10 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return errors.New("inventory not found for this adjustment")
+				return errors.New("inventario no encontrado para este ajuste")
 			}
 
-			return errors.New("failed to fetch inventory details")
+			return errors.New("error al obtener los detalles del inventario")
 		}
 
 		adjustmentQuantity := adjustment.AdjustmentQuantity
@@ -199,7 +199,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 		newQuantity := currentQuantity + adjustmentQuantity
 
 		if newQuantity < 0 {
-			return errors.New("adjustment quantity results in negative inventory")
+			return errors.New("la cantidad de ajuste resulta en un inventario negativo")
 		}
 
 		// Create the adjustment record
@@ -219,7 +219,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Create(&newAdjustment).Error
 
 		if err != nil {
-			return errors.New("failed to create adjustment")
+			return errors.New("error al crear el ajuste")
 		}
 
 		// Update inventory
@@ -229,7 +229,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Save(&inventory).Error
 
 		if err != nil {
-			return errors.New("failed to update inventory")
+			return errors.New("error al actualizar el inventario")
 		}
 
 		// Handle lots and serials
@@ -244,9 +244,9 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 			if err != nil {
 				if err == gorm.ErrRecordNotFound {
-					return errors.New("article not found for this adjustment")
+					return errors.New("artículo no encontrado para este ajuste")
 				}
-				return errors.New("failed to fetch article details")
+				return errors.New("error al obtener los detalles del artículo")
 			}
 
 			if article.TrackByLot && adjustment.Lots != nil {
@@ -261,7 +261,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 						First(&lot).Error
 
 					if err != nil && err != gorm.ErrRecordNotFound {
-						return errors.New("failed to fetch lot details")
+						return errors.New("error al obtener los detalles del lote")
 					}
 
 					// If lot does not exist, create it
@@ -275,7 +275,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 						err = tx.Table(lot.TableName()).Create(&lot).Error
 						if err != nil {
-							return errors.New("failed to create lot")
+							return errors.New("error al crear el lote")
 						}
 
 						// Create associate the lot with the adjustment
@@ -288,14 +288,14 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 						err = tx.Table(inventoryLot.TableName()).Create(&inventoryLot).Error
 						if err != nil {
-							return errors.New("failed to associate lot with inventory")
+							return errors.New("error al asociar el lote con el inventario")
 						}
 					} else {
 						// Update existing lot
 						lot.Quantity += lotQuantity
 						err = tx.Table(lot.TableName()).Save(&lot).Error
 						if err != nil {
-							return errors.New("failed to update lot")
+							return errors.New("error al actualizar el lote")
 						}
 					}
 				}
@@ -311,7 +311,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 					err = tx.Table(newSerial.TableName()).Create(&newSerial).Error
 					if err != nil {
-						return errors.New("failed to create serial")
+						return errors.New("error al crear la serie")
 					}
 
 					// Associate the serial with the inventory
@@ -323,7 +323,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 					err = tx.Table(inventorySerial.TableName()).Create(&inventorySerial).Error
 					if err != nil {
-						return errors.New("failed to associate serial with inventory")
+						return errors.New("error al asociar la serie con el inventario")
 					}
 				}
 			}
@@ -343,7 +343,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 		err = tx.Table(database.InventoryMovement{}.TableName()).Create(&movements).Error
 		if err != nil {
-			return errors.New("failed to create inventory movement")
+			return errors.New("error al crear el movimiento de inventario")
 		}
 
 		return nil
@@ -351,8 +351,8 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 	if err != nil {
 		handledErrors := map[string]bool{
-			"Inventory not found for this adjustment": true,
-			"Article not found for this adjustment":   true,
+			"inventario no encontrado para este ajuste": true,
+			"artículo no encontrado para este ajuste":   true,
 		}
 
 		errorMessage := err.Error()
@@ -382,7 +382,7 @@ func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.I
 	if len(adjustments) == 0 {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "No adjustments found to export",
+			Message: "No hay ajustes para exportar",
 			Handled: true,
 		}
 	}
@@ -440,7 +440,7 @@ func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.I
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo Excel",
 			Handled: false,
 		}
 	}
