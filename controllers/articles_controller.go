@@ -29,11 +29,11 @@ func (c *ArticlesController) GetAllArticles(ctx *gin.Context) {
 	}
 
 	if len(articles) == 0 {
-		tools.Response(ctx, "GetAllArticles", true, "No articles found", "get_all_articles", nil, false, "", false)
+		tools.Response(ctx, "GetAllArticles", true, "No se encontraron artículos", "get_all_articles", nil, false, "", true)
 		return
 	}
 
-	tools.Response(ctx, "GetAllArticles", true, "Articles retrieved successfully", "get_all_articles", articles, false, "", false)
+	tools.Response(ctx, "GetAllArticles", true, "Artículos recuperados con éxito", "get_all_articles", articles, false, "", false)
 }
 
 func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
@@ -43,7 +43,7 @@ func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
 	articleID, err := strconv.Atoi(id)
 
 	if err != nil {
-		tools.Response(ctx, "GetArticleByID", false, "Invalid article ID", "get_article_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetArticleByID", false, "ID de artículo no válido", "get_article_by_id", nil, false, "", true)
 		return
 	}
 
@@ -55,11 +55,11 @@ func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
 	}
 
 	if article == nil {
-		tools.Response(ctx, "GetArticleByID", false, "Article not found", "get_article_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetArticleByID", false, "Artículo no encontrado", "get_article_by_id", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetArticleByID", true, "Article retrieved successfully", "get_article_by_id", article, false, "", false)
+	tools.Response(ctx, "GetArticleByID", true, "Artículo recuperado con éxito", "get_article_by_id", article, false, "", false)
 }
 
 func (c *ArticlesController) GetBySku(ctx *gin.Context) {
@@ -72,11 +72,11 @@ func (c *ArticlesController) GetBySku(ctx *gin.Context) {
 	}
 
 	if article == nil {
-		tools.Response(ctx, "GetBySku", false, "Article not found", "get_by_sku", nil, false, "", false)
+		tools.Response(ctx, "GetBySku", false, "Artículo no encontrado", "get_by_sku", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetBySku", true, "Article retrieved successfully", "get_by_sku", article, false, "", false)
+	tools.Response(ctx, "GetBySku", true, "Artículo recuperado con éxito", "get_by_sku", article, false, "", false)
 }
 
 func (c *ArticlesController) CreateArticle(ctx *gin.Context) {
@@ -93,19 +93,20 @@ func (c *ArticlesController) CreateArticle(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateArticle", true, "Article created successfully", "create_article", nil, false, "", false)
+	tools.Response(ctx, "CreateArticle", true, "Artículo creado con éxito", "create_article", nil, false, "", false)
 }
 
 func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
-		tools.Response(ctx, "UpdateArticle", false, "Invalid ID", "update_article", nil, false, "", false)
+		tools.Response(ctx, "UpdateArticle", false, "ID de artículo no válido", "update_article", nil, false, "", true)
 		return
 	}
 
 	var req requests.Article
+
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		tools.Response(ctx, "UpdateArticle", false, "Invalid input: "+err.Error(), "update_article", nil, false, "", false)
+		tools.Response(ctx, "UpdateArticle", false, "Carga útil no válida: "+err.Error(), "update_article", nil, false, "", true)
 		return
 	}
 
@@ -122,26 +123,27 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		response["warnings"] = warnings
 	}
 
-	tools.Response(ctx, "UpdateArticle", true, "Article updated successfully", "update_article", response, false, "", false)
+	tools.Response(ctx, "UpdateArticle", true, "Artículo actualizado con éxito", "update_article", response, false, "", false)
 }
 
 func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 	fileHeader, err := ctx.FormFile("file")
+
 	if err != nil {
-		tools.Response(ctx, "ImportArticlesFromExcel", false, "File upload error: "+err.Error(), "import_articles_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportArticlesFromExcel", false, "Error al subir el archivo: "+err.Error(), "import_articles_from_excel", nil, false, "", false)
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportArticlesFromExcel", false, "Failed to open file: "+err.Error(), "import_articles_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportArticlesFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_articles_from_excel", nil, false, "", false)
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportArticlesFromExcel", false, "Failed to read file content: "+err.Error(), "import_articles_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportArticlesFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_articles_from_excel", nil, false, "", false)
 		return
 	}
 
@@ -153,7 +155,7 @@ func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "ImportArticlesFromExcel", true, "Articles imported successfully", "import_articles_from_excel", gin.H{
+	tools.Response(ctx, "ImportArticlesFromExcel", true, "Artículos importados con éxito", "import_articles_from_excel", gin.H{
 		"imported_articles": importedArticles,
 		"errors":            errorResponses,
 	}, false, "", false)
@@ -175,7 +177,7 @@ func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil {
-		tools.Response(ctx, "DeleteArticle", false, "Invalid article ID", "delete_article", nil, false, "", false)
+		tools.Response(ctx, "DeleteArticle", false, "ID de artículo no válido", "delete_article", nil, false, "", true)
 		return
 	}
 
@@ -185,5 +187,5 @@ func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "DeleteArticle", true, "Article deleted successfully", "delete_article", nil, false, "", false)
+	tools.Response(ctx, "DeleteArticle", true, "Artículo eliminado con éxito", "delete_article", nil, false, "", false)
 }
