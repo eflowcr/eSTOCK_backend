@@ -29,7 +29,7 @@ func (r *ArticlesRepository) GetAllArticles() ([]database.Article, *responses.In
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch articles",
+			Message: "Error al obtener los artículos",
 			Handled: false,
 		}
 	}
@@ -49,13 +49,13 @@ func (r *ArticlesRepository) GetArticleByID(id int) (*database.Article, *respons
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Article not found",
+				Message: "Artículo no encontrado",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch article",
+			Message: "Error al obtener el artículo",
 			Handled: false,
 		}
 	}
@@ -75,13 +75,13 @@ func (r *ArticlesRepository) GetBySku(sku string) (*database.Article, *responses
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Article not found",
+				Message: "Artículo no encontrado",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch article by SKU",
+			Message: "Error al obtener el artículo por SKU",
 			Handled: false,
 		}
 	}
@@ -95,7 +95,7 @@ func (r *ArticlesRepository) CreateArticle(data *requests.Article) *responses.In
 	if err == nil {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "An article with the same SKU already exists",
+			Message: "Ya existe un artículo con el mismo SKU",
 			Handled: true,
 		}
 	}
@@ -103,7 +103,7 @@ func (r *ArticlesRepository) CreateArticle(data *requests.Article) *responses.In
 	if err != gorm.ErrRecordNotFound {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to check existing article",
+			Message: "Error al verificar el artículo existente",
 			Handled: false,
 		}
 	}
@@ -122,7 +122,7 @@ func (r *ArticlesRepository) CreateArticle(data *requests.Article) *responses.In
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to create article",
+			Message: "Error al crear el artículo",
 			Handled: false,
 		}
 	}
@@ -136,7 +136,7 @@ func (r *ArticlesRepository) UpdateArticle(id int, data *requests.Article) (*dat
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Article not found",
+			Message: "Artículo no encontrado",
 			Handled: true,
 		}
 	}
@@ -148,7 +148,7 @@ func (r *ArticlesRepository) UpdateArticle(id int, data *requests.Article) (*dat
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update article",
+			Message: "Error al actualizar el artículo",
 			Handled: false,
 		}
 	}
@@ -176,7 +176,7 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to open Excel file",
+			Message: "Error al abrir el archivo de Excel",
 			Handled: false,
 		})
 		return imported, errorsList
@@ -186,7 +186,7 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to read rows",
+			Message: "Error al leer las filas de Excel",
 			Handled: false,
 		})
 		return imported, errorsList
@@ -317,7 +317,7 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo de Excel",
 			Handled: false,
 		}
 	}
@@ -341,7 +341,7 @@ func (r *ArticlesRepository) DeleteArticle(id int) *responses.InternalResponse {
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete article",
+			Message: "Error al eliminar el artículo",
 			Handled: false,
 		}
 	}
