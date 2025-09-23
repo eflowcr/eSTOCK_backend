@@ -68,6 +68,8 @@ func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.Recei
 }
 
 func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+	handledResp := &responses.InternalResponse{}
+
 	var items []requests.ReceivingTaskItemRequest
 
 	if err := json.Unmarshal(task.Items, &items); err != nil {
@@ -83,6 +85,20 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 	}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		// Check if inbound number is unique
+		var count int64
+
+		if err := tx.Model(&database.ReceivingTask{}).Where("inbound_number = ?", task.InboundNumber).Count(&count).Error; err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to check inbound number uniqueness", Handled: false}
+
+			return nil
+		}
+
+		if count > 0 {
+			*handledResp = responses.InternalResponse{Error: fmt.Errorf("inbound number %s is already taken", task.InboundNumber), Message: "Inbound number is already taken", Handled: true}
+			return nil
+		}
+
 		// 1) Validate items
 		articleCache := make(map[string]database.Article)
 
@@ -95,7 +111,9 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 			if !ok {
 				if err := tx.Where("sku = ?", sku).First(&art).Error; err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
-						return fmt.Errorf("article not found for SKU %s", sku)
+						*handledResp = responses.InternalResponse{Error: fmt.Errorf("article with SKU %s not found", sku), Message: fmt.Sprintf("Article with SKU %s not found", sku), Handled: true}
+
+						return nil
 					}
 					return fmt.Errorf("find article %s: %w", sku, err)
 				}
@@ -188,8 +206,11 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 	})
 
 	if err != nil {
-		// Return validation detail in the message
-		return &responses.InternalResponse{Error: err, Message: err.Error(), Handled: true}
+		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+	}
+
+	if handledResp.Error != nil || handledResp.Handled {
+		return handledResp
 	}
 
 	return nil
@@ -499,8 +520,8 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 			return nil
 		}
 
-		if task.Status == "completed" {
-			*handledResp = responses.InternalResponse{Message: "Receiving task is already completed", Handled: true}
+		if task.Status == "closed" {
+			*handledResp = responses.InternalResponse{Message: "Receiving task is already closed", Handled: true}
 			return nil
 		}
 
@@ -513,6 +534,11 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 
 		// Create inventory
 		for i := 0; i < len(items); i++ {
+			// Skip if item is already completed or closed
+			if items[i].Status != nil && (*items[i].Status == "completed" || *items[i].Status == "partial") {
+				continue
+			}
+
 			sku := items[i].SKU
 
 			items[i].Status = tools.StrPtr("completed")
@@ -690,7 +716,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 		// Update task fields
 		clean := map[string]interface{}{
 			"items":        updatedItems,
-			"status":       "completed",
+			"status":       "closed",
 			"completed_at": tools.GetCurrentTime(),
 			"updated_at":   tools.GetCurrentTime(),
 		}
