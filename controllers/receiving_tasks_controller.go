@@ -29,18 +29,18 @@ func (c *ReceivingTasksController) GetAllReceivingTasks(ctx *gin.Context) {
 	}
 
 	if len(tasks) == 0 {
-		tools.Response(ctx, "GetAllReceivingTasks", true, "No receiving tasks found", "get_all_receiving_tasks", nil, false, "", false)
+		tools.Response(ctx, "GetAllReceivingTasks", true, "No se encontraron tareas de recepción", "get_all_receiving_tasks", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAllReceivingTasks", true, "Receiving tasks retrieved successfully", "get_all_receiving_tasks", tasks, false, "", false)
+	tools.Response(ctx, "GetAllReceivingTasks", true, "Tareas de recepción obtenidas con éxito", "get_all_receiving_tasks", tasks, false, "", false)
 }
 
 func (c *ReceivingTasksController) GetReceivingTaskByID(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "GetReceivingTaskByID", false, "Invalid task ID", "get_receiving_task_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetReceivingTaskByID", false, "ID de tarea inválido", "get_receiving_task_by_id", nil, false, "", false)
 		return
 	}
 
@@ -51,17 +51,17 @@ func (c *ReceivingTasksController) GetReceivingTaskByID(ctx *gin.Context) {
 	}
 
 	if task == nil {
-		tools.Response(ctx, "GetReceivingTaskByID", true, "Receiving task not found", "get_receiving_task_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetReceivingTaskByID", true, "Tarea de recepción no encontrada", "get_receiving_task_by_id", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetReceivingTaskByID", true, "Receiving task retrieved successfully", "get_receiving_task_by_id", task, false, "", false)
+	tools.Response(ctx, "GetReceivingTaskByID", true, "Tarea de recepción obtenida con éxito", "get_receiving_task_by_id", task, false, "", false)
 }
 
 func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 	var request requests.CreateReceivingTaskRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		tools.Response(ctx, "CreateReceivingTask", false, "Invalid request format", "create_receiving_task", nil, true, "", false)
+		tools.Response(ctx, "CreateReceivingTask", false, "Formato de solicitud inválido", "create_receiving_task", nil, true, "", false)
 		return
 	}
 
@@ -79,20 +79,20 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreateReceivingTask", true, "Receiving task created successfully", "create_receiving_task", nil, false, "", false)
+	tools.Response(ctx, "CreateReceivingTask", true, "Tarea de recepción creada con éxito", "create_receiving_task", nil, false, "", false)
 }
 
 func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "PatchReceivingTask", false, "Invalid task ID", "patch_receiving_task", nil, false, "", false)
+		tools.Response(ctx, "PatchReceivingTask", false, "ID de tarea inválido", "patch_receiving_task", nil, false, "", false)
 		return
 	}
 
 	var data map[string]interface{}
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		tools.Response(ctx, "PatchReceivingTask", false, "Invalid request body", "patch_receiving_task", nil, false, "", false)
+		tools.Response(ctx, "PatchReceivingTask", false, "Formato de cuerpo de solicitud inválido", "patch_receiving_task", nil, false, "", false)
 		return
 	}
 
@@ -102,7 +102,7 @@ func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "PatchReceivingTask", true, "Receiving task updated successfully", "patch_receiving_task", nil, false, "", false)
+	tools.Response(ctx, "PatchReceivingTask", true, "Tarea de recepción actualizada con éxito", "patch_receiving_task", nil, false, "", false)
 }
 
 func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context) {
@@ -111,20 +111,20 @@ func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "File upload error: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al subir el archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to open file: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to read file content: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context
 		return
 	}
 
-	tools.Response(ctx, "ImportReceivingTaskFromExcel", true, "Receiving tasks imported successfully", "import_receiving_task_from_excel", nil, false, "", false)
+	tools.Response(ctx, "ImportReceivingTaskFromExcel", true, "Tareas de recepción importadas con éxito", "import_receiving_task_from_excel", nil, false, "", false)
 }
 
 func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) {
@@ -153,7 +153,7 @@ func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "CompleteFullTask", false, "Invalid task ID", "complete_full_task", nil, false, "", false)
+		tools.Response(ctx, "CompleteFullTask", false, "ID de tarea inválido", "complete_full_task", nil, false, "", false)
 		return
 	}
 
@@ -167,14 +167,14 @@ func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CompleteFullTask", true, "Receiving task marked as complete successfully", "complete_full_task", nil, false, "", false)
+	tools.Response(ctx, "CompleteFullTask", true, "Tarea de recepción marcada como completa con éxito", "complete_full_task", nil, false, "", false)
 }
 
 func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "CompleteReceivingLine", false, "Invalid task ID", "complete_receiving_line", nil, false, "", false)
+		tools.Response(ctx, "CompleteReceivingLine", false, "ID de tarea inválido", "complete_receiving_line", nil, false, "", false)
 		return
 	}
 
@@ -185,7 +185,7 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 
 	var item requests.ReceivingTaskItemRequest
 	if err := ctx.ShouldBindJSON(&item); err != nil {
-		tools.Response(ctx, "CompleteReceivingLine", false, "Invalid request format", "complete_receiving_line", nil, true, "", false)
+		tools.Response(ctx, "CompleteReceivingLine", false, "Formato de solicitud inválido", "complete_receiving_line", nil, true, "", false)
 		return
 	}
 
@@ -200,5 +200,5 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CompleteReceivingLine", true, "Receiving line marked as complete successfully", "complete_receiving_line", nil, false, "", false)
+	tools.Response(ctx, "CompleteReceivingLine", true, "Línea de recepción marcada como completa con éxito", "complete_receiving_line", nil, false, "", false)
 }

@@ -33,7 +33,7 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]database.ReceivingT
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch receiving tasks",
+			Message: "Error al obtener todas las tareas de recepción",
 			Handled: false,
 		}
 	}
@@ -53,13 +53,13 @@ func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.Recei
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Receiving task not found",
+				Message: "Tarea de recepción no encontrada",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch receiving task",
+			Message: "Error al obtener la tarea de recepción",
 			Handled: false,
 		}
 	}
@@ -73,7 +73,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 	var items []requests.ReceivingTaskItemRequest
 
 	if err := json.Unmarshal(task.Items, &items); err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+		return &responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 	}
 
 	nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
@@ -89,13 +89,13 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 		var count int64
 
 		if err := tx.Model(&database.ReceivingTask{}).Where("inbound_number = ?", task.InboundNumber).Count(&count).Error; err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to check inbound number uniqueness", Handled: false}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al verificar la unicidad del número de entrada", Handled: false}
 
 			return nil
 		}
 
 		if count > 0 {
-			*handledResp = responses.InternalResponse{Error: fmt.Errorf("inbound number %s is already taken", task.InboundNumber), Message: "Inbound number is already taken", Handled: true}
+			*handledResp = responses.InternalResponse{Error: fmt.Errorf("inbound number %s is already taken", task.InboundNumber), Message: "El número de entrada ya está en uso", Handled: true}
 			return nil
 		}
 
@@ -111,7 +111,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 			if !ok {
 				if err := tx.Where("sku = ?", sku).First(&art).Error; err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
-						*handledResp = responses.InternalResponse{Error: fmt.Errorf("article with SKU %s not found", sku), Message: fmt.Sprintf("Article with SKU %s not found", sku), Handled: true}
+						*handledResp = responses.InternalResponse{Error: fmt.Errorf("article with SKU %s not found", sku), Message: fmt.Sprintf("Artículo con SKU %s no encontrado", sku), Handled: true}
 
 						return nil
 					}
@@ -206,7 +206,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 	})
 
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
 	}
 
 	if handledResp.Error != nil || handledResp.Handled {
@@ -223,10 +223,10 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]i
 		var task database.ReceivingTask
 		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Receiving task not found", Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Tarea de recepción no encontrada", Handled: true}
 				return nil
 			}
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al obtener la tarea de recepción"}
 			return nil
 		}
 
@@ -284,7 +284,7 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]i
 			case map[string]interface{}, []interface{}:
 				b, err := json.Marshal(it)
 				if err != nil {
-					*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+					*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 					return nil
 				}
 				clean["items"] = b
@@ -292,7 +292,7 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]i
 		}
 
 		if err := r.DB.Model(&task).Updates(clean).Error; err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
 			return nil
 		}
 
@@ -300,7 +300,7 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]i
 	})
 
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
 	}
 
 	return nil
@@ -309,7 +309,7 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]i
 func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to open Excel file"}
+		return &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo de Excel"}
 	}
 	defer f.Close()
 
@@ -317,10 +317,10 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to read rows"}
+		return &responses.InternalResponse{Error: err, Message: "Error al leer las filas"}
 	}
 	if len(rows) == 0 {
-		return &responses.InternalResponse{Error: fmt.Errorf("empty sheet"), Message: "Excel has no data", Handled: true}
+		return &responses.InternalResponse{Error: fmt.Errorf("empty sheet"), Message: "El archivo de Excel no tiene datos", Handled: true}
 	}
 
 	getLabeledValue := func(label string) *string {
@@ -374,7 +374,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		}
 	}
 	if headerRowIdx == -1 {
-		return &responses.InternalResponse{Error: fmt.Errorf("headers not found"), Message: "Items header row not found (SKU, Expected Quantity...)", Handled: true}
+		return &responses.InternalResponse{Error: fmt.Errorf("headers not found"), Message: "Fila de encabezado de items no encontrada (SKU, Cantidad Esperada...)", Handled: true}
 	}
 
 	inboundNumber := getLabeledValue("Inbound Number")
@@ -426,7 +426,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		})
 	}
 	if len(items) == 0 {
-		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No items found to import", Handled: true}
+		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No se encontraron items para importar", Handled: true}
 	}
 
 	itemsJSON, _ := json.Marshal(items)
@@ -442,7 +442,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		return resp
 	}
 	return &responses.InternalResponse{
-		Message: "Receiving task imported and created successfully",
+		Message: "Tarea de recepción importada exitosamente",
 		Handled: true,
 	}
 }
@@ -496,7 +496,7 @@ func (r *ReceivingTasksRepository) ExportReceivingTaskToExcel() ([]byte, *respon
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo de Excel",
 			Handled: false,
 		}
 	}
@@ -513,22 +513,22 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 
 		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Receiving task not found", Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Tarea de recepción no encontrada", Handled: true}
 				return nil
 			}
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al recuperar la tarea de recepción"}
 			return nil
 		}
 
 		if task.Status == "closed" {
-			*handledResp = responses.InternalResponse{Message: "Receiving task is already closed", Handled: true}
+			*handledResp = responses.InternalResponse{Message: "La tarea de recepción ya está cerrada", Handled: true}
 			return nil
 		}
 
 		// Process items
 		var items []requests.ReceivingTaskItemRequest
 		if err := json.Unmarshal(task.Items, &items); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 			return nil
 		}
 
@@ -665,7 +665,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 
 				if totalLotQty != float64(items[i].ExpectedQuantity) {
 					// If not, then this task can't be completed fully
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Sum of lot quantities (%.2f) does not match expected quantity (%d) for SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("La suma de las cantidades de lotes (%.2f) no coincide con la cantidad esperada (%d) para SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
 
 					return nil
 				}
@@ -722,7 +722,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 		}
 
 		if err := tx.Model(&task).Updates(clean).Error; err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
 			return nil
 		}
 
@@ -748,10 +748,10 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 
 		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Receiving task not found", Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Tarea de recepción no encontrada", Handled: true}
 				return nil
 			}
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al recuperar la tarea de recepción"}
 			return nil
 		}
 
@@ -759,7 +759,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 		var foundItem requests.ReceivingTaskItemRequest
 
 		if err := json.Unmarshal(task.Items, &items); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 			return nil
 		}
 
@@ -773,7 +773,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 		}
 
 		if !found {
-			*handledResp = responses.InternalResponse{Message: "SKU not found in task items", Handled: true}
+			*handledResp = responses.InternalResponse{Message: "SKU no encontrado en los items de la tarea", Handled: true}
 			return nil
 		}
 
@@ -781,14 +781,14 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 
 		if err := tx.Where("sku = ?", item.SKU).First(&article).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				*handledResp = responses.InternalResponse{Message: "Article not found for SKU", Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Artículo no encontrado para SKU", Handled: true}
 				return nil
 			}
 			return fmt.Errorf("find article %s: %w", item.SKU, err)
 		}
 
 		if foundItem.Status != nil && (*foundItem.Status == "completed" || *foundItem.Status == "closed" || *foundItem.Status == "partial") {
-			*handledResp = responses.InternalResponse{Message: "Receiving line is already processed", Handled: true}
+			*handledResp = responses.InternalResponse{Message: "La línea de recepción ya ha sido procesada", Handled: true}
 			return nil
 		}
 
@@ -827,7 +827,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 			}
 
 			if err := tx.Model(&task).Updates(clean).Error; err != nil {
-				*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+				*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
 				return nil
 			}
 		} else {
@@ -1053,7 +1053,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 						}
 
 						if err := tx.Model(&task).Updates(clean).Error; err != nil {
-							*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+							*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
 							return nil
 						}
 					} else {
@@ -1085,7 +1085,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 						}
 
 						if err := tx.Model(&task).Updates(clean).Error; err != nil {
-							*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+							*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
 							return nil
 						}
 
@@ -1140,7 +1140,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 		}
 
 		if err := tx.Model(&task).Updates(clean).Error; err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
 			return nil
 		}
 
@@ -1148,7 +1148,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 	})
 
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
 	}
 
 	if handledResp.Error != nil || handledResp.Handled {
