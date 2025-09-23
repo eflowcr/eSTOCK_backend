@@ -23,7 +23,7 @@ func (r *DashboardRepository) GetDashboardStats() (map[string]interface{}, *resp
 		Joins("LEFT JOIN articles ON inventory.sku = articles.sku").
 		Scan(&inventoryValue).Error
 	if err != nil {
-		return nil, &responses.InternalResponse{Error: err, Message: "Failed to calculate inventory value", Handled: false}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al calcular el valor del inventario", Handled: false}
 	}
 
 	var lowStockCount int64
@@ -32,7 +32,7 @@ func (r *DashboardRepository) GetDashboardStats() (map[string]interface{}, *resp
 		Where("quantity < ?", 20).
 		Count(&lowStockCount).Error
 	if err != nil {
-		return nil, &responses.InternalResponse{Error: err, Message: "Failed to count low stock", Handled: false}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al contar el stock bajo", Handled: false}
 	}
 
 	var activeReceiving int64
@@ -41,7 +41,7 @@ func (r *DashboardRepository) GetDashboardStats() (map[string]interface{}, *resp
 		Where("status IN ?", []string{"open", "in_progress"}).
 		Count(&activeReceiving).Error
 	if err != nil {
-		return nil, &responses.InternalResponse{Error: err, Message: "Failed to count receiving tasks", Handled: false}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al contar las tareas de recepción", Handled: false}
 	}
 
 	var activePicking int64
@@ -50,7 +50,7 @@ func (r *DashboardRepository) GetDashboardStats() (map[string]interface{}, *resp
 		Where("status IN ?", []string{"open", "in_progress"}).
 		Count(&activePicking).Error
 	if err != nil {
-		return nil, &responses.InternalResponse{Error: err, Message: "Failed to count picking tasks", Handled: false}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al contar las tareas de picking", Handled: false}
 	}
 
 	result := map[string]interface{}{
