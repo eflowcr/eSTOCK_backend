@@ -29,11 +29,11 @@ func (c *PickingTasksController) GetAllPickingTasks(ctx *gin.Context) {
 	}
 
 	if len(tasks) == 0 {
-		tools.Response(ctx, "GetAllPickingTasks", true, "No picking tasks found", "get_all_picking_tasks", nil, false, "", false)
+		tools.Response(ctx, "GetAllPickingTasks", true, "No se encontraron tareas de picking", "get_all_picking_tasks", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAllPickingTasks", true, "Picking tasks retrieved successfully", "get_all_picking_tasks", tasks, false, "", false)
+	tools.Response(ctx, "GetAllPickingTasks", true, "Tareas de picking recuperadas con éxito", "get_all_picking_tasks", tasks, false, "", false)
 }
 
 func (c *PickingTasksController) GetPickingTaskByID(ctx *gin.Context) {
@@ -41,7 +41,7 @@ func (c *PickingTasksController) GetPickingTaskByID(ctx *gin.Context) {
 	id, err := strconv.Atoi(idParam)
 
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "GetPickingTaskByID", false, "Invalid task ID", "get_picking_task_by_id", nil, false, "", true)
+		tools.Response(ctx, "GetPickingTaskByID", false, "ID de tarea inválido", "get_picking_task_by_id", nil, false, "", true)
 
 		return
 	}
@@ -54,17 +54,17 @@ func (c *PickingTasksController) GetPickingTaskByID(ctx *gin.Context) {
 	}
 
 	if task == nil {
-		tools.Response(ctx, "GetPickingTaskByID", true, "Picking task not found", "get_picking_task_by_id", nil, false, "", false)
+		tools.Response(ctx, "GetPickingTaskByID", true, "Tarea de picking no encontrada", "get_picking_task_by_id", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetPickingTaskByID", true, "Picking task retrieved successfully", "get_picking_task_by_id", task, false, "", false)
+	tools.Response(ctx, "GetPickingTaskByID", true, "Tarea de picking recuperada con éxito", "get_picking_task_by_id", task, false, "", false)
 }
 
 func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 	var request requests.CreatePickingTaskRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		tools.Response(ctx, "CreatePickingTask", false, "Invalid request data", "create_picking_task", nil, false, "", false)
+		tools.Response(ctx, "CreatePickingTask", false, "Cuerpo de solicitud inválido", "create_picking_task", nil, false, "", false)
 		return
 	}
 
@@ -84,21 +84,21 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CreatePickingTask", true, "Picking task created successfully", "create_picking_task", nil, false, "", false)
+	tools.Response(ctx, "CreatePickingTask", true, "Tarea de picking creada con éxito", "create_picking_task", nil, false, "", false)
 }
 
 func (c *PickingTasksController) UpdatePickingTask(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "UpdatePickingTask", false, "Invalid task ID", "update_picking_task", nil, false, "", false)
+		tools.Response(ctx, "UpdatePickingTask", false, "ID de tarea inválido", "update_picking_task", nil, false, "", false)
 		return
 	}
 
 	var data map[string]interface{}
 
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		tools.Response(ctx, "UpdatePickingTask", false, "Invalid request body", "update_picking_task", nil, false, "", false)
+		tools.Response(ctx, "UpdatePickingTask", false, "Cuerpo de solicitud inválido", "update_picking_task", nil, false, "", false)
 		return
 	}
 
@@ -108,7 +108,7 @@ func (c *PickingTasksController) UpdatePickingTask(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "UpdatePickingTask", true, "Picking task updated successfully", "update_picking_task", nil, false, "", false)
+	tools.Response(ctx, "UpdatePickingTask", true, "Tarea de picking actualizada con éxito", "update_picking_task", nil, false, "", false)
 }
 
 func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
@@ -117,20 +117,20 @@ func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "File upload error: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al subir el archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to open file: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportLocationsFromExcel", false, "Failed to read file content: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
+		tools.Response(ctx, "ImportLocationsFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_locations_from_excel", nil, false, "", false)
 		return
 	}
 
@@ -140,7 +140,7 @@ func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "ImportLocationsFromExcel", true, "Picking tasks imported successfully", "import_locations_from_excel", nil, false, "", false)
+	tools.Response(ctx, "ImportLocationsFromExcel", true, "Tareas de picking importadas con éxito", "import_locations_from_excel", nil, false, "", false)
 }
 
 func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
@@ -158,7 +158,7 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "CompletePickingTask", false, "Invalid task ID", "complete_picking_task", nil, false, "", true)
+		tools.Response(ctx, "CompletePickingTask", false, "ID de tarea inválido", "complete_picking_task", nil, false, "", true)
 		return
 	}
 
@@ -173,14 +173,14 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CompletePickingTask", true, "Picking task completed successfully", "complete_picking_task", nil, false, "", false)
+	tools.Response(ctx, "CompletePickingTask", true, "Tarea de picking completada con éxito", "complete_picking_task", nil, false, "", false)
 }
 
 func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil || id <= 0 {
-		tools.Response(ctx, "CompletePickingLine", false, "Invalid task ID", "complete_picking_line", nil, false, "", true)
+		tools.Response(ctx, "CompletePickingLine", false, "ID de tarea inválido", "complete_picking_line", nil, false, "", true)
 		return
 	}
 
@@ -188,7 +188,7 @@ func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
 
 	var item requests.PickingTaskItemRequest
 	if err := ctx.ShouldBindJSON(&item); err != nil {
-		tools.Response(ctx, "CompletePickingLine", false, "Invalid request data", "complete_picking_line", nil, false, "", true)
+		tools.Response(ctx, "CompletePickingLine", false, "Datos de solicitud inválidos", "complete_picking_line", nil, false, "", true)
 		return
 	}
 
@@ -206,5 +206,5 @@ func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "CompletePickingLine", true, "Picking line completed successfully", "complete_picking_line", nil, false, "", false)
+	tools.Response(ctx, "CompletePickingLine", true, "Línea de picking completada con éxito", "complete_picking_line", nil, false, "", false)
 }
