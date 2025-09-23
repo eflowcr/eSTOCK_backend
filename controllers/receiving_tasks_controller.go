@@ -70,6 +70,11 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 	response := c.Service.CreateReceivingTask(userId, &request)
 
 	if response != nil {
+		if response.Handled {
+			tools.Response(ctx, "CreateReceivingTask", true, response.Message, "create_receiving_task", nil, true, "")
+			return
+		}
+
 		tools.Response(ctx, "CreateReceivingTask", false, response.Message, "create_receiving_task", nil, response.Handled, "")
 		return
 	}
