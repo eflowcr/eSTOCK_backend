@@ -22,11 +22,11 @@ func (c *EncryptionController) EncryptData(ctx *gin.Context) {
 	encryptedData, response := c.Service.EncryptData(data)
 
 	if response != nil {
-		tools.Response(ctx, "EncryptData", false, response.Message, "encrypt", nil, false, "")
+		tools.Response(ctx, "EncryptData", false, response.Message, "encrypt", nil, false, "", response.Handled)
 		return
 	}
 
-	tools.Response(ctx, "EncryptData", true, "Data encrypted successfully", "encrypt", encryptedData, false, "")
+	tools.Response(ctx, "EncryptData", true, "Data encrypted successfully", "encrypt", encryptedData, false, "", false)
 }
 
 func (c *EncryptionController) DecryptData(ctx *gin.Context) {
@@ -35,9 +35,9 @@ func (c *EncryptionController) DecryptData(ctx *gin.Context) {
 	decryptedData, response := c.Service.DecryptData(data)
 
 	if response != nil {
-		tools.Response(ctx, "DecryptData", false, response.Message, "decrypt", nil, false, "")
+		tools.Response(ctx, "DecryptData", false, response.Message, "decrypt", nil, false, "", response.Handled)
 		return
 	}
 
-	tools.Response(ctx, "DecryptData", true, "Data decrypted successfully", "decrypt", decryptedData, false, "")
+	tools.Response(ctx, "DecryptData", true, "Data decrypted successfully", "decrypt", decryptedData, false, "", false)
 }

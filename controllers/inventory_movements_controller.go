@@ -22,14 +22,14 @@ func (c *InventoryMovementsController) GetAllInventoryMovements(ctx *gin.Context
 	movements, response := c.Service.GetAllInventoryMovements(sku)
 
 	if response != nil {
-		tools.Response(ctx, "GetAllInventoryMovements", false, response.Message, "get_all_inventory_movements", nil, false, "")
+		tools.Response(ctx, "GetAllInventoryMovements", false, response.Message, "get_all_inventory_movements", nil, false, "", response.Handled)
 		return
 	}
 
 	if len(movements) == 0 {
-		tools.Response(ctx, "GetAllInventoryMovements", true, "No inventory movements found", "get_all_inventory_movements", nil, false, "")
+		tools.Response(ctx, "GetAllInventoryMovements", true, "No inventory movements found", "get_all_inventory_movements", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAllInventoryMovements", true, "Inventory movements retrieved successfully", "get_all_inventory_movements", movements, false, "")
+	tools.Response(ctx, "GetAllInventoryMovements", true, "Inventory movements retrieved successfully", "get_all_inventory_movements", movements, false, "", false)
 }
