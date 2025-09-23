@@ -29,7 +29,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]database.PickingTask, *r
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch picking tasks",
+			Message: "Error al obtener las tareas de picking",
 			Handled: false,
 		}
 	}
@@ -46,13 +46,13 @@ func (r *PickingTaskRepository) GetPickingTaskByID(id int) (*database.PickingTas
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   nil,
-				Message: "Picking task not found",
+				Message: "Tarea de picking no encontrada",
 				Handled: true,
 			}
 		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch picking task",
+			Message: "Error al obtener la tarea de picking",
 			Handled: false,
 		}
 	}
@@ -65,7 +65,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 
 	var items []requests.PickingTaskItemRequest
 	if err := json.Unmarshal(task.Items, &items); err != nil {
-		*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+		*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 		return handledResp
 	}
 
@@ -74,12 +74,12 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 		var count int64
 
 		if err := tx.Model(&database.PickingTask{}).Where("order_number = ?", task.OutboundNumber).Count(&count).Error; err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to check outbound number uniqueness", Handled: false}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al verificar la unicidad del número de salida", Handled: false}
 			return nil
 		}
 
 		if count > 0 {
-			*handledResp = responses.InternalResponse{Error: fmt.Errorf("outbound number %s is already taken", task.OutboundNumber), Message: "Outbound number is already taken", Handled: true}
+			*handledResp = responses.InternalResponse{Error: fmt.Errorf("outbound number %s is already taken", task.OutboundNumber), Message: "El número de salida ya está en uso", Handled: true}
 			return nil
 		}
 
@@ -140,13 +140,13 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 		}
 
 		if err := tx.Create(&pickingTask).Error; err != nil {
-			return fmt.Errorf("create picking task: %w", err)
+			return fmt.Errorf("crear tarea de picking: %w", err)
 		}
 		return nil
 	})
 
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
 	}
 	if handledResp.Error != nil || handledResp.Handled {
 		return handledResp
@@ -158,9 +158,9 @@ func (r *PickingTaskRepository) UpdatePickingTask(id int, data map[string]interf
 	var task database.PickingTask
 	if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &responses.InternalResponse{Message: "Picking task not found", Handled: true}
+			return &responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true}
 		}
-		return &responses.InternalResponse{Error: err, Message: "Failed to retrieve picking task"}
+		return &responses.InternalResponse{Error: err, Message: "Error al obtener la tarea de picking"}
 	}
 
 	protected := map[string]bool{
@@ -218,14 +218,14 @@ func (r *PickingTaskRepository) UpdatePickingTask(id int, data map[string]interf
 		case map[string]interface{}, []interface{}:
 			b, err := json.Marshal(it)
 			if err != nil {
-				return &responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+				return &responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 			}
 			clean["items"] = b
 		}
 	}
 
 	if err := r.DB.Model(&task).Updates(clean).Error; err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to update picking task"}
+		return &responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de picking"}
 	}
 
 	return nil
@@ -234,17 +234,17 @@ func (r *PickingTaskRepository) UpdatePickingTask(id int, data map[string]interf
 func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to open Excel file"}
+		return &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo de Excel"}
 	}
 	defer f.Close()
 
 	const sheet = "Sheet1"
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Failed to read rows"}
+		return &responses.InternalResponse{Error: err, Message: "Error al leer las filas de la hoja de Excel"}
 	}
 	if len(rows) == 0 {
-		return &responses.InternalResponse{Error: fmt.Errorf("empty sheet"), Message: "Excel has no data", Handled: true}
+		return &responses.InternalResponse{Error: fmt.Errorf("empty sheet"), Message: "El archivo de Excel no contiene datos", Handled: true}
 	}
 
 	getOneOf := func(labels ...string) *string {
@@ -324,7 +324,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 	if headerRowIdx == -1 {
 		return &responses.InternalResponse{
 			Error:   fmt.Errorf("headers not found"),
-			Message: "Items header row not found (SKU, Expected/Requested Quantity, Location, Lot Numbers, Serial Numbers)",
+			Message: "Fila de encabezado de items no encontrada (SKU, Cantidad Esperada/Solicitada, Ubicación, Números de Lote, Números de Serie)",
 			Handled: true,
 		}
 	}
@@ -361,7 +361,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 		})
 	}
 	if len(items) == 0 {
-		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No items found to import", Handled: true}
+		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No se encontraron items para importar", Handled: true}
 	}
 
 	itemsJSON, _ := json.Marshal(items)
@@ -378,7 +378,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 	}
 
 	return &responses.InternalResponse{
-		Message: "Picking task imported and created successfully",
+		Message: "Tarea de picking importada y creada con éxito",
 		Handled: true,
 	}
 }
@@ -446,7 +446,7 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo de Excel",
 			Handled: false,
 		}
 	}
@@ -462,14 +462,14 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 		var task database.PickingTask
 		if err := tx.First(&task, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Picking task not found", Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true}
 				return nil
 			}
 			return fmt.Errorf("retrieve picking task: %w", err)
 		}
 
 		if task.Status == "completed" || task.Status == "closed" {
-			*handledResp = responses.InternalResponse{Message: "Picking task already completed or closed", Handled: true}
+			*handledResp = responses.InternalResponse{Message: "Tarea de picking ya completada o cerrada", Handled: true}
 
 			return nil
 		}
@@ -477,7 +477,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 		var items []requests.PickingTaskItemRequest
 
 		if err := json.Unmarshal(task.Items, &items); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 			return nil
 		}
 
@@ -505,13 +505,17 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 			// Check if there is enough stock in the specified location
 			if err := tx.Where("sku = ? AND location = ?", sku, location).First(&inventory).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
-					return fmt.Errorf("not enough stock for SKU %s in location %s", sku, location)
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente stock para el SKU %s en la ubicación %s", sku, location), Handled: true}
+
+					return nil
 				}
 				return fmt.Errorf("find inventory %s in %s: %w", sku, location, err)
 			}
 
 			if inventory.Quantity < float64(items[i].ExpectedQuantity) {
-				return fmt.Errorf("not enough stock for SKU %s in location %s", sku, location)
+				*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente stock para el SKU %s en la ubicación %s", sku, location), Handled: true}
+
+				return nil
 			}
 
 			// Deduct the stock
@@ -535,14 +539,14 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 			}
 
 			if err := tx.Create(&movement).Error; err != nil {
-				return fmt.Errorf("create inventory movement for %s in %s: %w", sku, location, err)
+				return fmt.Errorf("error al crear movimiento de inventario %s en %s: %w", sku, location, err)
 			}
 
 			if article.TrackBySerial && items[i].SerialNumbers != nil {
 				// Check if given serials count matches expected quantity
 				if len(items[i].SerialNumbers) != items[i].ExpectedQuantity {
 					// If not, then this task can't be completed fully
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial numbers count (%d) does not match expected quantity (%d) for SKU %s", len(items[i].SerialNumbers), items[i].ExpectedQuantity, sku), Handled: true}
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("La cantidad de números de serie (%d) no coincide con la cantidad esperada (%d) para el SKU %s", len(items[i].SerialNumbers), items[i].ExpectedQuantity, sku), Handled: true}
 					return nil
 				}
 
@@ -555,7 +559,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 					// Check if serial exists and is in stock and its available
 					if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, sku).First(&serialItem).Error; err != nil {
 						if err == gorm.ErrRecordNotFound {
-							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial number %s for SKU %s not found in inventory", serial.SerialNumber, sku), Handled: true}
+							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("El número de serie %s para el SKU %s no se encontró en el inventario", serial.SerialNumber, sku), Handled: true}
 							return nil
 						}
 						return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
@@ -587,7 +591,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 				}
 
 				if int(totalLotQty) != items[i].ExpectedQuantity {
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot numbers total quantity (%.2f) does not match expected quantity (%d) for SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("La cantidad total de lotes (%.2f) no coincide con la cantidad esperada (%d) para el SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
 
 					return nil
 				}
@@ -600,7 +604,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 					// Check if lot exists for this SKU
 					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, sku).First(&lot).Error; err != nil {
 						if err == gorm.ErrRecordNotFound {
-							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot number %s for SKU %s not found in inventory", lotNum.LotNumber, sku), Handled: true}
+							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("El número de lote %s para el SKU %s no se encontró en el inventario", lotNum.LotNumber, sku), Handled: true}
 							return nil
 						}
 						return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
@@ -608,7 +612,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 
 					// Check if lot has enough quantity
 					if lot.Quantity < lotNum.Quantity {
-						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough quantity in lot number %s for SKU %s (available: %.2f, required: %.2f)", lotNum.LotNumber, sku, lot.Quantity, lotNum.Quantity), Handled: true}
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente cantidad en el número de lote %s para el SKU %s (disponible: %.2f, requerido: %.2f)", lotNum.LotNumber, sku, lot.Quantity, lotNum.Quantity), Handled: true}
 						return nil
 					}
 
@@ -652,7 +656,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 	})
 
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+		return &responses.InternalResponse{Error: err, Message: "Transacción fallida"}
 	}
 
 	if handledResp.Error != nil || handledResp.Handled {
@@ -670,10 +674,10 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 
 		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Picking task not found", Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true}
 				return nil
 			}
-			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to retrieve receiving task"}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Error al obtener la tarea de picking"}
 			return nil
 		}
 
@@ -681,7 +685,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 		var foundItem *requests.PickingTaskItemRequest
 
 		if err := json.Unmarshal(task.Items, &items); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Invalid items format", Handled: true}
+			*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
 			return nil
 		}
 
@@ -696,7 +700,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 		}
 
 		if !found {
-			*handledResp = responses.InternalResponse{Message: "Item not found in picking task", Handled: true}
+			*handledResp = responses.InternalResponse{Message: "Item no encontrado en la tarea de picking", Handled: true}
 			return nil
 		}
 
@@ -704,14 +708,14 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 
 		if err := tx.Where("sku = ?", foundItem.SKU).First(&article).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				*handledResp = responses.InternalResponse{Message: "Article not found for SKU " + foundItem.SKU, Handled: true}
+				*handledResp = responses.InternalResponse{Message: "Artículo no encontrado para el SKU " + foundItem.SKU, Handled: true}
 				return nil
 			}
 			return fmt.Errorf("find article %s: %w", foundItem.SKU, err)
 		}
 
 		if foundItem.Status != nil && (*foundItem.Status == "completed" || *foundItem.Status == "closed" || *foundItem.Status == "partial") {
-			*handledResp = responses.InternalResponse{Message: "Item already processed", Handled: true}
+			*handledResp = responses.InternalResponse{Message: "Artículo ya procesado", Handled: true}
 			return nil
 		}
 
@@ -749,7 +753,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 			}
 
 			if err := tx.Model(&task).Updates(clean).Error; err != nil {
-				*handledResp = responses.InternalResponse{Error: err, Message: "Failed to update picking task"}
+				*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de picking"}
 				return nil
 			}
 		} else {
@@ -768,13 +772,13 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 		// Check if there is enough stock in the specified location
 		if err := tx.Where("sku = ? AND location = ?", item.SKU, location).First(&inventory).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("not enough stock for SKU %s in location %s", item.SKU, location)
+				return fmt.Errorf("no hay suficiente stock para SKU %s en location %s", item.SKU, location)
 			}
 			return fmt.Errorf("find inventory %s in %s: %w", item.SKU, location, err)
 		}
 
 		if inventory.Quantity < qty {
-			*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough stock for SKU %s in location %s", item.SKU, location), Handled: true}
+			*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente stock para SKU %s en location %s", item.SKU, location), Handled: true}
 
 			return nil
 		}
@@ -800,7 +804,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 		}
 
 		if err := tx.Create(&movement).Error; err != nil {
-			return fmt.Errorf("create inventory movement for %s in %s: %w", item.SKU, location, err)
+			return fmt.Errorf("error al crear movimiento de inventario para %s en %s: %w", item.SKU, location, err)
 		}
 
 		if article.TrackBySerial && item.SerialNumbers != nil {
@@ -811,7 +815,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 				var serialItem database.Serial
 				if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, item.SKU).First(&serialItem).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
-						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Serial number %s for SKU %s not found in inventory", serial.SerialNumber, item.SKU), Handled: true}
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Número de serie %s para SKU %s no encontrado en inventario", serial.SerialNumber, item.SKU), Handled: true}
 						return nil
 					}
 					return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, item.SKU, err)
@@ -887,7 +891,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 				// Check if lot exists for this SKU
 				if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
-						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Lot number %s for SKU %s not found in inventory", lotNum.LotNumber, item.SKU), Handled: true}
+						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Número de lote %s para SKU %s no encontrado en inventario", lotNum.LotNumber, item.SKU), Handled: true}
 						return nil
 					}
 					return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
@@ -895,7 +899,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 
 				// Check if lot has enough quantity
 				if lot.Quantity < lotNum.Quantity {
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Not enough quantity in lot number %s for SKU %s (available: %.2f, required: %.2f)", lotNum.LotNumber, item.SKU, lot.Quantity, lotNum.Quantity), Handled: true}
+					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente cantidad en el número de lote %s para SKU %s (disponible: %.2f, requerido: %.2f)", lotNum.LotNumber, item.SKU, lot.Quantity, lotNum.Quantity), Handled: true}
 					return nil
 				}
 
@@ -985,7 +989,7 @@ func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId str
 	})
 
 	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transaction failed"}
+		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
 	}
 
 	if handledResp.Error != nil || handledResp.Handled {
