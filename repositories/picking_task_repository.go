@@ -70,6 +70,19 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		// Check for unique OutboundNumber
+		var count int64
+
+		if err := tx.Model(&database.PickingTask{}).Where("order_number = ?", task.OutboundNumber).Count(&count).Error; err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: "Failed to check outbound number uniqueness", Handled: false}
+			return nil
+		}
+
+		if count > 0 {
+			*handledResp = responses.InternalResponse{Error: fmt.Errorf("outbound number %s is already taken", task.OutboundNumber), Message: "Outbound number is already taken", Handled: true}
+			return nil
+		}
+
 		nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
 		taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
 
@@ -99,7 +112,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 
 			if art.TrackBySerial {
 				for j := range items[i].SerialNumbers {
-					// ⚠️ Esto depende del tipo de Status
+					// Esto depende del tipo de Status
 					items[i].SerialNumbers[j].Status = *tools.StrPtr("open")
 				}
 			}
@@ -455,6 +468,12 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 			return fmt.Errorf("retrieve picking task: %w", err)
 		}
 
+		if task.Status == "completed" || task.Status == "closed" {
+			*handledResp = responses.InternalResponse{Message: "Picking task already completed or closed", Handled: true}
+
+			return nil
+		}
+
 		var items []requests.PickingTaskItemRequest
 
 		if err := json.Unmarshal(task.Items, &items); err != nil {
@@ -463,6 +482,10 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 		}
 
 		for i := 0; i < len(items); i++ {
+			if items[i].Status != nil && (*items[i].Status == "completed" || *items[i].Status == "partial") {
+				continue
+			}
+
 			sku := items[i].SKU
 
 			items[i].Status = tools.StrPtr("completed")
@@ -615,7 +638,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 		task.Items = updatedItems
 
 		clean := map[string]interface{}{
-			"status":       "completed",
+			"status":       "closed",
 			"items":        updatedItems,
 			"completed_at": tools.GetCurrentTime(),
 			"updated_at":   tools.GetCurrentTime(),
