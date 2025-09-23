@@ -21,7 +21,7 @@ func (c *AuthenticationController) Login(ctx *gin.Context) {
 	var login requests.Login
 
 	if err := ctx.ShouldBind(&login); err != nil {
-		ctx.JSON(400, gin.H{"error": "Invalid request data"})
+		ctx.JSON(400, gin.H{"error": "Carga útil incorrecta"})
 		return
 	}
 
@@ -32,5 +32,5 @@ func (c *AuthenticationController) Login(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "Login", true, "Login successful", "login", loginResponse, true, loginResponse.Token, false)
+	tools.Response(ctx, "Login", true, "Login exitoso", "login", loginResponse, true, loginResponse.Token, false)
 }
