@@ -26,11 +26,11 @@ func (c *StockAlertsController) GetAllStockAlerts(ctx *gin.Context) {
 	}
 
 	if len(stockAlerts) == 0 {
-		tools.Response(ctx, "GetAllStockAlerts", true, "No stock alerts found", "get_all_stock_alerts", nil, false, "", false)
+		tools.Response(ctx, "GetAllStockAlerts", true, "No se encontraron alertas de stock", "get_all_stock_alerts", nil, false, "", false)
 		return
 	}
 
-	tools.Response(ctx, "GetAllStockAlerts", true, "Stock alerts retrieved successfully", "get_all_stock_alerts", stockAlerts, false, "", false)
+	tools.Response(ctx, "GetAllStockAlerts", true, "Alertas de stock obtenidas con éxito", "get_all_stock_alerts", stockAlerts, false, "", false)
 }
 
 func (c *StockAlertsController) Analyze(ctx *gin.Context) {
@@ -41,7 +41,7 @@ func (c *StockAlertsController) Analyze(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "Analyze", true, "Stock alerts analyzed successfully", "analyze_stock_alerts", responseData, false, "", false)
+	tools.Response(ctx, "Analyze", true, "Alertas de stock analizadas con éxito", "analyze_stock_alerts", responseData, false, "", false)
 }
 
 func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
@@ -51,7 +51,7 @@ func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "LotExpiration", true, "Lot expiration alerts generated successfully", "lot_expiration", response, false, "", false)
+	tools.Response(ctx, "LotExpiration", true, "Alertas de expiración de lotes generadas con éxito", "lot_expiration", response, false, "", false)
 }
 
 func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
@@ -60,7 +60,7 @@ func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
 	alertIDInt, err := tools.StringToInt(alertID)
 
 	if err != nil {
-		tools.Response(ctx, "ResolveAlert", false, "Invalid alert ID", "resolve_stock_alert", nil, false, "", false)
+		tools.Response(ctx, "ResolveAlert", false, "ID de alerta inválido", "resolve_stock_alert", nil, false, "", false)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
 		return
 	}
 
-	tools.Response(ctx, "Resolve", true, "Stock alert resolved successfully", "resolve_stock_alert", nil, false, "", false)
+	tools.Response(ctx, "Resolve", true, "Alerta de stock resuelta con éxito", "resolve_stock_alert", nil, false, "", false)
 }
 
 func (c *StockAlertsController) ExportAlertsToExcel(ctx *gin.Context) {
@@ -83,7 +83,7 @@ func (c *StockAlertsController) ExportAlertsToExcel(ctx *gin.Context) {
 	}
 
 	if data == nil {
-		tools.Response(ctx, "ExportAlertsToExcel", true, "No stock alerts to export", "export_stock_alerts_to_excel", nil, false, "", false)
+		tools.Response(ctx, "ExportAlertsToExcel", true, "No se encontraron alertas de stock para exportar", "export_stock_alerts_to_excel", nil, false, "", false)
 		return
 	}
 

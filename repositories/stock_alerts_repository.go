@@ -47,7 +47,7 @@ func (r *StockAlertsRepository) GetAllStockAlerts(resolved bool) ([]database.Sto
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch stock alerts",
+			Message: "Error al obtener las alertas de stock",
 			Handled: false,
 		}
 	}
@@ -61,7 +61,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	if tx.Error != nil {
 		return nil, &responses.InternalResponse{
 			Error:   tx.Error,
-			Message: "Failed to start transaction",
+			Message: "Error al iniciar la transacción",
 			Handled: false,
 		}
 	}
@@ -75,7 +75,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete resolved stock alerts",
+			Message: "Error al eliminar las alertas de stock resueltas",
 			Handled: false,
 		}
 	}
@@ -90,7 +90,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		tx.Rollback()
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch inventory",
+			Message: "Error al obtener el inventario",
 			Handled: false,
 		}
 	}
@@ -110,7 +110,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 			tx.Rollback()
 			return nil, &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to fetch inventory movements",
+				Message: "Error al obtener los movimientos de inventario",
 				Handled: false,
 			}
 		}
@@ -164,7 +164,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 				tx.Rollback()
 				return nil, &responses.InternalResponse{
 					Error:   err,
-					Message: "Failed to create stock alert: " + err.Error(),
+					Message: "Error al crear la alerta de stock: " + err.Error(),
 					Handled: false,
 				}
 			}
@@ -177,7 +177,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		tx.Rollback()
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate lot expiration alerts",
+			Message: "Error al generar las alertas de expiración de lotes",
 			Handled: false,
 		}
 	}
@@ -189,7 +189,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		tx.Rollback()
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to commit transaction",
+			Message: "Error al confirmar la transacción",
 			Handled: false,
 		}
 	}
@@ -220,7 +220,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	}
 
 	response := &responses.StockAlertResponse{
-		Message: "Stock alerts generated successfully",
+		Message: "Alertas de stock generadas con éxito",
 		Alerts:  alerts,
 		Summary: responses.StockAlertSumary{
 			Total:    len(alerts),
@@ -428,14 +428,14 @@ func GenerateAlertMessage(
 	case AlertTypeLowStock:
 		switch alertLevel {
 		case AlertLevelCritical:
-			return fmt.Sprintf("CRITICAL: SKU %s has only %d units remaining. Immediate restocking required.", sku, currentStock)
+			return fmt.Sprintf("Crítico: SKU %s tiene solo %d unidades restantes. Se requiere un reabastecimiento inmediato.", sku, currentStock)
 		case AlertLevelHigh:
-			return fmt.Sprintf("HIGH: SKU %s is running low with %d units. Consider restocking soon.", sku, currentStock)
+			return fmt.Sprintf("Alto: SKU %s está quedando bajo con %d unidades. Considere reabastecer pronto.", sku, currentStock)
 		}
 
 	case AlertTypePredictive:
 		if math.IsNaN(predictedStockOutDays) || math.IsInf(predictedStockOutDays, 0) {
-			return fmt.Sprintf("Alert for SKU %s: Current stock %d, recommended restock %d units.", sku, currentStock, recommendedStock)
+			return fmt.Sprintf("Alerta para SKU %s: Stock actual %d, se recomienda un nuevo pedido de %d unidades.", sku, currentStock, recommendedStock)
 		}
 		daysText := int(math.Floor(predictedStockOutDays))
 		if daysText < 0 {
@@ -444,14 +444,14 @@ func GenerateAlertMessage(
 
 		switch alertLevel {
 		case AlertLevelCritical:
-			return fmt.Sprintf("CRITICAL: SKU %s predicted to stock out in %d days. Urgent reorder of %d units recommended.", sku, daysText, recommendedStock)
+			return fmt.Sprintf("Crítico: SKU %s predice que se agotará en %d días. Se recomienda un pedido urgente de %d unidades.", sku, daysText, recommendedStock)
 		case AlertLevelHigh:
-			return fmt.Sprintf("HIGH: SKU %s predicted to stock out in %d days. Reorder of %d units recommended.", sku, daysText, recommendedStock)
+			return fmt.Sprintf("Alto: SKU %s predice que se agotará en %d días. Se recomienda un pedido de %d unidades.", sku, daysText, recommendedStock)
 		}
 	}
 
 	// Mensaje por defecto
-	return fmt.Sprintf("Alert for SKU %s: Current stock %d, recommended restock %d units.", sku, currentStock, recommendedStock)
+	return fmt.Sprintf("Alerta para SKU %s: Stock actual %d, se recomienda un nuevo pedido de %d unidades.", sku, currentStock, recommendedStock)
 }
 
 func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gorm.DB) ([]database.StockAlert, error) {
@@ -510,7 +510,7 @@ func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gor
 				CurrentStock:     int(lots[i].Quantity),
 				RecommendedStock: 0,
 				AlertLevel:       *alertLevel,
-				Message: fmt.Sprintf("Lot %s of SKU %s is expiring in %d days (on %s). Current lot quantity: %.2f.",
+				Message: fmt.Sprintf("Lote %s del SKU %s está por expirar en %d días (el %s). Cantidad actual del lote: %.2f.",
 					lots[i].LotNumber,
 					lots[i].SKU,
 					daysToExpire,
@@ -550,7 +550,7 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate lot expiration alerts",
+			Message: "Error al generar las alertas de expiración de lotes",
 			Handled: false,
 		}
 	}
@@ -560,7 +560,7 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 	if len(alerts) == 0 {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "No lot expiration alerts generated",
+			Message: "No se generaron alertas de expiración de lotes",
 			Handled: true,
 		}
 	}
@@ -568,7 +568,7 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 	summary := sumarizeAlerts(alerts)
 
 	response := &responses.StockAlertResponse{
-		Message: "Lot expiration alerts generated successfully",
+		Message: "Alertas de expiración de lotes generadas con éxito",
 		Alerts:  alerts,
 		Summary: summary,
 	}
@@ -582,7 +582,7 @@ func (r *StockAlertsRepository) ResolveAlert(alertID int) *responses.InternalRes
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to find alert",
+			Message: "Error al encontrar la alerta",
 			Handled: false,
 		}
 	}
@@ -590,7 +590,7 @@ func (r *StockAlertsRepository) ResolveAlert(alertID int) *responses.InternalRes
 	if alert.IsResolved {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Alert already resolved",
+			Message: "Alerta ya resuelta",
 			Handled: true,
 		}
 	}
@@ -603,7 +603,7 @@ func (r *StockAlertsRepository) ResolveAlert(alertID int) *responses.InternalRes
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to resolve alert",
+			Message: "Error al resolver la alerta",
 			Handled: false,
 		}
 	}
@@ -623,7 +623,7 @@ func (r *StockAlertsRepository) Summary() (*responses.StockAlertResponse, *respo
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch stock alerts",
+			Message: "Error al obtener las alertas de stock",
 			Handled: false,
 		}
 	}
@@ -631,7 +631,7 @@ func (r *StockAlertsRepository) Summary() (*responses.StockAlertResponse, *respo
 	if len(alerts) == 0 {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "No stock alerts found",
+			Message: "No se encontraron alertas de stock",
 			Handled: true,
 		}
 	}
@@ -639,7 +639,7 @@ func (r *StockAlertsRepository) Summary() (*responses.StockAlertResponse, *respo
 	summary := sumarizeAlerts(alerts)
 
 	return &responses.StockAlertResponse{
-		Message: "Stock alerts summary fetched successfully",
+		Message: "Resumen de alertas de stock obtenido con éxito",
 		Alerts:  alerts,
 		Summary: summary,
 	}, nil
@@ -683,7 +683,7 @@ func (r *StockAlertsRepository) ExportAlertsToExcel() ([]byte, *responses.Intern
 	if len(alerts) == 0 {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "No stock alerts found to export",
+			Message: "No se encontraron alertas de stock para exportar",
 			Handled: true,
 		}
 	}
@@ -738,7 +738,7 @@ func (r *StockAlertsRepository) ExportAlertsToExcel() ([]byte, *responses.Intern
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo Excel",
 			Handled: false,
 		}
 	}
