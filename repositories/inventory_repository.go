@@ -24,7 +24,7 @@ type InventoryRepository struct {
 
 func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
 	var items []database.Inventory
-	err := r.DB.
+	err := r.DB.Where("quantity > 0").
 		Order("sku ASC").
 		Find(&items).Error
 
