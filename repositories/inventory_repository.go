@@ -332,7 +332,6 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 		}
 	}
 
-	// Ya tenés el item; no hace falta chequear campos vacíos
 	var count int64
 	if err := r.DB.Model(&database.Inventory{}).
 		Where("sku = ? AND location = ? AND id <> ?", item.SKU, item.Location, inventory.ID).
@@ -353,6 +352,14 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 	}
 
 	// 2 - Update inventory
+	inventory.Name = item.Name
+	inventory.Description = item.Description
+	inventory.Location = item.Location
+	inventory.Quantity = item.Quantity
+	inventory.UnitPrice = item.UnitPrice
+	inventory.Status = item.Status
+	inventory.UpdatedAt = tools.GetCurrentTime()
+
 	if err := r.DB.Model(&inventory).Updates(&inventory).Where("id = ?", inventory.ID).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
