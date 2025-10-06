@@ -45,7 +45,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 					'item_name', a.name,
 					'status', COALESCE(item->>'status', 'pending'),
 					'location', item->>'location',
-					'expected_qty', item->>'expected_qty',
+					'required_qty', item->>'required_qty',
 					'picked_qty', item->>'picked_qty',
 					'lots', (
 						SELECT jsonb_agg(l)
