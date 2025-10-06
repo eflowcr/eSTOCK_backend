@@ -44,10 +44,18 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 				jsonb_build_object(
 					'sku', item->>'sku',
 					'item_name', a.name,
-					'status', item->>'status',
+					'status', COALESCE(item->>'status', 'pending'),
 					'location', item->>'location',
 					'expected_qty', item->>'expected_qty',
-					'received_qty', item->>'received_qty'					
+					'received_qty', item->>'received_qty',
+					'lots', (
+						SELECT jsonb_agg(l)
+						FROM jsonb_array_elements(item->'lots') AS l
+					),
+					'serials', (
+						SELECT jsonb_agg(s)
+						FROM jsonb_array_elements(item->'serials') AS s
+					)
 				)
 			) AS items
 		FROM receiving_tasks rt
@@ -56,21 +64,22 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
 		GROUP BY
-			    rt.id,
-				rt.task_id,
-				rt.inbound_number,
-				rt.created_by,
-				usr.first_name,
-				usr.last_name,
-				rt.assigned_to,
-				usr_assignee.first_name,
-				usr_assignee.last_name,
-				rt.status,
-				rt.priority,
-				rt.notes,
-				rt.created_at,
-				rt.updated_at,
-				rt.completed_at;
+			rt.id,
+			rt.task_id,
+			rt.inbound_number,
+			rt.created_by,
+			usr.first_name,
+			usr.last_name,
+			rt.assigned_to,
+			usr_assignee.first_name,
+			usr_assignee.last_name,
+			rt.status,
+			rt.priority,
+			rt.notes,
+			rt.created_at,
+			rt.updated_at,
+			rt.completed_at;
+
 	`
 
 	err := r.DB.Raw(sqlRaw).Scan(&tasks).Error

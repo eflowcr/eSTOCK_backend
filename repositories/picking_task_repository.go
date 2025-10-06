@@ -43,10 +43,18 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 				jsonb_build_object(
 					'sku', item->>'sku',
 					'item_name', a.name,
-					'status', item->>'status',
+					'status', COALESCE(item->>'status', 'pending'),
 					'location', item->>'location',
 					'expected_qty', item->>'expected_qty',
-					'picked_qty', item->>'picked_qty'
+					'picked_qty', item->>'picked_qty',
+					'lots', (
+						SELECT jsonb_agg(l)
+						FROM jsonb_array_elements(item->'lots') AS l
+					),
+					'serials', (
+						SELECT jsonb_agg(s)
+						FROM jsonb_array_elements(item->'serials') AS s
+					)
 				)
 			) AS items
 		FROM picking_tasks pt
