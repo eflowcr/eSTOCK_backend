@@ -327,6 +327,22 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 	priority := getOneOf("Priority")
 	notes := getOneOf("Notes")
 
+	var assignedId string
+
+	if assignedTo != nil && strings.TrimSpace(*assignedTo) != "" {
+		var user database.User
+
+		if err := r.DB.Where("email = ?", strings.TrimSpace(*assignedTo), strings.TrimSpace(*assignedTo)).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &responses.InternalResponse{Error: fmt.Errorf("user %s not found", *assignedTo), Message: "Usuario asignado no encontrado", Handled: true}
+			}
+		} else {
+			assignedId = user.ID
+		}
+	} else {
+		return &responses.InternalResponse{Error: fmt.Errorf("assigned to is required"), Message: "El campo 'Assigned To' es obligatorio", Handled: true}
+	}
+
 	priorityNorm := "normal"
 	if priority != nil && strings.TrimSpace(*priority) != "" {
 		switch p := strings.ToLower(strings.TrimSpace(*priority)); p {
@@ -423,7 +439,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 	itemsJSON, _ := json.Marshal(items)
 	req := &requests.CreatePickingTaskRequest{
 		OutboundNumber: safeDeref(outboundNumber),
-		AssignedTo:     assignedTo,
+		AssignedTo:     &assignedId,
 		Priority:       priorityNorm,
 		Notes:          notes,
 		Items:          json.RawMessage(itemsJSON),
