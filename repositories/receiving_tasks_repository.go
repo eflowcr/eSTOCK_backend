@@ -22,13 +22,54 @@ type ReceivingTasksRepository struct {
 	DB *gorm.DB
 }
 
-func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]database.ReceivingTask, *responses.InternalResponse) {
-	var tasks []database.ReceivingTask
+func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	var tasks []responses.ReceivingTasksView
 
-	err := r.DB.
-		Table(database.ReceivingTask{}.TableName()).
-		Order("created_at DESC").
-		Find(&tasks).Error
+	sqlRaw := `
+		SELECT
+			rt.id,
+			rt.task_id,
+			rt.inbound_number,
+			rt.created_by,
+			usr.first_name || ' ' || usr.last_name AS created_by_name,
+			rt.assigned_to,
+			rt.status,
+			rt.priority,
+			rt.notes,
+			rt.created_at,
+			rt.updated_at,
+			rt.completed_at,
+			jsonb_agg(
+				jsonb_build_object(
+					'sku', item->>'sku',
+					'item_name', a.name,
+					'status', item->>'status',
+					'location', item->>'location',
+					'expected_qty', item->>'expected_qty',
+					'received_qty', item->>'received_qty'					
+				)
+			) AS items
+		FROM receiving_tasks rt
+		INNER JOIN users usr ON rt.created_by = usr.id
+		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
+		LEFT JOIN articles a ON a.sku = item->>'sku'
+		GROUP BY
+			rt.id,
+			rt.task_id,
+			rt.inbound_number,
+			rt.created_by,
+			usr.first_name,
+			usr.last_name,
+			rt.assigned_to,
+			rt.status,
+			rt.priority,
+			rt.notes,
+			rt.created_at,
+			rt.updated_at,
+			rt.completed_at;
+	`
+
+	err := r.DB.Raw(sqlRaw).Scan(&tasks).Error
 
 	if err != nil {
 		return nil, &responses.InternalResponse{
