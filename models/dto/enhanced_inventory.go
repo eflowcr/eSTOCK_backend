@@ -12,7 +12,7 @@ type EnhancedInventory struct {
 	Location        string            `json:"location"`
 	Quantity        float64           `json:"quantity"`
 	Status          string            `json:"status"`
-	UnitPrice       float64           `json:"unit_price"`
+	UnitPrice       *float64          `json:"unit_price"`
 	CreatedAt       time.Time         `json:"created_at"`
 	UpdatedAt       time.Time         `json:"updated_at"`
 	Name            string            `json:"name"`

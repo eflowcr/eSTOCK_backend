@@ -100,7 +100,7 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			Location:        item.Location,
 			Quantity:        item.Quantity,
 			Status:          item.Status,
-			UnitPrice:       *item.UnitPrice,
+			UnitPrice:       item.UnitPrice,
 			CreatedAt:       item.CreatedAt,
 			UpdatedAt:       item.UpdatedAt,
 			Name:            article.Name,
