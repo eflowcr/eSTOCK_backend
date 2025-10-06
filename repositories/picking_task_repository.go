@@ -260,7 +260,7 @@ func (r *PickingTaskRepository) UpdatePickingTask(id int, data map[string]interf
 		if s, ok := raw.(string); ok {
 			sLower := strings.ToLower(strings.TrimSpace(s))
 			switch sLower {
-			case "completed":
+			case "closed":
 				clean["completed_at"] = tools.GetCurrentTime()
 			default:
 				clean["completed_at"] = gorm.Expr("NULL")
