@@ -436,6 +436,24 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 	priority := getLabeledValue("Priority")
 	notes := getLabeledValue("Notes")
 
+	var assignedId string
+
+	// Get the user with the email in assignedTo (if any)
+	if assignedTo != nil && strings.TrimSpace(*assignedTo) != "" {
+		var user database.User
+		if err := r.DB.First(&user, "email = ?", strings.TrimSpace(*assignedTo)).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				assignedId = ""
+			} else {
+				return &responses.InternalResponse{Error: err, Message: "Error al obtener usuario asignado"}
+			}
+		} else {
+			assignedId = user.ID
+		}
+	} else {
+		return &responses.InternalResponse{Error: fmt.Errorf("assigned to is required"), Message: "El campo 'Assigned To' es obligatorio", Handled: true}
+	}
+
 	priorityNorm := "normal"
 	if priority != nil && strings.TrimSpace(*priority) != "" {
 		p := strings.ToLower(strings.TrimSpace(*priority))
@@ -486,7 +504,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 	itemsJSON, _ := json.Marshal(items)
 	req := &requests.CreateReceivingTaskRequest{
 		InboundNumber: safeDeref(inboundNumber),
-		AssignedTo:    assignedTo,
+		AssignedTo:    &assignedId,
 		Priority:      priorityNorm,
 		Notes:         notes,
 		Items:         json.RawMessage(itemsJSON),
