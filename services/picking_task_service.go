@@ -17,7 +17,7 @@ func NewPickingTaskService(repo *repositories.PickingTaskRepository) *PickingTas
 	}
 }
 
-func (s *PickingTaskService) GetAllPickingTasks() ([]database.PickingTask, *responses.InternalResponse) {
+func (s *PickingTaskService) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	return s.Repository.GetAllPickingTasks()
 }
 
