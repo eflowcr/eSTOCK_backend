@@ -17,7 +17,7 @@ func NewReceivingTasksService(repo *repositories.ReceivingTasksRepository) *Rece
 	}
 }
 
-func (s *ReceivingTasksService) GetAllReceivingTasks() ([]database.ReceivingTask, *responses.InternalResponse) {
+func (s *ReceivingTasksService) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
 	return s.Repository.GetAllReceivingTasks()
 }
 
