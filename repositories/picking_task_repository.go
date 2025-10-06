@@ -21,15 +21,63 @@ type PickingTaskRepository struct {
 	DB *gorm.DB
 }
 
-func (r *PickingTaskRepository) GetAllPickingTasks() ([]database.PickingTask, *responses.InternalResponse) {
-	var tasks []database.PickingTask
+func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
+	var tasks []responses.PickingTaskView
 
-	err := r.DB.Table(database.PickingTask{}.TableName()).Order("created_at DESC").Find(&tasks).Error
+	sqlRar := `
+		SELECT
+			pt.id,
+			pt.task_id,
+			pt.order_number,
+			pt.created_by,
+			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			pt.assigned_to,
+			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
+			pt.status,
+			pt.priority,
+			pt.notes,
+			pt.created_at,
+			pt.updated_at,
+			pt.completed_at,
+			jsonb_agg(
+				jsonb_build_object(
+					'sku', item->>'sku',
+					'item_name', a.name,
+					'status', item->>'status',
+					'location', item->>'location',
+					'expected_qty', item->>'expected_qty',
+					'picked_qty', item->>'picked_qty'
+				)
+			) AS items
+		FROM picking_tasks pt
+		INNER JOIN users usr ON pt.created_by = usr.id
+		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
+		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
+		LEFT JOIN articles a ON a.sku = item->>'sku'
+		GROUP BY
+			pt.id,
+			pt.task_id,
+			pt.order_number,
+			pt.created_by,
+			usr.first_name,
+			usr.last_name,
+			pt.assigned_to,
+			usr_assignee.first_name,
+			usr_assignee.last_name,
+			pt.status,
+			pt.priority,
+			pt.notes,
+			pt.created_at,
+			pt.updated_at,
+			pt.completed_at;
+	`
+
+	err := r.DB.Raw(sqlRar).Scan(&tasks).Error
 
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Error al obtener las tareas de picking",
+			Message: "Error al obtener todas las tareas de picking",
 			Handled: false,
 		}
 	}

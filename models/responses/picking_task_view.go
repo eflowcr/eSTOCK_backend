@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-type ReceivingTasksView struct {
+type PickingTaskView struct {
 	ID               int             `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	TaskID           string          `gorm:"column:task_id;unique" json:"task_id"`
-	InboundNumber    string          `gorm:"column:inbound_number" json:"inbound_number"`
+	OrderNumber      string          `gorm:"column:order_number" json:"order_number"`
 	CreatedBy        string          `gorm:"column:created_by" json:"created_by"`
 	UserCreatorName  string          `gorm:"column:user_creator_name" json:"user_creator_name"`
 	AssignedTo       *string         `gorm:"column:assigned_to" json:"assigned_to"`
