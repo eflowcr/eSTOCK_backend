@@ -24,7 +24,7 @@ func (r *SerialsRepository) GetSerialByID(id int) (*database.Serial, *responses.
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch serial",
+			Message: "Error al obtener la serie",
 			Handled: false,
 		}
 	}
@@ -43,7 +43,7 @@ func (r *SerialsRepository) GetSerialsBySKU(sku string) ([]database.Serial, *res
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch serials",
+			Message: "Error al obtener las series",
 			Handled: false,
 		}
 	}
@@ -64,7 +64,7 @@ func (r *SerialsRepository) CreateSerial(data *requests.CreateSerialRequest) *re
 	if err := r.DB.Create(serial).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to create serial",
+			Message: "Error al crear la serie",
 			Handled: false,
 		}
 	}
@@ -79,14 +79,14 @@ func (r *SerialsRepository) UpdateSerial(id int, data map[string]interface{}) *r
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Serial not found",
+			Message: "Serie no encontrada",
 			Handled: true,
 		}
 	}
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to retrieve serial",
+			Message: "Error al obtener la serie",
 			Handled: false,
 		}
 	}
@@ -105,7 +105,7 @@ func (r *SerialsRepository) UpdateSerial(id int, data map[string]interface{}) *r
 	if err := r.DB.Model(&serial).Updates(data).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update serial",
+			Message: "Error al actualizar la serie",
 			Handled: false,
 		}
 	}
@@ -118,7 +118,7 @@ func (r *SerialsRepository) DeleteSerial(id int) *responses.InternalResponse {
 	if result.Error != nil {
 		return &responses.InternalResponse{
 			Error:   result.Error,
-			Message: "Failed to delete serial",
+			Message: "Error al eliminar la serie",
 			Handled: false,
 		}
 	}
@@ -126,7 +126,7 @@ func (r *SerialsRepository) DeleteSerial(id int) *responses.InternalResponse {
 	if result.RowsAffected == 0 {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Serial not found",
+			Message: "Serie no encontrada",
 			Handled: true,
 		}
 	}

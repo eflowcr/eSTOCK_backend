@@ -20,9 +20,9 @@ func (c *DashboardController) GetDashboardStats(ctx *gin.Context) {
 	stats, response := c.Service.GetDashboardStats()
 
 	if response != nil {
-		tools.Response(ctx, "GetDashboardStats", false, response.Message, "get_dashboard_stats", nil, false, "")
+		tools.Response(ctx, "GetDashboardStats", false, response.Message, "get_dashboard_stats", nil, false, "", response.Handled)
 		return
 	}
 
-	tools.Response(ctx, "GetDashboardStats", true, "Dashboard stats retrieved successfully", "get_dashboard_stats", stats, false, "")
+	tools.Response(ctx, "GetDashboardStats", true, "Estadísticas del dashboard obtenidas con éxito", "get_dashboard_stats", stats, false, "", false)
 }

@@ -17,7 +17,7 @@ func NewPickingTaskService(repo *repositories.PickingTaskRepository) *PickingTas
 	}
 }
 
-func (s *PickingTaskService) GetAllPickingTasks() ([]database.PickingTask, *responses.InternalResponse) {
+func (s *PickingTaskService) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	return s.Repository.GetAllPickingTasks()
 }
 
@@ -39,4 +39,12 @@ func (s *PickingTaskService) ImportPickingTaskFromExcel(userID string, fileBytes
 
 func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportPickingTasksToExcel()
+}
+
+func (s *PickingTaskService) CompletePickingTask(id int, location, userId string) *responses.InternalResponse {
+	return s.Repository.CompletePickingTask(id, location, userId)
+}
+
+func (s *PickingTaskService) CompletePickingLine(id int, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+	return s.Repository.CompletePickingLine(id, location, userId, item)
 }

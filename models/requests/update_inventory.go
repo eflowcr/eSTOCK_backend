@@ -9,6 +9,7 @@ type UpdateInventory struct {
 	UnitPrice          *float64 `json:"unit_price" validate:"required"`
 	DefaultLotNumber   *string  `json:"defaultLotNumber,omitempty"`
 	SerialNumberPrefix *string  `json:"serialNumberPrefix,omitempty"`
+	Status             string   `json:"status"`
 	TrackByLot         bool     `json:"trackByLot"`
 	TrackBySerial      bool     `json:"trackBySerial"`
 }

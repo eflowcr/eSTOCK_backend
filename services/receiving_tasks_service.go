@@ -17,7 +17,7 @@ func NewReceivingTasksService(repo *repositories.ReceivingTasksRepository) *Rece
 	}
 }
 
-func (s *ReceivingTasksService) GetAllReceivingTasks() ([]database.ReceivingTask, *responses.InternalResponse) {
+func (s *ReceivingTasksService) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
 	return s.Repository.GetAllReceivingTasks()
 }
 
@@ -39,4 +39,12 @@ func (s *ReceivingTasksService) ImportReceivingTaskFromExcel(userID string, file
 
 func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportReceivingTaskToExcel()
+}
+
+func (s *ReceivingTasksService) CompleteFullTask(id int, location, userId string) *responses.InternalResponse {
+	return s.Repository.CompleteFullTask(id, location, userId)
+}
+
+func (s *ReceivingTasksService) CompleteReceivingLine(id int, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
+	return s.Repository.CompleteReceivingLine(id, location, userId, item)
 }
