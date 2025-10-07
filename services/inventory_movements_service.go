@@ -16,6 +16,10 @@ func NewInventoryMovementsService(repo *repositories.InventoryMovementsRepositor
 	}
 }
 
-func (s *InventoryMovementsService) GetAllInventoryMovements(sku string) ([]database.InventoryMovement, *responses.InternalResponse) {
-	return s.Repository.GetAllInventoryMovements(sku)
+func (s *InventoryMovementsService) GetAllInventoryMovements() ([]database.InventoryMovement, *responses.InternalResponse) {
+	return s.Repository.GetAllInventoryMovements()
+}
+
+func (s *InventoryMovementsService) GetMovementsBySku(sku string) ([]database.InventoryMovement, *responses.InternalResponse) {
+	return s.Repository.GetMovementsBySku(sku)
 }

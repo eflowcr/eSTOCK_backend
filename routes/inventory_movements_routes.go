@@ -9,13 +9,14 @@ import (
 )
 
 func RegisterInventoryMovementsRoutes(router *gin.RouterGroup, db *gorm.DB) {
-	inventoryMovementsRepository := &repositories.InventoryMovementsRepository{}
+	inventoryMovementsRepository := &repositories.InventoryMovementsRepository{DB: db}
 	inventoryMovementsService := services.NewInventoryMovementsService(inventoryMovementsRepository)
 
 	inventoryMovementsController := controllers.NewInventoryMovementsController(*inventoryMovementsService)
 
 	inventoryMovementsRoute := router.Group("/inventory_movements")
 	{
-		inventoryMovementsRoute.GET("/:sku", inventoryMovementsController.GetAllInventoryMovements)
+		inventoryMovementsRoute.GET("/", inventoryMovementsController.GetAllInventoryMovements)
+		inventoryMovementsRoute.GET("/:sku", inventoryMovementsController.GetMovementsBySku)
 	}
 }
