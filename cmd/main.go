@@ -8,11 +8,15 @@ import (
 )
 
 func main() {
+	gin.SetMode(gin.ReleaseMode)
+
 	configuration.LoadConfig()
 
 	db := tools.InitDB()
 
-	r := gin.Default()
+	r := gin.New()
+
+	r.Use(gin.Recovery())
 
 	r.Use(tools.CORSMiddleware())
 

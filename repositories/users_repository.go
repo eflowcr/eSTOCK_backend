@@ -29,7 +29,7 @@ func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalRes
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch users",
+			Message: "Error al obtener usuarios",
 			Handled: false,
 		}
 	}
@@ -44,14 +44,14 @@ func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.Int
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "User not found",
+			Message: "Usuario no encontrado",
 			Handled: true,
 		}
 	}
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to find user",
+			Message: "Error al buscar usuario",
 			Handled: false,
 		}
 	}
@@ -67,14 +67,14 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to check email",
+			Message: "Error al verificar el correo electrónico",
 			Handled: false,
 		}
 	}
 	if count > 0 {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "Email address already exists",
+			Message: "El correo electrónico ya existe",
 			Handled: true,
 		}
 	}
@@ -83,7 +83,7 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to encrypt password",
+			Message: "Error al encriptar la contraseña",
 			Handled: false,
 		}
 	}
@@ -104,7 +104,7 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to create user",
+			Message: "Error al crear usuario",
 			Handled: false,
 		}
 	}
@@ -118,14 +118,14 @@ func (u *UsersRepository) UpdateUser(id string, data map[string]interface{}) *re
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "User not found",
+			Message: "Usuario no encontrado",
 			Handled: true,
 		}
 	}
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to find user",
+			Message: "Error al buscar usuario",
 			Handled: false,
 		}
 	}
@@ -149,7 +149,7 @@ func (u *UsersRepository) UpdateUser(id string, data map[string]interface{}) *re
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update user",
+			Message: "Error al actualizar usuario",
 			Handled: false,
 		}
 	}
@@ -171,7 +171,7 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to find user",
+			Message: "Error al buscar usuario",
 			Handled: false,
 		}
 	}
@@ -181,14 +181,14 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 		if strings.Contains(err.Error(), "foreign key") {
 			return &responses.InternalResponse{
 				Error:   err,
-				Message: "Cannot delete user due to existing relationships",
+				Message: "No se puede eliminar el usuario debido a relaciones existentes",
 				Handled: true,
 			}
 		}
 
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to delete user",
+			Message: "Error al eliminar usuario",
 			Handled: false,
 		}
 	}
@@ -204,7 +204,7 @@ func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*r
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to open Excel file",
+			Message: "Error al abrir el archivo de Excel",
 			Handled: false,
 		})
 		return imported, errorsList
@@ -214,7 +214,7 @@ func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*r
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to read rows",
+			Message: "Error al leer las filas",
 			Handled: false,
 		})
 		return imported, errorsList
@@ -300,7 +300,7 @@ func (u *UsersRepository) ExportUsersToExcel() ([]byte, *responses.InternalRespo
 	if err := f.Write(&buf); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to generate Excel file",
+			Message: "Error al generar el archivo de Excel",
 			Handled: false,
 		}
 	}
@@ -315,14 +315,14 @@ func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *r
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Error:   nil,
-			Message: "User not found",
+			Message: "Usuario no encontrado",
 			Handled: true,
 		}
 	}
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to find user",
+			Message: "Error al buscar usuario",
 			Handled: false,
 		}
 	}
@@ -331,7 +331,7 @@ func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *r
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to encrypt password",
+			Message: "Error al encriptar la contraseña",
 			Handled: false,
 		}
 	}
@@ -345,7 +345,7 @@ func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *r
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update password",
+			Message: "Error al actualizar la contraseña",
 			Handled: false,
 		}
 	}

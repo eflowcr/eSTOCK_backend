@@ -31,7 +31,7 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 		if err != gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to fetch user stats",
+				Message: "Error al obtener las estadísticas del usuario",
 				Handled: false,
 			}
 		}
@@ -50,7 +50,7 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 		if err := r.DB.Create(&userStat).Error; err != nil {
 			return nil, &responses.InternalResponse{
 				Error:   err,
-				Message: "Failed to create user stats",
+				Message: "Error al crear las estadísticas del usuario",
 				Handled: false,
 			}
 		}
@@ -64,7 +64,7 @@ func (r *GamificationRepository) Badges(userId string) ([]database.Badge, *respo
 	if err := r.DB.Where("user_id = ?", userId).Find(&badges).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch badges",
+			Message: "Error al obtener las insignias",
 			Handled: false,
 		}
 	}
@@ -77,7 +77,7 @@ func (r *GamificationRepository) GetAllBadges() ([]database.Badge, *responses.In
 	if err := r.DB.Find(&badges).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch all badges",
+			Message: "Error al obtener todas las insignias",
 			Handled: false,
 		}
 	}
@@ -89,7 +89,7 @@ func (r *GamificationRepository) CompleteTasks(userId string, task requests.Comp
 	if task.CompletionTime > 3600 {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "Task completion time exceed 1 hour",
+			Message: "El tiempo de finalización de la tarea excede 1 hora",
 			Handled: true,
 		}
 	}
@@ -97,7 +97,7 @@ func (r *GamificationRepository) CompleteTasks(userId string, task requests.Comp
 	if task.TaskType == "picking" && task.Accuracy == nil {
 		return nil, &responses.InternalResponse{
 			Error:   nil,
-			Message: "Accuracy is required for picking tasks",
+			Message: "Se requiere precisión para las tareas de picking",
 			Handled: true,
 		}
 	}
@@ -138,7 +138,7 @@ func (r *GamificationRepository) CompleteTasks(userId string, task requests.Comp
 	if err := r.DB.Model(&database.UserStat{}).Where("user_id = ?", userId).Updates(updates).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to update user stats",
+			Message: "Error al actualizar las estadísticas del usuario",
 			Handled: false,
 		}
 	}
@@ -277,7 +277,7 @@ func (r *GamificationRepository) GetAllStats() ([]responses.UserStatsResponse, *
 	if err := r.DB.Raw(query).Scan(&stats).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Failed to fetch all user stats",
+			Message: "Error al obtener todas las estadísticas de usuario",
 			Handled: false,
 		}
 	}

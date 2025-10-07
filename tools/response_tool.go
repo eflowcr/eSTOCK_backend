@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Response(c *gin.Context, transactionType string, success bool, message string, endpointCode string, data interface{}, encrypted bool, encryptionType string) {
+func Response(c *gin.Context, transactionType string, success bool, message string, endpointCode string, data interface{}, encrypted bool, encryptionType string, handled bool) {
 	response := responses.APIResponse{
 		Envelope: responses.Envelope{
 			TransactionType: transactionType,
@@ -24,7 +24,9 @@ func Response(c *gin.Context, transactionType string, success bool, message stri
 
 	status := http.StatusOK
 	if !success {
-		status = http.StatusBadRequest
+		if !handled {
+			status = http.StatusBadRequest
+		}
 	}
 
 	c.JSON(status, response)
