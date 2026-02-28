@@ -15,7 +15,8 @@ import (
 )
 
 type UsersRepository struct {
-	DB *gorm.DB
+	DB        *gorm.DB
+	JWTSecret string
 }
 
 func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalResponse) {
@@ -79,7 +80,7 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 		}
 	}
 
-	encryptedPassword, err := tools.Encrypt(*user.Password)
+	encryptedPassword, err := tools.Encrypt(*user.Password, u.JWTSecret)
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
@@ -327,7 +328,7 @@ func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *r
 		}
 	}
 
-	hashedPassword, err := tools.Encrypt(plainPassword)
+	hashedPassword, err := tools.Encrypt(plainPassword, u.JWTSecret)
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,

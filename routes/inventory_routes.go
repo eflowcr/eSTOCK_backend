@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,13 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	inventoryRepository := &repositories.InventoryRepository{DB: db}
 	inventoryService := services.NewInventoryService(inventoryRepository)
-	inventoryController := controllers.NewInventoryController(*inventoryService)
+	inventoryController := controllers.NewInventoryController(*inventoryService, config.JWTSecret)
 
 	route := router.Group("/inventory")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.POST("/import", inventoryController.ImportInventoryFromExcel)
 		route.GET("/export", inventoryController.ExportInventoryToExcel)

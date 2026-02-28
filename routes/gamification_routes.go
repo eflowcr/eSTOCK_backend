@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterGamificationRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterGamificationRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	gamificationRepository := &repositories.GamificationRepository{DB: db}
 	gamificationService := services.NewGamificationService(gamificationRepository)
 
-	gamificationController := controllers.NewGamificationController(*gamificationService)
+	gamificationController := controllers.NewGamificationController(*gamificationService, config.JWTSecret)
 
 	route := router.Group("/gamification")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/stats", gamificationController.GamificationStats)
 		route.GET("/badges", gamificationController.Badges)

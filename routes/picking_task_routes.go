@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,13 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterPickingTasksRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterPickingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	pickingTaskRepository := &repositories.PickingTaskRepository{DB: db}
 	pickingTasksService := services.NewPickingTaskService(pickingTaskRepository)
-	pickingTasksController := controllers.NewPickingTasksController(*pickingTasksService)
+	pickingTasksController := controllers.NewPickingTasksController(*pickingTasksService, config.JWTSecret)
 
 	route := router.Group("/picking-tasks")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/", pickingTasksController.GetAllPickingTasks)
 		route.GET("/:id", pickingTasksController.GetPickingTaskByID)

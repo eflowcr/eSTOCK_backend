@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	lotsRepository := &repositories.LotsRepository{DB: db}
 	lotsService := services.NewLotsService(lotsRepository)
 
 	lotsController := controllers.NewLotsController(*lotsService)
 
 	route := router.Group("/lots")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/", lotsController.GetAllLots)
 		route.GET("/:sku", lotsController.GetLotsBySKU)

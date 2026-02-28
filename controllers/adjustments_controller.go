@@ -10,12 +10,14 @@ import (
 )
 
 type AdjustmentsController struct {
-	Service services.AdjustmentsService
+	Service   services.AdjustmentsService
+	JWTSecret string
 }
 
-func NewAdjustmentsController(service services.AdjustmentsService) *AdjustmentsController {
+func NewAdjustmentsController(service services.AdjustmentsService, jwtSecret string) *AdjustmentsController {
 	return &AdjustmentsController{
-		Service: service,
+		Service:   service,
+		JWTSecret: jwtSecret,
 	}
 }
 
@@ -91,7 +93,7 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	response := c.Service.CreateAdjustment(userId, adjustment)
 	if response != nil {

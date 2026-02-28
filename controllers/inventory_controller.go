@@ -10,12 +10,14 @@ import (
 )
 
 type InventoryController struct {
-	Service services.InventoryService
+	Service   services.InventoryService
+	JWTSecret string
 }
 
-func NewInventoryController(service services.InventoryService) *InventoryController {
+func NewInventoryController(service services.InventoryService, jwtSecret string) *InventoryController {
 	return &InventoryController{
-		Service: service,
+		Service:   service,
+		JWTSecret: jwtSecret,
 	}
 }
 
@@ -32,7 +34,7 @@ func (c *InventoryController) GetAllInventory(ctx *gin.Context) {
 
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	var request requests.CreateInventory
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -92,7 +94,7 @@ func (c *InventoryController) Trend(ctx *gin.Context) {
 
 func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {

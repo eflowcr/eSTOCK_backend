@@ -11,12 +11,14 @@ import (
 )
 
 type ReceivingTasksController struct {
-	Service services.ReceivingTasksService
+	Service   services.ReceivingTasksService
+	JWTSecret string
 }
 
-func NewReceivingTasksController(service services.ReceivingTasksService) *ReceivingTasksController {
+func NewReceivingTasksController(service services.ReceivingTasksService, jwtSecret string) *ReceivingTasksController {
 	return &ReceivingTasksController{
-		Service: service,
+		Service:   service,
+		JWTSecret: jwtSecret,
 	}
 }
 
@@ -66,7 +68,7 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 	response := c.Service.CreateReceivingTask(userId, &request)
 
 	if response != nil {
@@ -107,7 +109,7 @@ func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
 
 func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
@@ -159,7 +161,7 @@ func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
 
 	location := ctx.Param("location")
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	response := c.Service.CompleteFullTask(id, location, userId)
 	if response != nil {
@@ -181,7 +183,7 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 	location := ctx.Param("location")
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	var item requests.ReceivingTaskItemRequest
 	if err := ctx.ShouldBindJSON(&item); err != nil {

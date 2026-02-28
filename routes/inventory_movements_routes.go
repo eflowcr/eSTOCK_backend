@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -8,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterInventoryMovementsRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterInventoryMovementsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	inventoryMovementsRepository := &repositories.InventoryMovementsRepository{}
 	inventoryMovementsService := services.NewInventoryMovementsService(inventoryMovementsRepository)
 

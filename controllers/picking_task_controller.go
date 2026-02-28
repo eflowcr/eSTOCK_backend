@@ -11,12 +11,14 @@ import (
 )
 
 type PickingTasksController struct {
-	Service services.PickingTaskService
+	Service   services.PickingTaskService
+	JWTSecret string
 }
 
-func NewPickingTasksController(service services.PickingTaskService) *PickingTasksController {
+func NewPickingTasksController(service services.PickingTaskService, jwtSecret string) *PickingTasksController {
 	return &PickingTasksController{
-		Service: service,
+		Service:   service,
+		JWTSecret: jwtSecret,
 	}
 }
 
@@ -69,7 +71,7 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	response := c.Service.CreatePickingTask(userId, &request)
 	if response != nil {
@@ -113,7 +115,7 @@ func (c *PickingTasksController) UpdatePickingTask(ctx *gin.Context) {
 
 func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
@@ -165,7 +167,7 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 	location := ctx.Param("location")
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	response := c.Service.CompletePickingTask(id, location, userId)
 	if response != nil {
@@ -193,7 +195,7 @@ func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	response := c.Service.CompletePickingLine(id, location, userId, item)
 

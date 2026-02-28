@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	stockAlertsRepository := &repositories.StockAlertsRepository{DB: db}
 	stockAlertsService := services.NewStockAlertsService(stockAlertsRepository)
 
 	stockAlertsController := controllers.NewStockAlertsController(*stockAlertsService)
 
 	route := router.Group("/stock-alerts")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/:resolved", stockAlertsController.GetAllStockAlerts)
 		route.GET("/analyze", stockAlertsController.Analyze)

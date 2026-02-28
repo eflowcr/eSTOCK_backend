@@ -8,18 +8,20 @@ import (
 )
 
 type GamificationController struct {
-	Service services.GamificationService
+	Service   services.GamificationService
+	JWTSecret string
 }
 
-func NewGamificationController(service services.GamificationService) *GamificationController {
+func NewGamificationController(service services.GamificationService, jwtSecret string) *GamificationController {
 	return &GamificationController{
-		Service: service,
+		Service:   service,
+		JWTSecret: jwtSecret,
 	}
 }
 
 func (c *GamificationController) GamificationStats(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	stats, errResp := c.Service.GamificationStats(userId)
 
@@ -38,7 +40,7 @@ func (c *GamificationController) GamificationStats(ctx *gin.Context) {
 
 func (c *GamificationController) Badges(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	badges, errResp := c.Service.Badges(userId)
 
@@ -73,7 +75,7 @@ func (c *GamificationController) GetAllBadges(ctx *gin.Context) {
 
 func (c *GamificationController) CompleteTasks(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(token)
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
 	var task requests.CompleteTasks
 	if err := ctx.ShouldBindJSON(&task); err != nil {

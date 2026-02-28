@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"gorm.io/driver/postgres"
@@ -12,15 +13,50 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-func InitDB() *gorm.DB {
+func InitDB(cfg configuration.Config) *gorm.DB {
 	var db *gorm.DB
 	var err error
 
-	switch configuration.DBType {
+	if cfg.DBSource != "" {
+		db, err = openFromDSN(cfg.DBSource)
+	} else {
+		db, err = openFromParts(cfg)
+	}
+
+	if err != nil {
+		log.Fatalf("failed to connect database: %v", err)
+	}
+
+	return db
+}
+
+// openFromDSN opens the database using a single URL (DB_SOURCE or DATABASE_URL). Driver is inferred from scheme.
+func openFromDSN(dsn string) (*gorm.DB, error) {
+	dsnLower := strings.ToLower(strings.TrimSpace(dsn))
+	switch {
+	case strings.HasPrefix(dsnLower, "postgresql://") || strings.HasPrefix(dsnLower, "postgres://"):
+		return gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Info),
+			NamingStrategy: schema.NamingStrategy{
+				TablePrefix:   "",
+				SingularTable: false,
+				NoLowerCase:   false,
+				NameReplacer:  nil,
+			},
+		})
+	case strings.HasPrefix(dsnLower, "sqlserver://"):
+		return gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+	default:
+		return nil, fmt.Errorf("unsupported DSN scheme (use postgres://, postgresql://, or sqlserver://)")
+	}
+}
+
+func openFromParts(cfg configuration.Config) (*gorm.DB, error) {
+	switch cfg.DBType {
 	case "postgres":
 		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-			configuration.DBHost, configuration.DBUser, configuration.DBPassword, configuration.DBName, configuration.DBPort)
-		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			cfg.DBHost, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBPort)
+		return gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Info),
 			NamingStrategy: schema.NamingStrategy{
 				TablePrefix:   "",
@@ -31,17 +67,11 @@ func InitDB() *gorm.DB {
 		})
 	case "sqlserver":
 		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s",
-			configuration.DBUser, configuration.DBPassword, configuration.DBHost, configuration.DBPort, configuration.DBName)
-		db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+			cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+		return gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 	default:
-		log.Fatalf("unsupported database type: %s", configuration.DBType)
+		return nil, fmt.Errorf("unsupported database type: %s", cfg.DBType)
 	}
-
-	if err != nil {
-		log.Fatalf("failed to connect database: %v", err)
-	}
-
-	return db
 }
 
 func CloseDB(db *gorm.DB) {

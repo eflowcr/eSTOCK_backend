@@ -4,14 +4,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 )
 
-func JWTAuthMiddleware() gin.HandlerFunc {
+// JWTAuthMiddleware returns a Gin middleware that validates JWT using the given secret.
+func JWTAuthMiddleware(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		secretKey := []byte(configuration.Secret)
+		secretKey := []byte(secret)
 
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {

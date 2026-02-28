@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,8 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB) {
-	userRepository := &repositories.UsersRepository{DB: db}
+func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
+	userRepository := &repositories.UsersRepository{DB: db, JWTSecret: config.JWTSecret}
 	userService := services.NewUserService(userRepository)
 
 	userController := controllers.NewUserController(*userService)
@@ -19,7 +20,7 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	public.POST("/register", userController.CreateUser)
 
 	protected := router.Group("/users")
-	protected.Use(tools.JWTAuthMiddleware())
+	protected.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		protected.GET("/", userController.GetAllUsers)
 		protected.GET("/:id", userController.GetUserByID)

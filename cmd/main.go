@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/routes"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -8,19 +10,29 @@ import (
 )
 
 func main() {
-	gin.SetMode(gin.ReleaseMode)
+	config, err := configuration.LoadConfig()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
 
-	configuration.LoadConfig()
+	switch config.Environment {
+	case "debug", "development":
+		gin.SetMode(gin.DebugMode)
+	case "test":
+		gin.SetMode(gin.TestMode)
+	default:
+		gin.SetMode(gin.ReleaseMode)
+	}
 
-	db := tools.InitDB()
+	db := tools.InitDB(config)
 
 	r := gin.New()
-
 	r.Use(gin.Recovery())
-
 	r.Use(tools.CORSMiddleware())
 
-	routes.RegisterRoutes(r, db)
+	routes.RegisterRoutes(r, db, config)
 
-	r.Run(":8080")
+	if err := r.Run(config.ServerAddress); err != nil {
+		log.Fatalf("server: %v", err)
+	}
 }

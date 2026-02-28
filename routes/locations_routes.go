@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	locationRepository := &repositories.LocationsRepository{DB: db}
 	locationService := services.NewLocationsService(locationRepository)
 
 	locationController := controllers.NewLocationsController(*locationService)
 
 	route := router.Group("/locations")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/", locationController.GetAllLocations)
 		route.GET("/:id", locationController.GetLocationByID)

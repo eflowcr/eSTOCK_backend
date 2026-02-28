@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterAdjustmentsRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterAdjustmentsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	adjustmentsRepository := &repositories.AdjustmentsRepository{DB: db}
 	adjustmentsService := services.NewAdjustmentsService(adjustmentsRepository)
 
-	adjustmentsController := controllers.NewAdjustmentsController(*adjustmentsService)
+	adjustmentsController := controllers.NewAdjustmentsController(*adjustmentsService, config.JWTSecret)
 
 	route := router.Group("/adjustments")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/", adjustmentsController.GetAllAdjustments)
 		route.GET("/:id", adjustmentsController.GetAdjustmentByID)

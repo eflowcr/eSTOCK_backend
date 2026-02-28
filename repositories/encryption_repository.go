@@ -6,10 +6,11 @@ import (
 )
 
 type EncryptionRepository struct {
+	JWTSecret string
 }
 
 func (e *EncryptionRepository) Encrypt(data string) (string, *responses.InternalResponse) {
-	encryptedData, err := tools.Encrypt(data)
+	encryptedData, err := tools.Encrypt(data, e.JWTSecret)
 	if err != nil {
 		return "", &responses.InternalResponse{
 			Error:   err,
@@ -22,7 +23,7 @@ func (e *EncryptionRepository) Encrypt(data string) (string, *responses.Internal
 }
 
 func (e *EncryptionRepository) Decrypt(encryptedData string) (string, *responses.InternalResponse) {
-	decryptedData, err := tools.Decrypt(encryptedData)
+	decryptedData, err := tools.Decrypt(encryptedData, e.JWTSecret)
 	if err != nil {
 		return "", &responses.InternalResponse{
 			Error:   err,

@@ -11,7 +11,8 @@ import (
 )
 
 type AuthenticationRepository struct {
-	DB *gorm.DB
+	DB        *gorm.DB
+	JWTSecret string
 }
 
 func (a *AuthenticationRepository) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
@@ -42,7 +43,7 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		}
 	}
 
-	if user.Password == nil || !tools.ComparePasswords(*user.Password, login.Password) {
+	if user.Password == nil || !tools.ComparePasswords(*user.Password, login.Password, a.JWTSecret) {
 		return nil, &responses.InternalResponse{
 			Error:   errors.New("contraseña inválida"),
 			Message: "Credenciales inválidas",
@@ -50,7 +51,7 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		}
 	}
 
-	token, err := tools.GenerateToken(user.ID, user.FirstName+" "+user.LastName, user.Email, user.Role)
+	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.FirstName+" "+user.LastName, user.Email, user.Role)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,

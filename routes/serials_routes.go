@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
@@ -9,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB) {
+func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
 	serialRepository := &repositories.SerialsRepository{DB: db}
 	serialService := services.NewSerialsService(serialRepository)
 
 	serialController := controllers.NewSerialsController(*serialService)
 
 	route := router.Group("/serials")
-	route.Use(tools.JWTAuthMiddleware())
+	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/:id", serialController.GetSerialByID)
 		route.GET("/by-sku/:sku", serialController.GetSerialsBySKU)
