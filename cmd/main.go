@@ -24,6 +24,11 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	dbURL := configuration.DatabaseURL(config)
+	if err := tools.RunMigrations(config.MigrationURL, dbURL); err != nil {
+		log.Fatalf("migrations: %v", err)
+	}
+
 	db := tools.InitDB(config)
 
 	r := gin.New()

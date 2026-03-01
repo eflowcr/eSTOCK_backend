@@ -3,6 +3,7 @@ package configuration
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -27,6 +28,9 @@ type Config struct {
 
 	// Server (env: SERVER_ADDRESS; default ":8080")
 	ServerAddress string
+
+	// Migrations (env: MIGRATION_URL; default "file://db/migrations"). Used when running migrations at startup or via CLI.
+	MigrationURL string
 
 	// Optional (env: ENVIRONMENT — e.g. "release", "debug", "development", "test")
 	Environment string
@@ -54,6 +58,7 @@ func LoadConfig() (Config, error) {
 		DBName:        os.Getenv("DB_NAME"),
 		DBType:        os.Getenv("DB_TYPE"),
 		ServerAddress: os.Getenv("SERVER_ADDRESS"),
+		MigrationURL:  os.Getenv("MIGRATION_URL"),
 		Environment:   os.Getenv("ENVIRONMENT"),
 		Version:       os.Getenv("Version"),
 	}
@@ -63,6 +68,9 @@ func LoadConfig() (Config, error) {
 
 	if cfg.ServerAddress == "" {
 		cfg.ServerAddress = ":8080"
+	}
+	if cfg.MigrationURL == "" {
+		cfg.MigrationURL = "file://db/migrations"
 	}
 
 	// JWT secret: prefer JWT_SECRET, fallback to legacy "Secret"
@@ -124,4 +132,34 @@ func isNotFound(err error) bool {
 	}
 	// PathError from os.Open often wraps the message
 	return strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "cannot find")
+}
+
+// DatabaseURL returns a single connection URL for the configured database, for use by the migration
+// runner or other tools. When DBSource (or DATABASE_URL) is set, it is returned as-is. Otherwise
+// the URL is built from DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, and DB_TYPE (postgres or sqlserver).
+func DatabaseURL(c Config) string {
+	if c.DBSource != "" {
+		return c.DBSource
+	}
+	switch strings.ToLower(c.DBType) {
+	case "postgres", "postgresql":
+		u := &url.URL{
+			Scheme:   "postgres",
+			User:     url.UserPassword(c.DBUser, c.DBPassword),
+			Host:     c.DBHost + ":" + c.DBPort,
+			Path:     "/" + c.DBName,
+			RawQuery: "sslmode=disable",
+		}
+		return u.String()
+	case "sqlserver":
+		u := &url.URL{
+			Scheme:   "sqlserver",
+			User:     url.UserPassword(c.DBUser, c.DBPassword),
+			Host:     c.DBHost + ":" + c.DBPort,
+			RawQuery: "database=" + url.QueryEscape(c.DBName),
+		}
+		return u.String()
+	default:
+		return ""
+	}
 }
