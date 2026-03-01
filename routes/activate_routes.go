@@ -7,6 +7,8 @@ import (
 )
 
 func RegisterRoutes(r *gin.Engine, db *gorm.DB, config configuration.Config) {
+	RegisterHealthRoutes(r, db)
+
 	api := r.Group("/api")
 
 	RegisterAuthenticationRoutes(api, db, config)
