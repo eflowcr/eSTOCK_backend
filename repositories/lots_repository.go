@@ -90,9 +90,9 @@ func (r *LotsRepository) UpdateLot(id int, data map[string]interface{}) *respons
 	err := r.DB.First(&lot, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Lot not found",
-			Handled: true,
+			Message:    "Lot not found",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {
@@ -139,9 +139,9 @@ func (r *LotsRepository) DeleteLot(id int) *responses.InternalResponse {
 
 	if result.RowsAffected == 0 {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Lot not found",
-			Handled: true,
+			Message:    "Lot not found",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 

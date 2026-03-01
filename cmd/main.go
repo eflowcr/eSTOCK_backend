@@ -10,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func main() {
@@ -44,6 +46,8 @@ func main() {
 	r.Use(tools.RequestLogMiddleware())
 
 	routes.RegisterRoutes(r, db, config)
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/api/docs/openapi.json")))
 
 	log.Info().Str("address", config.ServerAddress).Msg("Server listening")
 	if err := r.Run(config.ServerAddress); err != nil {

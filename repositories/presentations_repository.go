@@ -40,9 +40,9 @@ func (r *PresentationsRepository) GetPresentationByID(id string) (*database.Pres
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Presentación no encontrada",
-				Handled: true,
+				Message:    "Presentación no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -66,9 +66,9 @@ func (r *PresentationsRepository) CreatePresentation(data *database.Presentation
 
 	if err == nil {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Ya existe una presentación con el ID proporcionado",
-			Handled: true,
+			Message:    "Ya existe una presentación con el ID proporcionado",
+			Handled:    true,
+			StatusCode: responses.StatusConflict,
 		}
 	} else if err != gorm.ErrRecordNotFound {
 		return &responses.InternalResponse{
@@ -100,9 +100,9 @@ func (r *PresentationsRepository) UpdatePresentation(id, name string) (*database
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Presentación no encontrada",
-				Handled: true,
+				Message:    "Presentación no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{

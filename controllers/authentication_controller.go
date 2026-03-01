@@ -21,16 +21,20 @@ func (c *AuthenticationController) Login(ctx *gin.Context) {
 	var login requests.Login
 
 	if err := ctx.ShouldBind(&login); err != nil {
-		ctx.JSON(400, gin.H{"error": "Carga útil incorrecta"})
+		tools.ResponseBadRequest(ctx, "Login", "Carga útil incorrecta", "login")
+		return
+	}
+	if errs := tools.ValidateStruct(&login); errs != nil {
+		tools.ResponseValidationError(ctx, "Login", "login", errs)
 		return
 	}
 
 	loginResponse, response := c.Service.Login(login)
 
 	if response != nil {
-		tools.Response(ctx, "Login", false, response.Message, "login", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "Login", "login", response)
 		return
 	}
 
-	tools.Response(ctx, "Login", true, "Login exitoso", "login", loginResponse, true, loginResponse.Token, false)
+	tools.ResponseOK(ctx, "Login", "Login exitoso", "login", loginResponse, true, loginResponse.Token)
 }

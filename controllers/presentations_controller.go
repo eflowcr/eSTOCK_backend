@@ -21,16 +21,16 @@ func (c *PresentationsController) GetAllPresentations(ctx *gin.Context) {
 	presentations, response := c.Service.GetAllPresentations()
 
 	if response != nil {
-		tools.Response(ctx, "GetAllPresentations", false, response.Message, "get_all_presentations", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAllPresentations", "get_all_presentations", response)
 		return
 	}
 
 	if len(presentations) == 0 {
-		tools.Response(ctx, "GetAllPresentations", true, "No se encontraron presentaciones", "get_all_presentations", nil, false, "", true)
+		tools.ResponseOK(ctx, "GetAllPresentations", "No se encontraron presentaciones", "get_all_presentations", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetAllPresentations", true, "Presentaciones recuperadas con éxito", "get_all_presentations", presentations, false, "", false)
+	tools.ResponseOK(ctx, "GetAllPresentations", "Presentaciones recuperadas con éxito", "get_all_presentations", presentations, false, "")
 }
 
 func (c *PresentationsController) GetPresentationByID(ctx *gin.Context) {
@@ -39,61 +39,69 @@ func (c *PresentationsController) GetPresentationByID(ctx *gin.Context) {
 	presentation, response := c.Service.GetPresentationByID(id)
 
 	if response != nil {
-		tools.Response(ctx, "GetPresentationByID", false, response.Message, "get_presentation_by_id", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetPresentationByID", "get_presentation_by_id", response)
 		return
 	}
 
 	if presentation == nil {
-		tools.Response(ctx, "GetPresentationByID", false, "Presentación no encontrada", "get_presentation_by_id", nil, false, "", false)
+		tools.ResponseNotFound(ctx, "GetPresentationByID", "Presentación no encontrada", "get_presentation_by_id")
 		return
 	}
 
-	tools.Response(ctx, "GetPresentationByID", true, "Presentación recuperada con éxito", "get_presentation_by_id", presentation, false, "", false)
+	tools.ResponseOK(ctx, "GetPresentationByID", "Presentación recuperada con éxito", "get_presentation_by_id", presentation, false, "")
 }
 
 func (c *PresentationsController) CreatePresentation(ctx *gin.Context) {
 	var presentation database.Presentations
 
 	if err := ctx.ShouldBindJSON(&presentation); err != nil {
-		tools.Response(ctx, "CreatePresentation", false, "Cuerpo de solicitud no válido", "create_presentation", nil, false, "", true)
+		tools.ResponseBadRequest(ctx, "CreatePresentation", "Cuerpo de solicitud no válido", "create_presentation")
+		return
+	}
+	if errs := tools.ValidateStruct(&presentation); errs != nil {
+		tools.ResponseValidationError(ctx, "CreatePresentation", "create_presentation", errs)
 		return
 	}
 
 	response := c.Service.CreatePresentation(&presentation)
 
 	if response != nil {
-		tools.Response(ctx, "CreatePresentation", false, response.Message, "create_presentation", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "CreatePresentation", "create_presentation", response)
 		return
 	}
 
-	tools.Response(ctx, "CreatePresentation", true, "Presentación creada con éxito", "create_presentation", presentation, false, "", false)
+	tools.ResponseCreated(ctx, "CreatePresentation", "Presentación creada con éxito", "create_presentation", presentation, false, "")
 }
 
 func (c *PresentationsController) UpdatePresentation(ctx *gin.Context) {
 	id := ctx.Param("id")
 
 	var reqBody struct {
-		Description string `json:"description" binding:"required"`
+		Description string `json:"description" validate:"required"`
 	}
 
 	if err := ctx.ShouldBindJSON(&reqBody); err != nil {
-		tools.Response(ctx, "UpdatePresentation", false, "Cuerpo de solicitud no válido", "update_presentation", nil, false, "", true)
+		tools.ResponseBadRequest(ctx, "UpdatePresentation", "Cuerpo de solicitud no válido", "update_presentation")
+		return
+	}
+	if errs := tools.ValidateStruct(&reqBody); errs != nil {
+		tools.ResponseValidationError(ctx, "UpdatePresentation", "update_presentation", errs)
 		return
 	}
 
 	presentation, response := c.Service.UpdatePresentation(id, reqBody.Description)
 
 	if response != nil {
-		tools.Response(ctx, "UpdatePresentation", false, response.Message, "update_presentation", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "UpdatePresentation", "update_presentation", response)
 		return
 	}
 
 	if presentation == nil {
-		tools.Response(ctx, "UpdatePresentation", false, "Presentación no encontrada", "update_presentation", nil, false, "", false)
+		tools.ResponseNotFound(ctx, "UpdatePresentation", "Presentación no encontrada", "update_presentation")
 		return
 	}
 
-	tools.Response(ctx, "UpdatePresentation", true, "Presentación actualizada con éxito", "update_presentation", presentation, false, "", false)
+	tools.ResponseOK(ctx, "UpdatePresentation", "Presentación actualizada con éxito", "update_presentation", presentation, false, "")
 }
 
 func (c *PresentationsController) DeletePresentation(ctx *gin.Context) {
@@ -102,9 +110,9 @@ func (c *PresentationsController) DeletePresentation(ctx *gin.Context) {
 	response := c.Service.DeletePresentation(id)
 
 	if response != nil {
-		tools.Response(ctx, "DeletePresentation", false, response.Message, "delete_presentation", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "DeletePresentation", "delete_presentation", response)
 		return
 	}
 
-	tools.Response(ctx, "DeletePresentation", true, "Presentación eliminada con éxito", "delete_presentation", nil, false, "", false)
+	tools.ResponseOK(ctx, "DeletePresentation", "Presentación eliminada con éxito", "delete_presentation", nil, false, "")
 }

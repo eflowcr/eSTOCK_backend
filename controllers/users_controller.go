@@ -23,11 +23,11 @@ func (c *UserController) GetAllUsers(ctx *gin.Context) {
 	users, response := c.Service.GetAllUsers()
 
 	if response != nil {
-		tools.Response(ctx, "GetAllUsers", false, response.Message, "get_all_users", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAllUsers", "get_all_users", response)
 		return
 	}
 
-	tools.Response(ctx, "GetAllUsers", true, "Usuarios obtenidos con éxito", "get_all_users", users, false, "", false)
+	tools.ResponseOK(ctx, "GetAllUsers", "Usuarios obtenidos con éxito", "get_all_users", users, false, "")
 }
 
 func (c *UserController) GetUserByID(ctx *gin.Context) {
@@ -35,40 +35,44 @@ func (c *UserController) GetUserByID(ctx *gin.Context) {
 	user, response := c.Service.GetUserByID(id)
 
 	if response != nil {
-		tools.Response(ctx, "GetUserByID", false, response.Message, "get_user_by_id", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetUserByID", "get_user_by_id", response)
 		return
 	}
 
 	if user == nil {
-		tools.Response(ctx, "GetUserByID", false, "Usuario no encontrado", "get_user_by_id", nil, false, "", false)
+		tools.ResponseNotFound(ctx, "GetUserByID", "Usuario no encontrado", "get_user_by_id")
 		return
 	}
 
-	tools.Response(ctx, "GetUserByID", true, "Usuario obtenido con éxito", "get_user_by_id", user, false, "", false)
+	tools.ResponseOK(ctx, "GetUserByID", "Usuario obtenido con éxito", "get_user_by_id", user, false, "")
 }
 
 func (c *UserController) CreateUser(ctx *gin.Context) {
 	var user requests.User
 
 	if err := ctx.ShouldBindJSON(&user); err != nil {
-		tools.Response(ctx, "CreateUser", false, "Cuerpo de solicitud inválido", "create_user", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "CreateUser", "Cuerpo de solicitud inválido", "create_user")
+		return
+	}
+	if errs := tools.ValidateStruct(&user); errs != nil {
+		tools.ResponseValidationError(ctx, "CreateUser", "create_user", errs)
 		return
 	}
 
 	response := c.Service.CreateUser(&user)
 
 	if response != nil {
-		tools.Response(ctx, "CreateUser", false, response.Message, "create_user", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "CreateUser", "create_user", response)
 		return
 	}
 
-	tools.Response(ctx, "CreateUser", true, "Usuario creado con éxito", "create_user", nil, false, "", false)
+	tools.ResponseCreated(ctx, "CreateUser", "Usuario creado con éxito", "create_user", nil, false, "")
 }
 
 func (c *UserController) UpdateUser(ctx *gin.Context) {
 	var data map[string]interface{}
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		tools.Response(ctx, "UpdateUser", false, "Cuerpo de solicitud inválido", "update_user", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "UpdateUser", "Cuerpo de solicitud inválido", "update_user")
 		return
 	}
 
@@ -76,11 +80,11 @@ func (c *UserController) UpdateUser(ctx *gin.Context) {
 	response := c.Service.UpdateUser(id, data)
 
 	if response != nil {
-		tools.Response(ctx, "UpdateUser", false, response.Message, "update_user", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "UpdateUser", "update_user", response)
 		return
 	}
 
-	tools.Response(ctx, "UpdateUser", true, "Usuario actualizado con éxito", "update_user", nil, false, "", false)
+	tools.ResponseOK(ctx, "UpdateUser", "Usuario actualizado con éxito", "update_user", nil, false, "")
 }
 
 func (c *UserController) DeleteUser(ctx *gin.Context) {
@@ -88,60 +92,57 @@ func (c *UserController) DeleteUser(ctx *gin.Context) {
 	response := c.Service.DeleteUser(id)
 
 	if response != nil {
-		tools.Response(ctx, "DeleteUser", false, response.Message, "delete_user", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "DeleteUser", "delete_user", response)
 		return
 	}
 
-	tools.Response(ctx, "DeleteUser", true, "Usuario eliminado con éxito", "delete_user", nil, false, "", false)
+	tools.ResponseOK(ctx, "DeleteUser", "Usuario eliminado con éxito", "delete_user", nil, false, "")
 }
 
 func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		tools.Response(ctx, "ImportUsersFromExcel", false, "Error al subir el archivo: "+err.Error(), "import_users_from_excel", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "ImportUsersFromExcel", "Error al subir el archivo", "import_users_from_excel")
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		tools.Response(ctx, "ImportUsersFromExcel", false, "Error al abrir el archivo: "+err.Error(), "import_users_from_excel", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "ImportUsersFromExcel", "Error al abrir el archivo", "import_users_from_excel")
 		return
 	}
 	defer file.Close()
 
-	// Leer archivo como []byte
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		tools.Response(ctx, "ImportUsersFromExcel", false, "Error al leer el contenido del archivo: "+err.Error(), "import_users_from_excel", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "ImportUsersFromExcel", "Error al leer el contenido del archivo", "import_users_from_excel")
 		return
 	}
 
 	importedUsers, errorResponses := c.Service.ImportUsersFromExcel(fileBytes)
 
 	if len(importedUsers) == 0 && len(errorResponses) > 0 {
-		// Mostrar el primer error (puedes hacer un resumen si querés)
 		resp := errorResponses[0]
-		tools.Response(ctx, "ImportUsersFromExcel", false, resp.Message, "import_users_from_excel", nil, false, "", resp.Handled)
+		writeErrorResponse(ctx, "ImportUsersFromExcel", "import_users_from_excel", resp)
 		return
 	}
 
-	tools.Response(ctx, "ImportUsersFromExcel", true, "Usuarios importados con éxito", "import_users_from_excel", gin.H{
+	tools.ResponseOK(ctx, "ImportUsersFromExcel", "Usuarios importados con éxito", "import_users_from_excel", gin.H{
 		"imported_users": importedUsers,
 		"errors":         errorResponses,
-	}, false, "", false)
+	}, false, "")
 }
 
 func (c *UserController) ExportUsersToExcel(ctx *gin.Context) {
 	excel, response := c.Service.ExportUsersToExcel()
 	if response != nil {
-		tools.Response(ctx, "ExportUsersToExcel", false, response.Message, "export_users_to_excel", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "ExportUsersToExcel", "export_users_to_excel", response)
 		return
 	}
 
 	ctx.Header("Content-Disposition", "attachment; filename=users.xlsx")
 	ctx.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", excel)
-	tools.Response(ctx, "ExportUsersToExcel", true, "Users exported successfully", "export_users_to_excel", nil, false, "", false)
 }
 
 func (c *UserController) UpdateUserPassword(ctx *gin.Context) {
@@ -150,9 +151,9 @@ func (c *UserController) UpdateUserPassword(ctx *gin.Context) {
 
 	response := c.Service.UpdateUserPassword(id, password)
 	if response != nil {
-		tools.Response(ctx, "ChangePassword", false, response.Message, "change_password", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "ChangePassword", "change_password", response)
 		return
 	}
 
-	tools.Response(ctx, "ChangePassword", true, "Contraseña cambiada con éxito", "change_password", nil, true, "", false)
+	tools.ResponseOK(ctx, "ChangePassword", "Contraseña cambiada con éxito", "change_password", nil, true, "")
 }

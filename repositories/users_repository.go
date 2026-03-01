@@ -44,9 +44,9 @@ func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.Int
 	err := u.DB.First(&user, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &responses.InternalResponse{
-			Error:   nil,
-			Message: "Usuario no encontrado",
-			Handled: true,
+			Message:    "Usuario no encontrado",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {
@@ -74,9 +74,9 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 	}
 	if count > 0 {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "El correo electrónico ya existe",
-			Handled: true,
+			Message:    "El correo electrónico ya existe",
+			Handled:    true,
+			StatusCode: responses.StatusConflict,
 		}
 	}
 
@@ -118,9 +118,9 @@ func (u *UsersRepository) UpdateUser(id string, data map[string]interface{}) *re
 	err := u.DB.First(&user, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Usuario no encontrado",
-			Handled: true,
+			Message:    "Usuario no encontrado",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {
@@ -164,9 +164,9 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 	err := u.DB.First(&user, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "User not found",
-			Handled: true,
+			Message:    "User not found",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {
@@ -181,9 +181,9 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 	if err != nil {
 		if strings.Contains(err.Error(), "foreign key") {
 			return &responses.InternalResponse{
-				Error:   err,
-				Message: "No se puede eliminar el usuario debido a relaciones existentes",
-				Handled: true,
+				Message:    "No se puede eliminar el usuario debido a relaciones existentes",
+				Handled:    true,
+				StatusCode: responses.StatusConflict,
 			}
 		}
 
@@ -315,9 +315,9 @@ func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *r
 	err := u.DB.First(&user, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Usuario no encontrado",
-			Handled: true,
+			Message:    "Usuario no encontrado",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {

@@ -21,69 +21,65 @@ func (c *StockAlertsController) GetAllStockAlerts(ctx *gin.Context) {
 	stockAlerts, response := c.Service.GetAllStockAlerts(resolved)
 
 	if response != nil {
-		tools.Response(ctx, "GetAllStockAlerts", false, response.Message, "get_all_stock_alerts", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAllStockAlerts", "get_all_stock_alerts", response)
 		return
 	}
 
 	if len(stockAlerts) == 0 {
-		tools.Response(ctx, "GetAllStockAlerts", true, "No se encontraron alertas de stock", "get_all_stock_alerts", nil, false, "", false)
+		tools.ResponseOK(ctx, "GetAllStockAlerts", "No se encontraron alertas de stock", "get_all_stock_alerts", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetAllStockAlerts", true, "Alertas de stock obtenidas con éxito", "get_all_stock_alerts", stockAlerts, false, "", false)
+	tools.ResponseOK(ctx, "GetAllStockAlerts", "Alertas de stock obtenidas con éxito", "get_all_stock_alerts", stockAlerts, false, "")
 }
 
 func (c *StockAlertsController) Analyze(ctx *gin.Context) {
 	responseData, response := c.Service.Analyze()
 
 	if response != nil {
-		tools.Response(ctx, "Analyze", false, response.Message, "analyze_stock_alerts", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "Analyze", "analyze_stock_alerts", response)
 		return
 	}
 
-	tools.Response(ctx, "Analyze", true, "Alertas de stock analizadas con éxito", "analyze_stock_alerts", responseData, false, "", false)
+	tools.ResponseOK(ctx, "Analyze", "Alertas de stock analizadas con éxito", "analyze_stock_alerts", responseData, false, "")
 }
 
 func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
 	response, errResponse := c.Service.LotExpiration()
 	if errResponse != nil {
-		tools.Response(ctx, "LotExpiration", false, errResponse.Message, "lot_expiration", nil, false, "", false)
+		writeErrorResponse(ctx, "LotExpiration", "lot_expiration", errResponse)
 		return
 	}
 
-	tools.Response(ctx, "LotExpiration", true, "Alertas de expiración de lotes generadas con éxito", "lot_expiration", response, false, "", false)
+	tools.ResponseOK(ctx, "LotExpiration", "Alertas de expiración de lotes generadas con éxito", "lot_expiration", response, false, "")
 }
 
 func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
-	alertID := ctx.Param("id")
-
-	alertIDInt, err := tools.StringToInt(alertID)
-
-	if err != nil {
-		tools.Response(ctx, "ResolveAlert", false, "ID de alerta inválido", "resolve_stock_alert", nil, false, "", false)
+	alertIDInt, ok := tools.ParseIntParam(ctx, "id", "ResolveAlert", "resolve_stock_alert", "ID de alerta inválido")
+	if !ok {
 		return
 	}
 
 	response := c.Service.ResolveAlert(alertIDInt)
 
 	if response != nil {
-		tools.Response(ctx, "Resolve", false, response.Message, "resolve_stock_alert", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "ResolveAlert", "resolve_stock_alert", response)
 		return
 	}
 
-	tools.Response(ctx, "Resolve", true, "Alerta de stock resuelta con éxito", "resolve_stock_alert", nil, false, "", false)
+	tools.ResponseOK(ctx, "ResolveAlert", "Alerta de stock resuelta con éxito", "resolve_stock_alert", nil, false, "")
 }
 
 func (c *StockAlertsController) ExportAlertsToExcel(ctx *gin.Context) {
 	data, response := c.Service.ExportAlertsToExcel()
 
 	if response != nil {
-		tools.Response(ctx, "ExportAlertsToExcel", false, response.Message, "export_stock_alerts_to_excel", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "ExportAlertsToExcel", "export_stock_alerts_to_excel", response)
 		return
 	}
 
 	if data == nil {
-		tools.Response(ctx, "ExportAlertsToExcel", true, "No se encontraron alertas de stock para exportar", "export_stock_alerts_to_excel", nil, false, "", false)
+		tools.ResponseOK(ctx, "ExportAlertsToExcel", "No se encontraron alertas de stock para exportar", "export_stock_alerts_to_excel", nil, false, "")
 		return
 	}
 

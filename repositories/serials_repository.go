@@ -22,6 +22,13 @@ func (r *SerialsRepository) GetSerialByID(id int) (*database.Serial, *responses.
 		First(&serial).Error
 
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &responses.InternalResponse{
+				Message:    "Serie no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
+			}
+		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
 			Message: "Error al obtener la serie",
@@ -78,9 +85,9 @@ func (r *SerialsRepository) UpdateSerial(id int, data map[string]interface{}) *r
 	err := r.DB.First(&serial, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Serie no encontrada",
-			Handled: true,
+			Message:    "Serie no encontrada",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {
@@ -125,9 +132,9 @@ func (r *SerialsRepository) DeleteSerial(id int) *responses.InternalResponse {
 
 	if result.RowsAffected == 0 {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Serie no encontrada",
-			Handled: true,
+			Message:    "Serie no encontrada",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 

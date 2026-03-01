@@ -303,10 +303,19 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			errorMessage = "El registro ya existe en la base de datos"
 		}
 
+		statusCode := 0
+		if isHandled {
+			if strings.Contains(errorMessage, "no encontrado") {
+				statusCode = responses.StatusNotFound
+			} else if strings.Contains(errorMessage, "ya existe") || strings.Contains(errorMessage, "duplicate") {
+				statusCode = responses.StatusConflict
+			}
+		}
 		return &responses.InternalResponse{
-			Error:   err,
-			Message: errorMessage,
-			Handled: isHandled,
+			Error:      err,
+			Message:    errorMessage,
+			Handled:    isHandled,
+			StatusCode: statusCode,
 		}
 	}
 
@@ -320,9 +329,9 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &responses.InternalResponse{
-				Error:   nil,
-				Message: "Artículo de inventario no encontrado",
-				Handled: true,
+				Message:    "Artículo de inventario no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return &responses.InternalResponse{
@@ -345,9 +354,9 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 
 	if count > 0 {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: fmt.Sprintf(`SKU %q ya existe en la ubicación %q. Use una ubicación diferente o actualice la entrada existente.`, item.SKU, item.Location),
-			Handled: true,
+			Message:    fmt.Sprintf(`SKU %q ya existe en la ubicación %q. Use una ubicación diferente o actualice la entrada existente.`, item.SKU, item.Location),
+			Handled:    true,
+			StatusCode: responses.StatusConflict,
 		}
 	}
 
@@ -381,9 +390,9 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 
 	if article.ID == 0 {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Artículo no encontrado para el SKU proporcionado",
-			Handled: true,
+			Message:    "Artículo no encontrado para el SKU proporcionado",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 
@@ -469,9 +478,9 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &responses.InternalResponse{
-				Error:   nil,
-				Message: "Artículo de inventario no encontrado",
-				Handled: true,
+				Message:    "Artículo de inventario no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return &responses.InternalResponse{

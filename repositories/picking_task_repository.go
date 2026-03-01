@@ -101,9 +101,9 @@ func (r *PickingTaskRepository) GetPickingTaskByID(id int) (*database.PickingTas
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Tarea de picking no encontrada",
-				Handled: true,
+				Message:    "Tarea de picking no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{

@@ -1,7 +1,7 @@
 # eSTOCK Backend — Makefile
 # Run from backend/ so paths (db/migrations, .env) resolve correctly.
 
-.PHONY: help server build-docker migrate-up migrate-down migrate-up-1 migrate-down-1 create-migration migrate-force
+.PHONY: help server docs build-docker migrate-up migrate-down migrate-up-1 migrate-down-1 create-migration migrate-force
 
 # DB URL from .env: prefer DATABASE_URL or DB_SOURCE; else build from DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
 get-db-url = $(shell \
@@ -28,6 +28,7 @@ help: ## Show available commands
 	@echo "  create-migration   Create new migration (name=short_description)"
 	@echo "  migrate-force      Force schema version (version=N)"
 	@echo "  server             Run the backend server (go run cmd/main.go)"
+	@echo "  docs               Show API docs URLs (route list, OpenAPI, Swagger UI)"
 	@echo "  build-docker       Docker buildx and push"
 	@echo ""
 	@echo "Requires: .env with DATABASE_URL, DB_SOURCE, or DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME; migrate CLI (go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest)"
@@ -78,6 +79,12 @@ migrate-force: ## Force schema version (usage: make migrate-force version=0)
 
 server: ## Run the backend server
 	go run cmd/main.go
+
+docs: ## Show API docs URLs (run server first, then open in browser)
+	@echo "API docs (run 'make server' first):"
+	@echo "  Route list:    http://localhost:8080/api/docs/routes"
+	@echo "  OpenAPI spec:  http://localhost:8080/api/docs/openapi.json"
+	@echo "  Swagger UI:    http://localhost:8080/swagger/index.html"
 
 # Docker build (original target)
 build-docker: ## Docker buildx and push

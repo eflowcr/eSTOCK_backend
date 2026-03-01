@@ -106,9 +106,9 @@ func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.Recei
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Tarea de recepción no encontrada",
-				Handled: true,
+				Message:    "Tarea de recepción no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{

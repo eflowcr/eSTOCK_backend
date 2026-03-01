@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -23,16 +21,16 @@ func (c *LotsController) GetAllLots(ctx *gin.Context) {
 	lots, response := c.Service.GetAllLots()
 
 	if response != nil {
-		tools.Response(ctx, "GetAllLots", false, response.Message, "get_all_lots", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAllLots", "get_all_lots", response)
 		return
 	}
 
 	if len(lots) == 0 {
-		tools.Response(ctx, "GetAllLots", true, "No lots found", "get_all_lots", nil, false, "", false)
+		tools.ResponseOK(ctx, "GetAllLots", "No lots found", "get_all_lots", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetAllLots", true, "Lots retrieved successfully", "get_all_lots", lots, false, "", false)
+	tools.ResponseOK(ctx, "GetAllLots", "Lots retrieved successfully", "get_all_lots", lots, false, "")
 }
 
 func (c *LotsController) GetLotsBySKU(ctx *gin.Context) {
@@ -40,75 +38,70 @@ func (c *LotsController) GetLotsBySKU(ctx *gin.Context) {
 	lots, response := c.Service.GetLotsBySKU(&sku)
 
 	if response != nil {
-		tools.Response(ctx, "GetLotsBySKU", false, response.Message, "get_lots_by_sku", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetLotsBySKU", "get_lots_by_sku", response)
 		return
 	}
 
 	if len(lots) == 0 {
-		tools.Response(ctx, "GetLotsBySKU", true, "No lots found for the given SKU", "get_lots_by_sku", nil, false, "", false)
+		tools.ResponseOK(ctx, "GetLotsBySKU", "No lots found for the given SKU", "get_lots_by_sku", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetLotsBySKU", true, "Lots retrieved successfully", "get_lots_by_sku", lots, false, "", false)
+	tools.ResponseOK(ctx, "GetLotsBySKU", "Lots retrieved successfully", "get_lots_by_sku", lots, false, "")
 }
 
 func (c *LotsController) CreateLot(ctx *gin.Context) {
 	var request requests.CreateLotRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		tools.Response(ctx, "CreateLot", false, "Invalid request data", "create_lot", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "CreateLot", "Invalid request data", "create_lot")
+		return
+	}
+	if errs := tools.ValidateStruct(&request); errs != nil {
+		tools.ResponseValidationError(ctx, "CreateLot", "create_lot", errs)
 		return
 	}
 
 	lotResponse := c.Service.Create(&request)
 	if lotResponse != nil {
-		tools.Response(ctx, "CreateLot", false, lotResponse.Message, "create_lot", nil, false, "", lotResponse.Handled)
+		writeErrorResponse(ctx, "CreateLot", "create_lot", lotResponse)
 		return
 	}
 
-	tools.Response(ctx, "CreateLot", true, "Lot created successfully", "create_lot", nil, false, "", false)
+	tools.ResponseCreated(ctx, "CreateLot", "Lot created successfully", "create_lot", nil, false, "")
 }
 
 func (c *LotsController) UpdateLot(ctx *gin.Context) {
-	idParam := ctx.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		tools.Response(ctx, "UpdateLot", false, "Invalid lot ID", "update_lot", nil, false, "", false)
+	id, ok := tools.ParseIntParam(ctx, "id", "UpdateLot", "update_lot", "Invalid lot ID")
+	if !ok {
 		return
 	}
 
 	var data map[string]interface{}
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		tools.Response(ctx, "UpdateLot", false, "Invalid request data", "update_lot", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "UpdateLot", "Invalid request data", "update_lot")
 		return
 	}
 
 	response := c.Service.UpdateUpdateLot(id, data)
 	if response != nil {
-		tools.Response(ctx, "UpdateLot", false, response.Message, "update_lot", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "UpdateLot", "update_lot", response)
 		return
 	}
 
-	tools.Response(ctx, "UpdateLot", true, "Lot updated successfully", "update_lot", nil, false, "", false)
+	tools.ResponseOK(ctx, "UpdateLot", "Lot updated successfully", "update_lot", nil, false, "")
 }
 
 func (c *LotsController) DeleteLot(ctx *gin.Context) {
-	idParam := ctx.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		tools.Response(ctx, "DeleteLot", false, "Invalid lot ID", "delete_lot", nil, false, "", false)
+	id, ok := tools.ParseIntParam(ctx, "id", "DeleteLot", "delete_lot", "Invalid lot ID")
+	if !ok {
 		return
 	}
 
 	response := c.Service.DeleteLot(id)
 	if response != nil {
-		if response.Handled {
-			tools.Response(ctx, "DeleteLot", false, response.Message, "delete_lot", nil, false, "", response.Handled)
-		} else {
-			tools.Response(ctx, "DeleteLot", false, "Internal error occurred", "delete_lot", nil, false, "", false)
-		}
-
+		writeErrorResponse(ctx, "DeleteLot", "delete_lot", response)
 		return
 	}
 
-	tools.Response(ctx, "DeleteLot", true, "Lot deleted successfully", "delete_lot", nil, false, "", false)
+	tools.ResponseOK(ctx, "DeleteLot", "Lot deleted successfully", "delete_lot", nil, false, "")
 }

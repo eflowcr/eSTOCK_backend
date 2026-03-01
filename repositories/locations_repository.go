@@ -48,9 +48,9 @@ func (r *LocationsRepository) GetLocationByID(id string) (*database.Location, *r
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Ubicación no encontrada",
-				Handled: true,
+				Message:    "Ubicación no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -111,9 +111,9 @@ func (r *LocationsRepository) UpdateLocation(id int, data map[string]interface{}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Ubicación no encontrada",
-			Handled: true,
+			Message:    "Ubicación no encontrada",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {
@@ -152,9 +152,9 @@ func (r *LocationsRepository) DeleteLocation(id int) *responses.InternalResponse
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Ubicación no encontrada",
-			Handled: true,
+			Message:    "Ubicación no encontrada",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
 		}
 	}
 	if err != nil {

@@ -48,9 +48,9 @@ func (r *ArticlesRepository) GetArticleByID(id int) (*database.Article, *respons
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Artículo no encontrado",
-				Handled: true,
+				Message:    "Artículo no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -74,9 +74,9 @@ func (r *ArticlesRepository) GetBySku(sku string) (*database.Article, *responses
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Artículo no encontrado",
-				Handled: true,
+				Message:    "Artículo no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -94,9 +94,9 @@ func (r *ArticlesRepository) CreateArticle(data *requests.Article) *responses.In
 	err := r.DB.First(&existing, "sku = ?", data.SKU).Error
 	if err == nil {
 		return &responses.InternalResponse{
-			Error:   nil,
-			Message: "Ya existe un artículo con el mismo SKU",
-			Handled: true,
+			Message:    "Ya existe un artículo con el mismo SKU",
+			Handled:    true,
+			StatusCode: responses.StatusConflict,
 		}
 	}
 
@@ -134,10 +134,17 @@ func (r *ArticlesRepository) UpdateArticle(id int, data *requests.Article) (*dat
 	var article database.Article
 	err := r.DB.First(&article, id).Error
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, &responses.InternalResponse{
+				Message:    "Artículo no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
+			}
+		}
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Artículo no encontrado",
-			Handled: true,
+			Message: "Error al obtener el artículo",
+			Handled: false,
 		}
 	}
 

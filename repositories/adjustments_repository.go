@@ -50,9 +50,9 @@ func (r *AdjustmentsRepository) GetAdjustmentByID(id int) (*database.Adjustment,
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Ajuste no encontrado",
-				Handled: true,
+				Message:    "Ajuste no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -76,9 +76,9 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Ajuste no encontrado",
-				Handled: true,
+				Message:    "Ajuste no encontrado",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -99,9 +99,9 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Inventario no encontrado para este ajuste",
-				Handled: true,
+				Message:    "Inventario no encontrado para este ajuste",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -152,9 +152,9 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDet
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
-				Error:   nil,
-				Message: "Artículo no encontrado para este ajuste",
-				Handled: true,
+				Message:    "Artículo no encontrado para este ajuste",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{
@@ -363,10 +363,19 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			errorMessage = "El registro ya existe en la base de datos"
 		}
 
+		statusCode := 0
+		if isHandled {
+			if strings.Contains(errorMessage, "no encontrado") {
+				statusCode = responses.StatusNotFound
+			} else if strings.Contains(errorMessage, "duplicate") || strings.Contains(errorMessage, "ya existe") {
+				statusCode = responses.StatusConflict
+			}
+		}
 		return &responses.InternalResponse{
-			Error:   err,
-			Message: errorMessage,
-			Handled: isHandled,
+			Error:      err,
+			Message:    errorMessage,
+			Handled:    isHandled,
+			StatusCode: statusCode,
 		}
 	}
 

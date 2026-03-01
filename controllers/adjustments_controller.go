@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -25,70 +23,67 @@ func (c *AdjustmentsController) GetAllAdjustments(ctx *gin.Context) {
 	adjustments, response := c.Service.GetAllAdjustments()
 
 	if response != nil {
-		tools.Response(ctx, "GetAllAdjustments", false, response.Message, "get_all_adjustments", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAllAdjustments", "get_all_adjustments", response)
 		return
 	}
 
 	if len(adjustments) == 0 {
-		tools.Response(ctx, "GetAllAdjustments", true, "No adjustments found", "get_all_adjustments", nil, false, "", false)
+		tools.ResponseOK(ctx, "GetAllAdjustments", "No adjustments found", "get_all_adjustments", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetAllAdjustments", true, "Ajustes obtenidos con éxito", "get_all_adjustments", adjustments, false, "", false)
+	tools.ResponseOK(ctx, "GetAllAdjustments", "Ajustes obtenidos con éxito", "get_all_adjustments", adjustments, false, "")
 }
 
 func (c *AdjustmentsController) GetAdjustmentByID(ctx *gin.Context) {
-	id := ctx.Param("id")
-
-	adjustmentId, err := strconv.Atoi(id)
-	if err != nil {
-		tools.Response(ctx, "GetAdjustmentByID", false, "El ID proporcionado no es válido", "get_adjustment_by_id", nil, false, "", true)
+	adjustmentID, ok := tools.ParseIntParam(ctx, "id", "GetAdjustmentByID", "get_adjustment_by_id", "El ID proporcionado no es válido")
+	if !ok {
 		return
 	}
 
-	adjustment, response := c.Service.GetAdjustmentByID(adjustmentId)
+	adjustment, response := c.Service.GetAdjustmentByID(adjustmentID)
 	if response != nil {
-		tools.Response(ctx, "GetAdjustmentByID", false, response.Message, "get_adjustment_by_id", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAdjustmentByID", "get_adjustment_by_id", response)
 		return
 	}
 
 	if adjustment == nil {
-		tools.Response(ctx, "GetAdjustmentByID", true, "Ajuste no encontrado", "get_adjustment_by_id", nil, false, "", true)
+		tools.ResponseNotFound(ctx, "GetAdjustmentByID", "Ajuste no encontrado", "get_adjustment_by_id")
 		return
 	}
 
-	tools.Response(ctx, "GetAdjustmentByID", true, "Ajuste obtenido con éxito", "get_adjustment_by_id", adjustment, false, "", false)
+	tools.ResponseOK(ctx, "GetAdjustmentByID", "Ajuste obtenido con éxito", "get_adjustment_by_id", adjustment, false, "")
 }
 
 func (c *AdjustmentsController) GetAdjustmentDetails(ctx *gin.Context) {
-	id := ctx.Param("id")
-
-	adjustmentId, err := strconv.Atoi(id)
-
-	if err != nil {
-		tools.Response(ctx, "GetAdjustmentDetails", false, "El ID proporcionado no es válido", "get_adjustment_details", nil, false, "", true)
+	adjustmentID, ok := tools.ParseIntParam(ctx, "id", "GetAdjustmentDetails", "get_adjustment_details", "El ID proporcionado no es válido")
+	if !ok {
 		return
 	}
 
-	details, response := c.Service.GetAdjustmentDetails(adjustmentId)
+	details, response := c.Service.GetAdjustmentDetails(adjustmentID)
 	if response != nil {
-		tools.Response(ctx, "GetAdjustmentDetails", false, response.Message, "get_adjustment_details", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "GetAdjustmentDetails", "get_adjustment_details", response)
 		return
 	}
 
 	if details == nil {
-		tools.Response(ctx, "GetAdjustmentDetails", true, "Detalles del ajuste no encontrados", "get_adjustment_details", nil, false, "", true)
+		tools.ResponseNotFound(ctx, "GetAdjustmentDetails", "Detalles del ajuste no encontrados", "get_adjustment_details")
 		return
 	}
 
-	tools.Response(ctx, "GetAdjustmentDetails", true, "Detalles del ajuste obtenidos con éxito", "get_adjustment_details", details, false, "", false)
+	tools.ResponseOK(ctx, "GetAdjustmentDetails", "Detalles del ajuste obtenidos con éxito", "get_adjustment_details", details, false, "")
 }
 
 func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 	var adjustment requests.CreateAdjustment
 
 	if err := ctx.ShouldBindJSON(&adjustment); err != nil {
-		tools.Response(ctx, "CreateAdjustment", false, "Carga útil de solicitud no válida", "create_adjustment", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "CreateAdjustment", "Carga útil de solicitud no válida", "create_adjustment")
+		return
+	}
+	if errs := tools.ValidateStruct(&adjustment); errs != nil {
+		tools.ResponseValidationError(ctx, "CreateAdjustment", "create_adjustment", errs)
 		return
 	}
 
@@ -97,22 +92,22 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 
 	response := c.Service.CreateAdjustment(userId, adjustment)
 	if response != nil {
-		tools.Response(ctx, "CreateAdjustment", false, response.Message, "create_adjustment", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "CreateAdjustment", "create_adjustment", response)
 		return
 	}
 
-	tools.Response(ctx, "CreateAdjustment", true, "Ajuste creado con éxito", "create_adjustment", adjustment, false, "", false)
+	tools.ResponseCreated(ctx, "CreateAdjustment", "Ajuste creado con éxito", "create_adjustment", adjustment, false, "")
 }
 
 func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
 	data, response := c.Service.ExportAdjustmentsToExcel()
 	if response != nil {
-		tools.Response(ctx, "ExportAdjustmentsToExcel", false, response.Message, "export_adjustments_to_excel", nil, false, "", response.Handled)
+		writeErrorResponse(ctx, "ExportAdjustmentsToExcel", "export_adjustments_to_excel", response)
 		return
 	}
 
 	if data == nil {
-		tools.Response(ctx, "ExportAdjustmentsToExcel", true, "No hay ajustes para exportar", "export_adjustments_to_excel", nil, false, "", true)
+		tools.ResponseOK(ctx, "ExportAdjustmentsToExcel", "No hay ajustes para exportar", "export_adjustments_to_excel", nil, false, "")
 		return
 	}
 

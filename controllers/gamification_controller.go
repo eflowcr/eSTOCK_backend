@@ -26,16 +26,16 @@ func (c *GamificationController) GamificationStats(ctx *gin.Context) {
 	stats, errResp := c.Service.GamificationStats(userId)
 
 	if errResp != nil {
-		tools.Response(ctx, "GamificationStats", false, errResp.Message, "gamification_stats", nil, false, "", errResp.Handled)
+		writeErrorResponse(ctx, "GamificationStats", "gamification_stats", errResp)
 		return
 	}
 
 	if stats == nil {
-		tools.Response(ctx, "GamificationStats", false, "No se encontraron estadísticas de gamificación", "gamification_stats", nil, false, "", false)
+		tools.ResponseNotFound(ctx, "GamificationStats", "No se encontraron estadísticas de gamificación", "gamification_stats")
 		return
 	}
 
-	tools.Response(ctx, "GamificationStats", true, "Estadísticas de gamificación obtenidas con éxito", "gamification_stats", stats, false, "", false)
+	tools.ResponseOK(ctx, "GamificationStats", "Estadísticas de gamificación obtenidas con éxito", "gamification_stats", stats, false, "")
 }
 
 func (c *GamificationController) Badges(ctx *gin.Context) {
@@ -45,32 +45,32 @@ func (c *GamificationController) Badges(ctx *gin.Context) {
 	badges, errResp := c.Service.Badges(userId)
 
 	if errResp != nil {
-		tools.Response(ctx, "Badges", false, errResp.Message, "badges", nil, false, "", errResp.Handled)
+		writeErrorResponse(ctx, "Badges", "badges", errResp)
 		return
 	}
 
 	if badges == nil {
-		tools.Response(ctx, "Badges", false, "No se encontraron insignias", "badges", nil, false, "", false)
+		tools.ResponseNotFound(ctx, "Badges", "No se encontraron insignias", "badges")
 		return
 	}
 
-	tools.Response(ctx, "Badges", true, "Insignias obtenidas con éxito", "badges", badges, false, "", false)
+	tools.ResponseOK(ctx, "Badges", "Insignias obtenidas con éxito", "badges", badges, false, "")
 }
 
 func (c *GamificationController) GetAllBadges(ctx *gin.Context) {
 	badges, errResp := c.Service.GetAllBadges()
 
 	if errResp != nil {
-		tools.Response(ctx, "GetAllBadges", false, errResp.Message, "all_badges", nil, false, "", errResp.Handled)
+		writeErrorResponse(ctx, "GetAllBadges", "all_badges", errResp)
 		return
 	}
 
 	if badges == nil {
-		tools.Response(ctx, "GetAllBadges", false, "No se encontraron insignias", "all_badges", nil, false, "", false)
+		tools.ResponseOK(ctx, "GetAllBadges", "No se encontraron insignias", "all_badges", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetAllBadges", true, "Todas las insignias obtenidas con éxito", "all_badges", badges, false, "", false)
+	tools.ResponseOK(ctx, "GetAllBadges", "Todas las insignias obtenidas con éxito", "all_badges", badges, false, "")
 }
 
 func (c *GamificationController) CompleteTasks(ctx *gin.Context) {
@@ -79,37 +79,41 @@ func (c *GamificationController) CompleteTasks(ctx *gin.Context) {
 
 	var task requests.CompleteTasks
 	if err := ctx.ShouldBindJSON(&task); err != nil {
-		tools.Response(ctx, "CompleteTasks", false, "Datos de solicitud no válidos", "complete_tasks", nil, false, "", false)
+		tools.ResponseBadRequest(ctx, "CompleteTasks", "Datos de solicitud no válidos", "complete_tasks")
+		return
+	}
+	if errs := tools.ValidateStruct(&task); errs != nil {
+		tools.ResponseValidationError(ctx, "CompleteTasks", "complete_tasks", errs)
 		return
 	}
 
 	tasks, errResp := c.Service.CompleteTasks(userId, task)
 
 	if errResp != nil {
-		tools.Response(ctx, "CompleteTasks", false, errResp.Message, "complete_tasks", nil, false, "", errResp.Handled)
+		writeErrorResponse(ctx, "CompleteTasks", "complete_tasks", errResp)
 		return
 	}
 
 	if tasks == nil {
-		tools.Response(ctx, "CompleteTasks", false, "No se completaron tareas o no se otorgaron insignias", "complete_tasks", nil, false, "", false)
+		tools.ResponseOK(ctx, "CompleteTasks", "No se completaron tareas o no se otorgaron insignias", "complete_tasks", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "CompleteTasks", true, "Tareas completadas e insignias otorgadas con éxito", "complete_tasks", tasks, false, "", false)
+	tools.ResponseOK(ctx, "CompleteTasks", "Tareas completadas e insignias otorgadas con éxito", "complete_tasks", tasks, false, "")
 }
 
 func (c *GamificationController) GetAllUserStats(ctx *gin.Context) {
 	stats, errResp := c.Service.GetAllUserStats()
 
 	if errResp != nil {
-		tools.Response(ctx, "GetAllUserStats", false, errResp.Message, "all_user_stats", nil, false, "", errResp.Handled)
+		writeErrorResponse(ctx, "GetAllUserStats", "all_user_stats", errResp)
 		return
 	}
 
 	if stats == nil {
-		tools.Response(ctx, "GetAllUserStats", false, "No se encontraron estadísticas de usuario", "all_user_stats", nil, false, "", false)
+		tools.ResponseOK(ctx, "GetAllUserStats", "No se encontraron estadísticas de usuario", "all_user_stats", nil, false, "")
 		return
 	}
 
-	tools.Response(ctx, "GetAllUserStats", true, "Todas las estadísticas de usuario obtenidas con éxito", "all_user_stats", stats, false, "", false)
+	tools.ResponseOK(ctx, "GetAllUserStats", "Todas las estadísticas de usuario obtenidas con éxito", "all_user_stats", stats, false, "")
 }
