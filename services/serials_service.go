@@ -4,18 +4,18 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type SerialsService struct {
-	Repository *repositories.SerialsRepository
+	Repository ports.SerialsRepository
 }
 
 func (s *SerialsService) GetSerialByID(id int) (*database.Serial, *responses.InternalResponse) {
 	return s.Repository.GetSerialByID(id)
 }
 
-func NewSerialsService(repo *repositories.SerialsRepository) *SerialsService {
+func NewSerialsService(repo ports.SerialsRepository) *SerialsService {
 	return &SerialsService{Repository: repo}
 }
 

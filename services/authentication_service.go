@@ -3,14 +3,14 @@ package services
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type AuthenticationService struct {
-	Repository *repositories.AuthenticationRepository
+	Repository ports.AuthenticationRepository
 }
 
-func NewAuthenticationService(repo *repositories.AuthenticationRepository) *AuthenticationService {
+func NewAuthenticationService(repo ports.AuthenticationRepository) *AuthenticationService {
 	return &AuthenticationService{
 		Repository: repo,
 	}

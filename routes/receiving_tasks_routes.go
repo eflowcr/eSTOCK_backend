@@ -3,16 +3,18 @@ package routes
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
-	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
+var _ ports.ReceivingTasksRepository = (*repositories.ReceivingTasksRepository)(nil)
+
 func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	receivingTaskRepository := &repositories.ReceivingTasksRepository{DB: db}
-	receivingTasksService := services.NewReceivingTasksService(receivingTaskRepository)
+	_, receivingTasksService := wire.NewReceivingTasks(db)
 	receivingTasksController := controllers.NewReceivingTasksController(*receivingTasksService, config.JWTSecret)
 
 	route := router.Group("/receiving-tasks")

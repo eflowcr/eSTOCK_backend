@@ -5,14 +5,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type AdjustmentsService struct {
-	Repository *repositories.AdjustmentsRepository
+	Repository ports.AdjustmentsRepository
 }
 
-func NewAdjustmentsService(repo *repositories.AdjustmentsRepository) *AdjustmentsService {
+func NewAdjustmentsService(repo ports.AdjustmentsRepository) *AdjustmentsService {
 	return &AdjustmentsService{
 		Repository: repo,
 	}

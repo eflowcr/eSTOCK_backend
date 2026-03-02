@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type PickingTaskService struct {
-	Repository *repositories.PickingTaskRepository
+	Repository ports.PickingTaskRepository
 }
 
-func NewPickingTaskService(repo *repositories.PickingTaskRepository) *PickingTaskService {
+func NewPickingTaskService(repo ports.PickingTaskRepository) *PickingTaskService {
 	return &PickingTaskService{
 		Repository: repo,
 	}

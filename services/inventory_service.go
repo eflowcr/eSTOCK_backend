@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type InventoryService struct {
-	Repository *repositories.InventoryRepository
+	Repository ports.InventoryRepository
 }
 
-func NewInventoryService(repo *repositories.InventoryRepository) *InventoryService {
+func NewInventoryService(repo ports.InventoryRepository) *InventoryService {
 	return &InventoryService{
 		Repository: repo,
 	}

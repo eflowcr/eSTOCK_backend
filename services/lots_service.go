@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type LotsService struct {
-	Repository *repositories.LotsRepository
+	Repository ports.LotsRepository
 }
 
-func NewLotsService(repo *repositories.LotsRepository) *LotsService {
+func NewLotsService(repo ports.LotsRepository) *LotsService {
 	return &LotsService{
 		Repository: repo,
 	}

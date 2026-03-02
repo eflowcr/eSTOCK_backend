@@ -3,17 +3,18 @@ package routes
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
-	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	serialRepository := &repositories.SerialsRepository{DB: db}
-	serialService := services.NewSerialsService(serialRepository)
+var _ ports.SerialsRepository = (*repositories.SerialsRepository)(nil)
 
+func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
+	_, serialService := wire.NewSerials(db)
 	serialController := controllers.NewSerialsController(*serialService)
 
 	route := router.Group("/serials")

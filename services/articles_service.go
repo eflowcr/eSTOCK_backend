@@ -6,14 +6,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type ArticlesService struct {
-	Repository *repositories.ArticlesRepository
+	Repository ports.ArticlesRepository
 }
 
-func NewArticlesService(repo *repositories.ArticlesRepository) *ArticlesService {
+func NewArticlesService(repo ports.ArticlesRepository) *ArticlesService {
 	return &ArticlesService{
 		Repository: repo,
 	}

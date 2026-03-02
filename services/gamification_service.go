@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type GamificationService struct {
-	Repository *repositories.GamificationRepository
+	Repository ports.GamificationRepository
 }
 
-func NewGamificationService(repo *repositories.GamificationRepository) *GamificationService {
+func NewGamificationService(repo ports.GamificationRepository) *GamificationService {
 	return &GamificationService{
 		Repository: repo,
 	}

@@ -2,14 +2,14 @@ package services
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type DashboardService struct {
-	Repository *repositories.DashboardRepository
+	Repository ports.DashboardRepository
 }
 
-func NewDashboardService(repository *repositories.DashboardRepository) *DashboardService {
+func NewDashboardService(repository ports.DashboardRepository) *DashboardService {
 	return &DashboardService{
 		Repository: repository,
 	}

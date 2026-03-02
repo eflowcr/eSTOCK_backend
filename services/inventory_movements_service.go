@@ -3,14 +3,14 @@ package services
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type InventoryMovementsService struct {
-	Repository *repositories.InventoryMovementsRepository
+	Repository ports.InventoryMovementsRepository
 }
 
-func NewInventoryMovementsService(repo *repositories.InventoryMovementsRepository) *InventoryMovementsService {
+func NewInventoryMovementsService(repo ports.InventoryMovementsRepository) *InventoryMovementsService {
 	return &InventoryMovementsService{
 		Repository: repo,
 	}

@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type LocationsService struct {
-	Repository *repositories.LocationsRepository
+	Repository ports.LocationsRepository
 }
 
-func NewLocationsService(repo *repositories.LocationsRepository) *LocationsService {
+func NewLocationsService(repo ports.LocationsRepository) *LocationsService {
 	return &LocationsService{
 		Repository: repo,
 	}

@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type UserService struct {
-	Repository *repositories.UsersRepository
+	Repository ports.UsersRepository
 }
 
-func NewUserService(repo *repositories.UsersRepository) *UserService {
+func NewUserService(repo ports.UsersRepository) *UserService {
 	return &UserService{
 		Repository: repo,
 	}

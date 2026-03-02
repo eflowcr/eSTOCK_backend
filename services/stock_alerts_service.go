@@ -3,14 +3,14 @@ package services
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type StockAlertsService struct {
-	Repository *repositories.StockAlertsRepository
+	Repository ports.StockAlertsRepository
 }
 
-func NewStockAlertsService(repo *repositories.StockAlertsRepository) *StockAlertsService {
+func NewStockAlertsService(repo ports.StockAlertsRepository) *StockAlertsService {
 	return &StockAlertsService{
 		Repository: repo,
 	}

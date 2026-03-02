@@ -2,14 +2,14 @@ package services
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type EncryptionService struct {
-	Repository *repositories.EncryptionRepository
+	Repository ports.EncryptionRepository
 }
 
-func NewEncryptionService(repo *repositories.EncryptionRepository) *EncryptionService {
+func NewEncryptionService(repo ports.EncryptionRepository) *EncryptionService {
 	return &EncryptionService{
 		Repository: repo,
 	}

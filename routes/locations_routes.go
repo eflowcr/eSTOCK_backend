@@ -3,17 +3,18 @@ package routes
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
-	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	locationRepository := &repositories.LocationsRepository{DB: db}
-	locationService := services.NewLocationsService(locationRepository)
+var _ ports.LocationsRepository = (*repositories.LocationsRepository)(nil)
 
+func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
+	_, locationService := wire.NewLocations(db)
 	locationController := controllers.NewLocationsController(*locationService)
 
 	route := router.Group("/locations")

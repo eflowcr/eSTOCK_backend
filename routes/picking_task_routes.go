@@ -3,16 +3,18 @@ package routes
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
-	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
+var _ ports.PickingTaskRepository = (*repositories.PickingTaskRepository)(nil)
+
 func RegisterPickingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	pickingTaskRepository := &repositories.PickingTaskRepository{DB: db}
-	pickingTasksService := services.NewPickingTaskService(pickingTaskRepository)
+	_, pickingTasksService := wire.NewPickingTask(db)
 	pickingTasksController := controllers.NewPickingTasksController(*pickingTasksService, config.JWTSecret)
 
 	route := router.Group("/picking-tasks")

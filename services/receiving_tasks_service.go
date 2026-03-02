@@ -4,14 +4,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type ReceivingTasksService struct {
-	Repository *repositories.ReceivingTasksRepository
+	Repository ports.ReceivingTasksRepository
 }
 
-func NewReceivingTasksService(repo *repositories.ReceivingTasksRepository) *ReceivingTasksService {
+func NewReceivingTasksService(repo ports.ReceivingTasksRepository) *ReceivingTasksService {
 	return &ReceivingTasksService{
 		Repository: repo,
 	}

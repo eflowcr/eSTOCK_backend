@@ -3,14 +3,14 @@ package services
 import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
-	"github.com/eflowcr/eSTOCK_backend/repositories"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 )
 
 type PresentationsService struct {
-	Repository *repositories.PresentationsRepository
+	Repository ports.PresentationsRepository
 }
 
-func NewPresentationsService(repo *repositories.PresentationsRepository) *PresentationsService {
+func NewPresentationsService(repo ports.PresentationsRepository) *PresentationsService {
 	return &PresentationsService{
 		Repository: repo,
 	}

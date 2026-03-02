@@ -3,17 +3,18 @@ package routes
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
-	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	stockAlertsRepository := &repositories.StockAlertsRepository{DB: db}
-	stockAlertsService := services.NewStockAlertsService(stockAlertsRepository)
+var _ ports.StockAlertsRepository = (*repositories.StockAlertsRepository)(nil)
 
+func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
+	_, stockAlertsService := wire.NewStockAlerts(db)
 	stockAlertsController := controllers.NewStockAlertsController(*stockAlertsService)
 
 	route := router.Group("/stock-alerts")

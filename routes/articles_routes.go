@@ -3,17 +3,18 @@ package routes
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
-	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	articlesRepository := &repositories.ArticlesRepository{DB: db}
-	articlesService := services.NewArticlesService(articlesRepository)
+var _ ports.ArticlesRepository = (*repositories.ArticlesRepository)(nil)
 
+func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
+	_, articlesService := wire.NewArticles(db)
 	articlesController := controllers.NewArticlesController(*articlesService)
 
 	route := router.Group("/articles")
