@@ -10,7 +10,11 @@ import (
 
 type Querier interface {
 	ArticleExistsBySku(ctx context.Context, sku string) (bool, error)
+	CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error)
 	CreateArticle(ctx context.Context, arg CreateArticleParams) (Article, error)
+	// Audit logs: who did what, when, how
+	// Schema: db/migrations (000003_audit_logs_schema)
+	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
 	CreateLocation(ctx context.Context, arg CreateLocationParams) (Location, error)
 	CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error)
 	CreatePresentation(ctx context.Context, arg CreatePresentationParams) (Presentation, error)
@@ -32,6 +36,7 @@ type Querier interface {
 	// Articles CRUD and related queries for sqlc
 	// Schema: db/migrations (articles, lots, serials tables)
 	ListArticles(ctx context.Context) ([]Article, error)
+	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// Locations CRUD for sqlc
 	// Schema: db/migrations (locations table)
 	ListLocations(ctx context.Context) ([]Location, error)

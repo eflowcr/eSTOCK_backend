@@ -11,6 +11,7 @@ sql:
       - "db/query/locations"
       - "db/query/lots"
       - "db/query/serials"
+      - "db/query/audit_logs"
     engine: "postgresql"
     gen:
       go:

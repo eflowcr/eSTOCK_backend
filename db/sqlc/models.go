@@ -6,6 +6,7 @@ package sqlc
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -39,6 +40,23 @@ type Article struct {
 	IsActive        pgtype.Bool      `json:"is_active"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+}
+
+// Audit log for tracking user actions (create, update, delete)
+type AuditLog struct {
+	ID     string      `json:"id"`
+	UserID pgtype.Text `json:"user_id"`
+	// create, update, delete, login, logout
+	Action string `json:"action"`
+	// article, lot, location, serial, etc.
+	ResourceType string      `json:"resource_type"`
+	ResourceID   string      `json:"resource_id"`
+	OldValue     []byte      `json:"old_value"`
+	NewValue     []byte      `json:"new_value"`
+	IpAddress    pgtype.Text `json:"ip_address"`
+	UserAgent    pgtype.Text `json:"user_agent"`
+	Metadata     []byte      `json:"metadata"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 type Badge struct {

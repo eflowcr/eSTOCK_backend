@@ -26,6 +26,16 @@ func NewArticles(db *gorm.DB, pool *pgxpool.Pool) (ports.ArticlesRepository, *se
 	return r, services.NewArticlesService(r)
 }
 
+// NewAuditLog builds AuditLogRepository and AuditService. Requires pool (Postgres); no GORM fallback for audit.
+func NewAuditLog(pool *pgxpool.Pool) (ports.AuditLogRepository, *services.AuditService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewAuditLogsRepositorySQLC(queries)
+	return r, services.NewAuditService(r)
+}
+
 func NewAdjustments(db *gorm.DB) (ports.AdjustmentsRepository, *services.AdjustmentsService) {
 	r := &repositories.AdjustmentsRepository{DB: db}
 	return r, services.NewAdjustmentsService(r)

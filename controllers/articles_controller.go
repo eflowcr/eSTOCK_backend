@@ -1,7 +1,9 @@
 package controllers
 
 import (
+	"encoding/json"
 	"io"
+	"strconv"
 
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
@@ -11,12 +13,14 @@ import (
 )
 
 type ArticlesController struct {
-	Service services.ArticlesService
+	Service    services.ArticlesService
+	AuditService *services.AuditService
 }
 
-func NewArticlesController(service services.ArticlesService) *ArticlesController {
+func NewArticlesController(service services.ArticlesService, auditSvc *services.AuditService) *ArticlesController {
 	return &ArticlesController{
-		Service: service,
+		Service:      service,
+		AuditService: auditSvc,
 	}
 }
 
@@ -92,6 +96,15 @@ func (c *ArticlesController) CreateArticle(ctx *gin.Context) {
 		return
 	}
 
+	if c.AuditService != nil {
+		userIDVal, _ := ctx.Get(tools.ContextKeyUserID)
+		var uid *string
+		if idStr, ok := userIDVal.(string); ok && idStr != "" {
+			uid = &idStr
+		}
+		newVal, _ := json.Marshal(articleRequest)
+		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionCreate, tools.ResourceArticle, "", nil, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
+	}
 	tools.ResponseCreated(ctx, "CreateArticle", "Artículo creado con éxito", "create_article", nil, false, "")
 }
 
@@ -101,6 +114,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		return
 	}
 
+	article, _ := c.Service.GetArticleByID(id)
 	var req requests.Article
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		tools.ResponseBadRequest(ctx, "UpdateArticle", "Carga útil no válida", "update_article")
@@ -117,6 +131,16 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		return
 	}
 
+	if c.AuditService != nil && updatedArticle != nil {
+		userIDVal, _ := ctx.Get(tools.ContextKeyUserID)
+		var uid *string
+		if idStr, ok := userIDVal.(string); ok && idStr != "" {
+			uid = &idStr
+		}
+		oldVal, _ := json.Marshal(article)
+		newVal, _ := json.Marshal(updatedArticle)
+		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionUpdate, tools.ResourceArticle, strconv.Itoa(id), oldVal, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
+	}
 	payload := gin.H{"article": updatedArticle}
 	if len(warnings) > 0 {
 		payload["warnings"] = warnings
@@ -175,12 +199,22 @@ func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 		return
 	}
 
+	article, _ := c.Service.GetArticleByID(id)
 	resp := c.Service.DeleteArticle(id)
 	if resp != nil {
 		writeErrorResponse(ctx, "DeleteArticle", "delete_article", resp)
 		return
 	}
 
+	if c.AuditService != nil && article != nil {
+		userID, _ := ctx.Get(tools.ContextKeyUserID)
+		var uid *string
+		if idStr, ok := userID.(string); ok && idStr != "" {
+			uid = &idStr
+		}
+		oldVal, _ := json.Marshal(article)
+		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionDelete, tools.ResourceArticle, strconv.Itoa(id), oldVal, nil, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
+	}
 	tools.ResponseOK(ctx, "DeleteArticle", "Artículo eliminado con éxito", "delete_article", nil, false, "")
 }
 

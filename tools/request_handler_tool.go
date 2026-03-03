@@ -5,10 +5,16 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 )
 
-// JWTAuthMiddleware returns a Gin middleware that validates JWT using the given secret.
+// Context keys for values set by JWTAuthMiddleware (e.g. audit, RBAC).
+const (
+	ContextKeyUserID = "user_id"
+	ContextKeyRole   = "role"
+)
+
+// JWTAuthMiddleware returns a Gin middleware that validates JWT and sets user_id and role on context.
 func JWTAuthMiddleware(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		secretKey := []byte(secret)
@@ -27,7 +33,7 @@ func JWTAuthMiddleware(secret string) gin.HandlerFunc {
 			return
 		}
 
-		token, err := jwt.Parse(tokenString[1], func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(tokenString[1], &Claims{}, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, jwt.ErrSignatureInvalid
 			}
@@ -40,6 +46,10 @@ func JWTAuthMiddleware(secret string) gin.HandlerFunc {
 			return
 		}
 
+		if claims, ok := token.Claims.(*Claims); ok {
+			c.Set(ContextKeyUserID, claims.UserId)
+			c.Set(ContextKeyRole, claims.Role)
+		}
 		c.Next()
 	}
 }
