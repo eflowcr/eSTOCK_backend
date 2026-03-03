@@ -1,7 +1,7 @@
 # eSTOCK Backend — Makefile
 # Run from backend/ so paths (db/migrations, .env) resolve correctly.
 
-.PHONY: help server docs build-docker migrate-up migrate-down migrate-up-1 migrate-down-1 create-migration migrate-force
+.PHONY: help server docs build-docker migrate-up migrate-down migrate-up-1 migrate-down-1 create-migration migrate-force sqlc sqlc-validate sqlc-clean sqlc-diff test test-unit test-articles-integration
 
 # DB URL from .env: prefer DATABASE_URL or DB_SOURCE; else build from DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
 get-db-url = $(shell \
@@ -30,8 +30,15 @@ help: ## Show available commands
 	@echo "  server             Run the backend server (go run cmd/main.go)"
 	@echo "  docs               Show API docs URLs (route list, OpenAPI, Swagger UI)"
 	@echo "  build-docker       Docker buildx and push"
+	@echo "  sqlc               Generate sqlc code from db/query/*.sql (writes db/sqlc/)"
+	@echo "  sqlc-validate      Validate sqlc config and compile queries"
+	@echo "  sqlc-clean         Remove generated db/sqlc/"
+	@echo "  sqlc-diff          Show schema diff (optional)"
+	@echo "  test                     Run all tests (unit only with -short)"
+	@echo "  test-unit                Run unit tests only (no Docker)"
+	@echo "  test-articles-integration  Run ArticlesRepositorySQLC integration tests (requires Docker)"
 	@echo ""
-	@echo "Requires: .env with DATABASE_URL, DB_SOURCE, or DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME; migrate CLI (go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest)"
+	@echo "Requires: .env with DATABASE_URL, DB_SOURCE, or DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME; migrate CLI; sqlc (go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest)"
 
 migrate-up: ## Apply all pending migrations
 	@DB_URL="$(call get-db-url)"; \
@@ -89,5 +96,37 @@ docs: ## Show API docs URLs (run server first, then open in browser)
 # Docker build (original target)
 build-docker: ## Docker buildx and push
 	docker buildx build --platform linux/amd64,linux/arm64 -t epracsupply/estock_backend:v1.0.2 . --push
+
+# -----------------------------------------------------------------------------
+# sqlc — type-safe SQL codegen (see eSTOCK doc/Roadmap - SQLC Backend.md)
+# -----------------------------------------------------------------------------
+sqlc: ## Generate sqlc code from db/query/*.sql into db/sqlc/
+	@command -v sqlc >/dev/null 2>&1 || (echo "sqlc not found: run go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest" && exit 1)
+	sqlc generate
+	@echo "Generated code in db/sqlc/"
+
+sqlc-validate: ## Validate sqlc config and compile queries (no codegen)
+	@command -v sqlc >/dev/null 2>&1 || (echo "sqlc not found: run go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest" && exit 1)
+	sqlc compile
+	@echo "sqlc config and queries are valid"
+
+sqlc-clean: ## Remove generated db/sqlc/
+	rm -rf db/sqlc/
+	@echo "Removed db/sqlc/"
+
+sqlc-diff: ## Show database schema diff (requires DB connection)
+	@command -v sqlc >/dev/null 2>&1 || (echo "sqlc not found" && exit 1)
+	@DB_URL="$(call get-db-url)"; \
+	if [ -z "$$DB_URL" ]; then echo "Error: set DATABASE_URL or DB_* in .env for sqlc diff"; exit 1; fi; \
+	sqlc diff
+
+test: ## Run all tests (use -short to skip integration tests)
+	go test ./... -count=1
+
+test-unit: ## Run unit tests only (skips integration tests that need Docker)
+	go test ./... -short -count=1
+
+test-articles-integration: ## Run ArticlesRepositorySQLC integration tests (requires Docker; skips if unavailable)
+	go test -v ./repositories/... -run TestArticlesRepositorySQLC -count=1
 
 all: build-docker

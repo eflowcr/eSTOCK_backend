@@ -1,0 +1,35 @@
+# sqlc configuration for eSTOCK backend
+# Schema: db/migrations (source of truth). Queries: per-domain folders under db/query/
+# See: eSTOCK/Roadmap - SQLC Backend.md
+
+version: "2"
+sql:
+  - schema: "db/migrations"
+    queries:
+      - "db/query/articles"
+      - "db/query/presentations"
+      - "db/query/locations"
+      - "db/query/lots"
+      - "db/query/serials"
+    engine: "postgresql"
+    gen:
+      go:
+        package: "sqlc"
+        out: "./db/sqlc"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_prepared_queries: false
+        emit_interface: true
+        emit_exact_table_names: false
+        emit_empty_slices: true
+        overrides:
+          - db_type: "timestamp"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "jsonb"
+            go_type: "encoding/json.RawMessage"
+          - db_type: "json"
+            go_type: "encoding/json.RawMessage"

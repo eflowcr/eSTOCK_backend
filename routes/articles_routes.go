@@ -8,13 +8,15 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 var _ ports.ArticlesRepository = (*repositories.ArticlesRepository)(nil)
+var _ ports.ArticlesRepository = (*repositories.ArticlesRepositorySQLC)(nil)
 
-func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	_, articlesService := wire.NewArticles(db)
+func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+	_, articlesService := wire.NewArticles(db, pool)
 	articlesController := controllers.NewArticlesController(*articlesService)
 
 	route := router.Group("/articles")

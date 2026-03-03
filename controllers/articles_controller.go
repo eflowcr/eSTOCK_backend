@@ -57,7 +57,10 @@ func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) GetBySku(ctx *gin.Context) {
-	sku := ctx.Param("sku")
+	sku, ok := tools.ParseRequiredParam(ctx, "sku", "GetBySku", "get_by_sku", "SKU inválido")
+	if !ok {
+		return
+	}
 	article, response := c.Service.GetBySku(sku)
 	if response != nil {
 		writeErrorResponse(ctx, "GetBySku", "get_by_sku", response)

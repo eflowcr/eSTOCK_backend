@@ -7,6 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ParseRequiredParam reads the path parameter named paramName and returns (value, true) if non-empty.
+// If the param is missing or empty, it writes ResponseBadRequest with invalidMessage and returns ("", false).
+// Use for string IDs (e.g. location id or location_code). Caller should return immediately when ok is false.
+func ParseRequiredParam(c *gin.Context, paramName, transactionType, endpointCode, invalidMessage string) (string, bool) {
+	raw := strings.TrimSpace(c.Param(paramName))
+	if raw == "" {
+		ResponseBadRequest(c, transactionType, invalidMessage, endpointCode)
+		return "", false
+	}
+	return raw, true
+}
+
 // ParseIntParam reads the path parameter named paramName, parses it as an int, and returns (value, true).
 // If the param is missing or not a valid integer, it writes ResponseBadRequest with invalidMessage and returns (0, false).
 // Use for :id, :idParam, etc. Caller should return immediately when ok is false.

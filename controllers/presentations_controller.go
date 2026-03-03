@@ -34,8 +34,10 @@ func (c *PresentationsController) GetAllPresentations(ctx *gin.Context) {
 }
 
 func (c *PresentationsController) GetPresentationByID(ctx *gin.Context) {
-	id := ctx.Param("id")
-
+	id, ok := tools.ParseRequiredParam(ctx, "id", "GetPresentationByID", "get_presentation_by_id", "ID de presentación inválido")
+	if !ok {
+		return
+	}
 	presentation, response := c.Service.GetPresentationByID(id)
 
 	if response != nil {
@@ -74,8 +76,10 @@ func (c *PresentationsController) CreatePresentation(ctx *gin.Context) {
 }
 
 func (c *PresentationsController) UpdatePresentation(ctx *gin.Context) {
-	id := ctx.Param("id")
-
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdatePresentation", "update_presentation", "ID de presentación inválido")
+	if !ok {
+		return
+	}
 	var reqBody struct {
 		Description string `json:"description" validate:"required"`
 	}
@@ -105,8 +109,10 @@ func (c *PresentationsController) UpdatePresentation(ctx *gin.Context) {
 }
 
 func (c *PresentationsController) DeletePresentation(ctx *gin.Context) {
-	id := ctx.Param("id")
-
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeletePresentation", "delete_presentation", "ID de presentación inválido")
+	if !ok {
+		return
+	}
 	response := c.Service.DeletePresentation(id)
 
 	if response != nil {

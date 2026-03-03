@@ -7,6 +7,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/ports"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 )
 
 type ArticlesService struct {
@@ -32,7 +33,11 @@ func (s *ArticlesService) GetBySku(sku string) (*database.Article, *responses.In
 }
 
 func (s *ArticlesService) CreateArticle(article *requests.Article) *responses.InternalResponse {
-	return s.Repository.CreateArticle(article)
+	resp := s.Repository.CreateArticle(article)
+	if resp != nil && resp.Error != nil && !resp.Handled {
+		tools.LogServiceError("articles", "CreateArticle", resp.Error, resp.Message)
+	}
+	return resp
 }
 
 func (s *ArticlesService) UpdateArticle(id int, data *requests.Article) (*database.Article, *responses.InternalResponse, []map[string]interface{}) {

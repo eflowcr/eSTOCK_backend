@@ -1,11 +1,13 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/eflowcr/eSTOCK_backend/configuration"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
@@ -80,4 +82,22 @@ func CloseDB(db *gorm.DB) {
 		log.Fatalf("failed to close database: %v", err)
 	}
 	dbSQL.Close()
+}
+
+// InitPgxPool creates a pgx connection pool for PostgreSQL. Returns (nil, nil) when DB is not postgres (e.g. sqlserver).
+// Used by sqlc-generated code (ArticlesRepositorySQLC). Call pool.Close() when shutting down.
+func InitPgxPool(cfg configuration.Config) (*pgxpool.Pool, error) {
+	connStr := configuration.DatabaseURL(cfg)
+	if connStr == "" {
+		return nil, nil
+	}
+	dsnLower := strings.ToLower(strings.TrimSpace(connStr))
+	if !strings.HasPrefix(dsnLower, "postgres://") && !strings.HasPrefix(dsnLower, "postgresql://") {
+		return nil, nil // not postgres, skip pool (e.g. sqlserver)
+	}
+	pool, err := pgxpool.New(context.Background(), connStr)
+	if err != nil {
+		return nil, fmt.Errorf("pgx pool: %w", err)
+	}
+	return pool, nil
 }

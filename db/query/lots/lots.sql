@@ -1,0 +1,33 @@
+-- Lots CRUD for sqlc
+-- Schema: db/migrations (lots table)
+
+-- name: ListLots :many
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+FROM lots
+ORDER BY created_at DESC;
+
+-- name: GetLotByID :one
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+FROM lots
+WHERE id = $1
+LIMIT 1;
+
+-- name: CreateLot :one
+INSERT INTO lots (lot_number, sku, quantity, expiration_date, status)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status;
+
+-- name: UpdateLot :one
+UPDATE lots
+SET
+    lot_number = $2,
+    sku = $3,
+    quantity = $4,
+    expiration_date = $5,
+    status = $6,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status;
+
+-- name: DeleteLot :exec
+DELETE FROM lots WHERE id = $1;

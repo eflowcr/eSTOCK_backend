@@ -8,6 +8,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/routes"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	swaggerFiles "github.com/swaggo/files"
@@ -39,13 +40,21 @@ func main() {
 
 	db := tools.InitDB(config)
 
+	var pool *pgxpool.Pool
+	if p, err := tools.InitPgxPool(config); err != nil {
+		log.Fatal().Err(err).Msg("pgx pool failed")
+	} else if p != nil {
+		pool = p
+		defer pool.Close()
+	}
+
 	r := gin.New()
 	r.SetTrustedProxies(nil) // avoid "trust all proxies" warning; set explicitly if behind a reverse proxy
 	r.Use(gin.Recovery())
 	r.Use(tools.CORSMiddleware())
 	r.Use(tools.RequestLogMiddleware())
 
-	routes.RegisterRoutes(r, db, config)
+	routes.RegisterRoutes(r, db, pool, config)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/api/docs/openapi.json")))
 

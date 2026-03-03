@@ -96,8 +96,9 @@ func buildOpenAPI(r *gin.Engine) map[string]interface{} {
 	return map[string]interface{}{
 		"openapi": "3.0.0",
 		"info": map[string]interface{}{
-			"title":   "eSTOCK API",
-			"version": "1.0",
+			"title":       "eSTOCK API",
+			"version":     "1.0",
+			"description": "Request validation rules (required, max length, gte, etc.) are documented in the repo: see Validation - Backend.md. Path params: use integer ID or non-empty string per endpoint; invalid input returns 400.",
 		},
 		"tags": openAPITags,
 		"paths": paths,

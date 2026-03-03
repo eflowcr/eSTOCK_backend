@@ -8,13 +8,15 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 var _ ports.PresentationsRepository = (*repositories.PresentationsRepository)(nil)
+var _ ports.PresentationsRepository = (*repositories.PresentationsRepositorySQLC)(nil)
 
-func RegisterPresentationsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	_, presentationsService := wire.NewPresentations(db)
+func RegisterPresentationsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+	_, presentationsService := wire.NewPresentations(db, pool)
 	presentationsController := controllers.NewPresentationsController(*presentationsService)
 
 	route := router.Group("/presentations")

@@ -36,7 +36,10 @@ func (c *LocationsController) GetAllLocations(ctx *gin.Context) {
 }
 
 func (c *LocationsController) GetLocationByID(ctx *gin.Context) {
-	id := ctx.Param("id")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "GetLocationByID", "get_location_by_id", "ID de ubicación inválido")
+	if !ok {
+		return
+	}
 	location, response := c.Service.GetLocationByID(id)
 
 	if response != nil {

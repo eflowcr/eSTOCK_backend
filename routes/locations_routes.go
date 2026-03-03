@@ -8,13 +8,15 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 var _ ports.LocationsRepository = (*repositories.LocationsRepository)(nil)
+var _ ports.LocationsRepository = (*repositories.LocationsRepositorySQLC)(nil)
 
-func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	_, locationService := wire.NewLocations(db)
+func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+	_, locationService := wire.NewLocations(db, pool)
 	locationController := controllers.NewLocationsController(*locationService)
 
 	route := router.Group("/locations")

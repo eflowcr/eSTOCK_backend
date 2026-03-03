@@ -1,0 +1,41 @@
+name: Backend - sqlc & build
+
+on:
+  pull_request:
+    paths:
+      - "**"
+  push:
+    branches:
+      - "**"
+
+jobs:
+  sqlc-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache-dependency-path: go.sum
+
+      - name: Install sqlc (pinned)
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
+          sqlc version
+
+      - name: Validate sqlc queries compile
+        run: make sqlc-validate
+
+      - name: Generate sqlc and ensure committed
+        run: |
+          make sqlc
+          git diff --exit-code -- db/sqlc || (echo "Generated code differs. Run: make sqlc and commit changes." && exit 1)
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test ./... -short -count=1

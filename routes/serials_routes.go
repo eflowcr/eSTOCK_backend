@@ -8,13 +8,15 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 var _ ports.SerialsRepository = (*repositories.SerialsRepository)(nil)
+var _ ports.SerialsRepository = (*repositories.SerialsRepositorySQLC)(nil)
 
-func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	_, serialService := wire.NewSerials(db)
+func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+	_, serialService := wire.NewSerials(db, pool)
 	serialController := controllers.NewSerialsController(*serialService)
 
 	route := router.Group("/serials")

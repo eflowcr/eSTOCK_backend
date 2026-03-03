@@ -5,14 +5,24 @@ package wire
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
+	"github.com/eflowcr/eSTOCK_backend/db/sqlc"
 	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
-func NewArticles(db *gorm.DB) (ports.ArticlesRepository, *services.ArticlesService) {
-	r := &repositories.ArticlesRepository{DB: db}
+// NewArticles builds ArticlesRepository and ArticlesService. When pool is non-nil (Postgres), uses
+// ArticlesRepositorySQLC; otherwise uses GORM ArticlesRepository (e.g. sqlserver).
+func NewArticles(db *gorm.DB, pool *pgxpool.Pool) (ports.ArticlesRepository, *services.ArticlesService) {
+	var r ports.ArticlesRepository
+	if pool != nil {
+		queries := sqlc.New(pool)
+		r = repositories.NewArticlesRepositorySQLC(queries)
+	} else {
+		r = &repositories.ArticlesRepository{DB: db}
+	}
 	return r, services.NewArticlesService(r)
 }
 
@@ -51,13 +61,29 @@ func NewInventoryMovements(db *gorm.DB) (ports.InventoryMovementsRepository, *se
 	return r, services.NewInventoryMovementsService(r)
 }
 
-func NewLocations(db *gorm.DB) (ports.LocationsRepository, *services.LocationsService) {
-	r := &repositories.LocationsRepository{DB: db}
+// NewLocations builds LocationsRepository and LocationsService. When pool is non-nil, uses
+// LocationsRepositorySQLC (CRUD via sqlc; Excel import/export delegated to GORM).
+func NewLocations(db *gorm.DB, pool *pgxpool.Pool) (ports.LocationsRepository, *services.LocationsService) {
+	var r ports.LocationsRepository
+	if pool != nil {
+		queries := sqlc.New(pool)
+		gormLoc := &repositories.LocationsRepository{DB: db}
+		r = repositories.NewLocationsRepositorySQLC(queries, gormLoc)
+	} else {
+		r = &repositories.LocationsRepository{DB: db}
+	}
 	return r, services.NewLocationsService(r)
 }
 
-func NewLots(db *gorm.DB) (ports.LotsRepository, *services.LotsService) {
-	r := &repositories.LotsRepository{DB: db}
+// NewLots builds LotsRepository and LotsService. When pool is non-nil, uses LotsRepositorySQLC.
+func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.LotsService) {
+	var r ports.LotsRepository
+	if pool != nil {
+		queries := sqlc.New(pool)
+		r = repositories.NewLotsRepositorySQLC(queries)
+	} else {
+		r = &repositories.LotsRepository{DB: db}
+	}
 	return r, services.NewLotsService(r)
 }
 
@@ -66,8 +92,16 @@ func NewPickingTask(db *gorm.DB) (ports.PickingTaskRepository, *services.Picking
 	return r, services.NewPickingTaskService(r)
 }
 
-func NewPresentations(db *gorm.DB) (ports.PresentationsRepository, *services.PresentationsService) {
-	r := &repositories.PresentationsRepository{DB: db}
+// NewPresentations builds PresentationsRepository and PresentationsService. When pool is non-nil (Postgres), uses
+// PresentationsRepositorySQLC; otherwise uses GORM PresentationsRepository.
+func NewPresentations(db *gorm.DB, pool *pgxpool.Pool) (ports.PresentationsRepository, *services.PresentationsService) {
+	var r ports.PresentationsRepository
+	if pool != nil {
+		queries := sqlc.New(pool)
+		r = repositories.NewPresentationsRepositorySQLC(queries)
+	} else {
+		r = &repositories.PresentationsRepository{DB: db}
+	}
 	return r, services.NewPresentationsService(r)
 }
 
@@ -76,8 +110,15 @@ func NewReceivingTasks(db *gorm.DB) (ports.ReceivingTasksRepository, *services.R
 	return r, services.NewReceivingTasksService(r)
 }
 
-func NewSerials(db *gorm.DB) (ports.SerialsRepository, *services.SerialsService) {
-	r := &repositories.SerialsRepository{DB: db}
+// NewSerials builds SerialsRepository and SerialsService. When pool is non-nil, uses SerialsRepositorySQLC.
+func NewSerials(db *gorm.DB, pool *pgxpool.Pool) (ports.SerialsRepository, *services.SerialsService) {
+	var r ports.SerialsRepository
+	if pool != nil {
+		queries := sqlc.New(pool)
+		r = repositories.NewSerialsRepositorySQLC(queries)
+	} else {
+		r = &repositories.SerialsRepository{DB: db}
+	}
 	return r, services.NewSerialsService(r)
 }
 
