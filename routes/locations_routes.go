@@ -15,25 +15,29 @@ import (
 var _ ports.LocationsRepository = (*repositories.LocationsRepository)(nil)
 var _ ports.LocationsRepository = (*repositories.LocationsRepositorySQLC)(nil)
 
-func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	_, locationService := wire.NewLocations(db, pool)
 	locationController := controllers.NewLocationsController(*locationService)
 
 	route := router.Group("/locations")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
-		// Legacy list endpoint; generic table handler is available at /locations/table.
-		route.GET("/", locationController.GetAllLocations)
+		read := tools.RequirePermission(rolesRepo, "locations", "read")
+		create := tools.RequirePermission(rolesRepo, "locations", "create")
+		update := tools.RequirePermission(rolesRepo, "locations", "update")
+		delete := tools.RequirePermission(rolesRepo, "locations", "delete")
+
+		route.GET("/", read, locationController.GetAllLocations)
 		if pool != nil {
 			cfg := tools.LocationsTableConfig()
-			route.GET("/table", tools.GenericListHandler(pool, cfg))
-			route.GET("/table/export", tools.GenericExportHandler(pool, cfg, "locations.csv"))
+			route.GET("/table", read, tools.GenericListHandler(pool, cfg))
+			route.GET("/table/export", read, tools.GenericExportHandler(pool, cfg, "locations.csv"))
 		}
-		route.GET("/:id", locationController.GetLocationByID)
-		route.POST("/", locationController.CreateLocation)
-		route.PUT("/:id", locationController.UpdateLocation)
-		route.DELETE("/:id", locationController.DeleteLocation)
-		route.POST("/import", locationController.ImportLocationsFromExcel)
-		route.GET("/export", locationController.ExportLocationsToExcel)
+		route.GET("/:id", read, locationController.GetLocationByID)
+		route.POST("/", create, locationController.CreateLocation)
+		route.PUT("/:id", update, locationController.UpdateLocation)
+		route.DELETE("/:id", delete, locationController.DeleteLocation)
+		route.POST("/import", create, locationController.ImportLocationsFromExcel)
+		route.GET("/export", read, locationController.ExportLocationsToExcel)
 	}
 }

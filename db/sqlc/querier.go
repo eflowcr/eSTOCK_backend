@@ -6,6 +6,7 @@ package sqlc
 
 import (
 	"context"
+	"encoding/json"
 )
 
 type Querier interface {
@@ -30,6 +31,10 @@ type Querier interface {
 	GetLocationByLocationCode(ctx context.Context, locationCode string) (Location, error)
 	GetLotByID(ctx context.Context, id int32) (Lot, error)
 	GetPresentationByID(ctx context.Context, presentationID string) (Presentation, error)
+	// Roles for RBAC: get by id (role name), get permissions only
+	// Schema: db/migrations (000004_roles_schema)
+	GetRoleByID(ctx context.Context, id string) (Role, error)
+	GetRolePermissions(ctx context.Context, id string) (json.RawMessage, error)
 	// Serials CRUD for sqlc
 	// Schema: db/migrations (serials table)
 	GetSerialByID(ctx context.Context, id int32) (Serial, error)
@@ -48,6 +53,7 @@ type Querier interface {
 	// Presentations CRUD for sqlc
 	// Schema: db/migrations (presentations table)
 	ListPresentations(ctx context.Context) ([]Presentation, error)
+	ListRoles(ctx context.Context) ([]Role, error)
 	// Serials by SKU (for UpdateArticle warnings)
 	ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error)
 	LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error)
@@ -56,6 +62,7 @@ type Querier interface {
 	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (Location, error)
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)
 	UpdatePresentation(ctx context.Context, arg UpdatePresentationParams) (Presentation, error)
+	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) (Role, error)
 	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error)
 }
 

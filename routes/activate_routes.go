@@ -2,6 +2,7 @@ package routes
 
 import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
@@ -18,9 +19,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterEncryptionRoutes(api, config)
 	RegisterUserRoutes(api, db, config)
 	RegisterDashboardRoutes(api, db, config)
-	RegisterLocationRoutes(api, db, pool, config)
 	RegisterInventoryRoutes(api, db, config)
-	RegisterLotsRoutes(api, db, pool, config)
 	RegisterSerialRoutes(api, db, pool, config)
 	RegisterReceivingTasksRoutes(api, db, config)
 	RegisterPickingTasksRoutes(api, db, config)
@@ -31,11 +30,16 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterPresentationsRoutes(api, db, pool, config)
 
 	var auditSvc *services.AuditService
+	var rolesRepo ports.RolesRepository
 	if pool != nil {
 		_, auditSvc = wire.NewAuditLog(pool)
+		rolesRepo = wire.NewRoles(pool)
 	}
-	RegisterAuditRoutes(api, pool, config, auditSvc)
-	RegisterArticlesRoutes(api, db, pool, config, auditSvc)
+	RegisterAuditRoutes(api, pool, config, auditSvc, rolesRepo)
+	RegisterArticlesRoutes(api, db, pool, config, auditSvc, rolesRepo)
+	RegisterLocationRoutes(api, db, pool, config, rolesRepo)
+	RegisterLotsRoutes(api, db, pool, config, rolesRepo)
+	RegisterRolesRoutes(api, config, rolesRepo)
 
 	RegisterDocsRoutes(r)
 }

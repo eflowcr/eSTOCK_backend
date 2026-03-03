@@ -4,6 +4,8 @@
 package wire
 
 import (
+	"time"
+
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/db/sqlc"
 	"github.com/eflowcr/eSTOCK_backend/ports"
@@ -34,6 +36,17 @@ func NewAuditLog(pool *pgxpool.Pool) (ports.AuditLogRepository, *services.AuditS
 	queries := sqlc.New(pool)
 	r := repositories.NewAuditLogsRepositorySQLC(queries)
 	return r, services.NewAuditService(r)
+}
+
+// NewRoles builds RolesRepository for RBAC (GetRolePermissions). Returns a caching wrapper (TTL 2 min)
+// so permission checks scale without hitting DB every request; returns nil if pool is nil.
+func NewRoles(pool *pgxpool.Pool) ports.RolesRepository {
+	if pool == nil {
+		return nil
+	}
+	queries := sqlc.New(pool)
+	base := repositories.NewRolesRepositorySQLC(queries)
+	return repositories.NewRolesRepositoryCache(base, 2*time.Minute)
 }
 
 func NewAdjustments(db *gorm.DB) (ports.AdjustmentsRepository, *services.AdjustmentsService) {

@@ -12,6 +12,7 @@ sql:
       - "db/query/lots"
       - "db/query/serials"
       - "db/query/audit_logs"
+      - "db/query/roles"
     engine: "postgresql"
     gen:
       go:

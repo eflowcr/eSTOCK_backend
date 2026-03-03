@@ -169,6 +169,17 @@ type ReceivingTask struct {
 	CompletedAt   pgtype.Timestamp `json:"completed_at"`
 }
 
+// RBAC roles; users.role stores role id (e.g. admin, operator, viewer)
+type Role struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description pgtype.Text     `json:"description"`
+	Permissions json.RawMessage `json:"permissions"`
+	IsActive    bool            `json:"is_active"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
 type Serial struct {
 	ID           int32            `json:"id"`
 	SerialNumber string           `json:"serial_number"`
