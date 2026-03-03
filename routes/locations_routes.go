@@ -22,7 +22,13 @@ func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 	route := router.Group("/locations")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
+		// Legacy list endpoint; generic table handler is available at /locations/table.
 		route.GET("/", locationController.GetAllLocations)
+		if pool != nil {
+			cfg := tools.LocationsTableConfig()
+			route.GET("/table", tools.GenericListHandler(pool, cfg))
+			route.GET("/table/export", tools.GenericExportHandler(pool, cfg, "locations.csv"))
+		}
 		route.GET("/:id", locationController.GetLocationByID)
 		route.POST("/", locationController.CreateLocation)
 		route.PUT("/:id", locationController.UpdateLocation)

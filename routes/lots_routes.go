@@ -22,7 +22,13 @@ func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool
 	route := router.Group("/lots")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
+		// Legacy list endpoint; generic table handler is available at /lots/table.
 		route.GET("/", lotsController.GetAllLots)
+		if pool != nil {
+			cfg := tools.LotsTableConfig()
+			route.GET("/table", tools.GenericListHandler(pool, cfg))
+			route.GET("/table/export", tools.GenericExportHandler(pool, cfg, "lots.csv"))
+		}
 		route.GET("/:sku", lotsController.GetLotsBySKU)
 		route.POST("/", lotsController.CreateLot)
 		route.PUT("/:id", lotsController.UpdateLot)
