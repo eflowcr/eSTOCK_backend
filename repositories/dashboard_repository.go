@@ -16,14 +16,18 @@ func (r *DashboardRepository) GetDashboardStats() (map[string]interface{}, *resp
 		return nil, &responses.InternalResponse{Error: err, Message: "Failed to count SKUs", Handled: false}
 	}
 
-	var inventoryValue float64
+	var inventoryValuePtr *float64
 	err = r.DB.
 		Table("inventory").
 		Select("SUM(inventory.quantity * COALESCE(articles.unit_price, 0))").
 		Joins("LEFT JOIN articles ON inventory.sku = articles.sku").
-		Scan(&inventoryValue).Error
+		Scan(&inventoryValuePtr).Error
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al calcular el valor del inventario", Handled: false}
+	}
+	inventoryValue := 0.0
+	if inventoryValuePtr != nil {
+		inventoryValue = *inventoryValuePtr
 	}
 
 	var lowStockCount int64

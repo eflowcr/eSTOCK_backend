@@ -38,7 +38,7 @@ func openFromDSN(dsn string) (*gorm.DB, error) {
 	switch {
 	case strings.HasPrefix(dsnLower, "postgresql://") || strings.HasPrefix(dsnLower, "postgres://"):
 		return gorm.Open(postgres.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Info),
+			Logger: RedactLogger(logger.Default.LogMode(logger.Info)),
 			NamingStrategy: schema.NamingStrategy{
 				TablePrefix:   "",
 				SingularTable: false,
@@ -59,7 +59,7 @@ func openFromParts(cfg configuration.Config) (*gorm.DB, error) {
 		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
 			cfg.DBHost, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBPort)
 		return gorm.Open(postgres.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Info),
+			Logger: RedactLogger(logger.Default.LogMode(logger.Info)),
 			NamingStrategy: schema.NamingStrategy{
 				TablePrefix:   "",
 				SingularTable: false,
