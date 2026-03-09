@@ -51,7 +51,7 @@ const deleteLot = `-- name: DeleteLot :exec
 DELETE FROM lots WHERE id = $1
 `
 
-func (q *Queries) DeleteLot(ctx context.Context, id int32) error {
+func (q *Queries) DeleteLot(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteLot, id)
 	return err
 }
@@ -63,7 +63,7 @@ WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetLotByID(ctx context.Context, id int32) (Lot, error) {
+func (q *Queries) GetLotByID(ctx context.Context, id string) (Lot, error) {
 	row := q.db.QueryRow(ctx, getLotByID, id)
 	var i Lot
 	err := row.Scan(
@@ -131,7 +131,7 @@ RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at
 `
 
 type UpdateLotParams struct {
-	ID             int32            `json:"id"`
+	ID             string           `json:"id"`
 	LotNumber      string           `json:"lot_number"`
 	Sku            string           `json:"sku"`
 	Quantity       pgtype.Numeric   `json:"quantity"`

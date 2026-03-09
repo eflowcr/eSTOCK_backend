@@ -105,7 +105,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 	return nil
 }
 
-func (r *LocationsRepository) UpdateLocation(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *LocationsRepository) UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse {
 	var location database.Location
 	err := r.DB.First(&location, "id = ?", id).Error
 
@@ -146,7 +146,7 @@ func (r *LocationsRepository) UpdateLocation(id int, data map[string]interface{}
 	return nil
 }
 
-func (r *LocationsRepository) DeleteLocation(id int) *responses.InternalResponse {
+func (r *LocationsRepository) DeleteLocation(id string) *responses.InternalResponse {
 	var location database.Location
 	err := r.DB.First(&location, "id = ?", id).Error
 

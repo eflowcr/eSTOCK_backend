@@ -14,7 +14,7 @@ type SerialsRepository struct {
 	DB *gorm.DB
 }
 
-func (r *SerialsRepository) GetSerialByID(id int) (*database.Serial, *responses.InternalResponse) {
+func (r *SerialsRepository) GetSerialByID(id string) (*database.Serial, *responses.InternalResponse) {
 	var serial database.Serial
 
 	err := r.DB.Table(database.Serial{}.TableName()).
@@ -79,7 +79,7 @@ func (r *SerialsRepository) CreateSerial(data *requests.CreateSerialRequest) *re
 	return nil
 }
 
-func (r *SerialsRepository) UpdateSerial(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *SerialsRepository) UpdateSerial(id string, data map[string]interface{}) *responses.InternalResponse {
 	var serial database.Serial
 
 	err := r.DB.First(&serial, "id = ?", id).Error
@@ -120,7 +120,7 @@ func (r *SerialsRepository) UpdateSerial(id int, data map[string]interface{}) *r
 	return nil
 }
 
-func (r *SerialsRepository) DeleteSerial(id int) *responses.InternalResponse {
+func (r *SerialsRepository) DeleteSerial(id string) *responses.InternalResponse {
 	result := r.DB.Delete(&database.Serial{}, id)
 	if result.Error != nil {
 		return &responses.InternalResponse{

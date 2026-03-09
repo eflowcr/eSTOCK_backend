@@ -15,9 +15,14 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 
 	api := r.Group("/api")
 
-	RegisterAuthenticationRoutes(api, db, config)
+	var rolesRepo ports.RolesRepository
+	if pool != nil {
+		rolesRepo = wire.NewRoles(pool)
+	}
+	RegisterAuthenticationRoutes(api, db, config, rolesRepo)
 	RegisterEncryptionRoutes(api, config)
 	RegisterUserRoutes(api, db, config)
+	RegisterPreferencesRoutes(api, pool, config)
 	RegisterDashboardRoutes(api, db, config)
 	RegisterInventoryRoutes(api, db, config)
 	RegisterSerialRoutes(api, db, pool, config)
@@ -30,14 +35,13 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterPresentationsRoutes(api, db, pool, config)
 
 	var auditSvc *services.AuditService
-	var rolesRepo ports.RolesRepository
 	if pool != nil {
 		_, auditSvc = wire.NewAuditLog(pool)
-		rolesRepo = wire.NewRoles(pool)
 	}
 	RegisterAuditRoutes(api, pool, config, auditSvc, rolesRepo)
 	RegisterArticlesRoutes(api, db, pool, config, auditSvc, rolesRepo)
 	RegisterLocationRoutes(api, db, pool, config, rolesRepo)
+	RegisterLocationTypesRoutes(api, pool, config, rolesRepo)
 	RegisterLotsRoutes(api, db, pool, config, rolesRepo)
 	RegisterRolesRoutes(api, config, rolesRepo)
 

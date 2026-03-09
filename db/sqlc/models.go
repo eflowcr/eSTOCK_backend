@@ -6,13 +6,14 @@ package sqlc
 
 import (
 	"encoding/json"
+	"net/netip"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Adjustment struct {
-	ID                 int32            `json:"id"`
+	ID                 string           `json:"id"`
 	Sku                string           `json:"sku"`
 	Location           string           `json:"location"`
 	PreviousQuantity   int32            `json:"previous_quantity"`
@@ -25,7 +26,7 @@ type Adjustment struct {
 }
 
 type Article struct {
-	ID              int32            `json:"id"`
+	ID              string           `json:"id"`
 	Sku             string           `json:"sku"`
 	Name            string           `json:"name"`
 	Description     pgtype.Text      `json:"description"`
@@ -42,13 +43,10 @@ type Article struct {
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 }
 
-// Audit log for tracking user actions (create, update, delete)
 type AuditLog struct {
-	ID     string      `json:"id"`
-	UserID pgtype.Text `json:"user_id"`
-	// create, update, delete, login, logout
-	Action string `json:"action"`
-	// article, lot, location, serial, etc.
+	ID           string      `json:"id"`
+	UserID       pgtype.Text `json:"user_id"`
+	Action       string      `json:"action"`
 	ResourceType string      `json:"resource_type"`
 	ResourceID   string      `json:"resource_id"`
 	OldValue     []byte      `json:"old_value"`
@@ -60,7 +58,7 @@ type AuditLog struct {
 }
 
 type Badge struct {
-	ID          int32            `json:"id"`
+	ID          string           `json:"id"`
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Emoji       string           `json:"emoji"`
@@ -70,7 +68,7 @@ type Badge struct {
 }
 
 type Inventory struct {
-	ID           int32            `json:"id"`
+	ID           string           `json:"id"`
 	Sku          string           `json:"sku"`
 	Name         string           `json:"name"`
 	Description  pgtype.Text      `json:"description"`
@@ -84,16 +82,16 @@ type Inventory struct {
 }
 
 type InventoryLot struct {
-	ID          int32            `json:"id"`
-	InventoryID int32            `json:"inventory_id"`
-	LotID       int32            `json:"lot_id"`
+	ID          string           `json:"id"`
+	InventoryID string           `json:"inventory_id"`
+	LotID       string           `json:"lot_id"`
 	Quantity    pgtype.Numeric   `json:"quantity"`
 	Location    string           `json:"location"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
 type InventoryMovement struct {
-	ID             int32            `json:"id"`
+	ID             string           `json:"id"`
 	Sku            string           `json:"sku"`
 	Location       string           `json:"location"`
 	MovementType   string           `json:"movement_type"`
@@ -105,15 +103,15 @@ type InventoryMovement struct {
 }
 
 type InventorySerial struct {
-	ID          int32            `json:"id"`
-	InventoryID int32            `json:"inventory_id"`
-	SerialID    int32            `json:"serial_id"`
+	ID          string           `json:"id"`
+	InventoryID string           `json:"inventory_id"`
+	SerialID    string           `json:"serial_id"`
 	Location    string           `json:"location"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
 type Location struct {
-	ID           int32            `json:"id"`
+	ID           string           `json:"id"`
 	LocationCode string           `json:"location_code"`
 	Description  pgtype.Text      `json:"description"`
 	Zone         pgtype.Text      `json:"zone"`
@@ -123,8 +121,19 @@ type Location struct {
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 }
 
+// Location type catalog (Pallet, Shelf, Bin, etc.); used by locations.type as code reference
+type LocationType struct {
+	ID        string           `json:"id"`
+	Code      string           `json:"code"`
+	Name      string           `json:"name"`
+	SortOrder int32            `json:"sort_order"`
+	IsActive  bool             `json:"is_active"`
+	CreatedAt pgtype.Timestamp `json:"created_at"`
+	UpdatedAt pgtype.Timestamp `json:"updated_at"`
+}
+
 type Lot struct {
-	ID             int32            `json:"id"`
+	ID             string           `json:"id"`
 	LotNumber      string           `json:"lot_number"`
 	Sku            string           `json:"sku"`
 	Quantity       pgtype.Numeric   `json:"quantity"`
@@ -135,7 +144,7 @@ type Lot struct {
 }
 
 type PickingTask struct {
-	ID          int32            `json:"id"`
+	ID          string           `json:"id"`
 	TaskID      string           `json:"task_id"`
 	OrderNumber string           `json:"order_number"`
 	CreatedBy   string           `json:"created_by"`
@@ -155,7 +164,7 @@ type Presentation struct {
 }
 
 type ReceivingTask struct {
-	ID            int32            `json:"id"`
+	ID            string           `json:"id"`
 	TaskID        string           `json:"task_id"`
 	InboundNumber string           `json:"inbound_number"`
 	CreatedBy     string           `json:"created_by"`
@@ -169,7 +178,7 @@ type ReceivingTask struct {
 	CompletedAt   pgtype.Timestamp `json:"completed_at"`
 }
 
-// RBAC roles; users.role stores role id (e.g. admin, operator, viewer)
+// RBAC roles; name is the stable identifier (Admin, Operator, Viewer).
 type Role struct {
 	ID          string          `json:"id"`
 	Name        string          `json:"name"`
@@ -181,7 +190,7 @@ type Role struct {
 }
 
 type Serial struct {
-	ID           int32            `json:"id"`
+	ID           string           `json:"id"`
 	SerialNumber string           `json:"serial_number"`
 	Sku          string           `json:"sku"`
 	Status       string           `json:"status"`
@@ -189,14 +198,48 @@ type Serial struct {
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 }
 
+// Sessions table for managing user authentication sessions
 type Session struct {
-	Sid    string           `json:"sid"`
-	Sess   json.RawMessage  `json:"sess"`
-	Expire pgtype.Timestamp `json:"expire"`
+	ID            string `json:"id"`
+	UserID        string `json:"user_id"`
+	SessionTypeID string `json:"session_type_id"`
+	// Hash of access token
+	TokenHash string `json:"token_hash"`
+	// Hash of refresh token
+	RefreshTokenHash pgtype.Text `json:"refresh_token_hash"`
+	UserAgent        pgtype.Text `json:"user_agent"`
+	ClientIp         pgtype.Text `json:"client_ip"`
+	// IP address of the client (INET type)
+	IpAddress  *netip.Addr `json:"ip_address"`
+	DeviceInfo []byte      `json:"device_info"`
+	IsActive   pgtype.Bool `json:"is_active"`
+	// Session expiry
+	ExpiresAt      time.Time          `json:"expires_at"`
+	LastActivityAt pgtype.Timestamptz `json:"last_activity_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedBy      pgtype.Text        `json:"updated_by"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Session types for different session configurations
+type SessionType struct {
+	// Unique identifier for the session type
+	ID string `json:"id"`
+	// Name of the session type (must be unique)
+	Name        string      `json:"name"`
+	Description pgtype.Text `json:"description"`
+	// Default duration for this session type in minutes
+	DurationMinutes int32              `json:"duration_minutes"`
+	IsActive        pgtype.Bool        `json:"is_active"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedBy       pgtype.Text        `json:"updated_by"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type StockAlert struct {
-	ID                    int32            `json:"id"`
+	ID                    string           `json:"id"`
 	Sku                   string           `json:"sku"`
 	AlertType             string           `json:"alert_type"`
 	CurrentStock          int32            `json:"current_stock"`
@@ -212,31 +255,55 @@ type StockAlert struct {
 	ResolvedAt            pgtype.Timestamp `json:"resolved_at"`
 }
 
+// User identity and account; session and token data are in sessions table.
 type User struct {
-	ID                string           `json:"id"`
-	Email             pgtype.Text      `json:"email"`
-	FirstName         pgtype.Text      `json:"first_name"`
-	LastName          pgtype.Text      `json:"last_name"`
-	ProfileImageUrl   pgtype.Text      `json:"profile_image_url"`
-	Password          pgtype.Text      `json:"password"`
-	Role              string           `json:"role"`
-	IsActive          bool             `json:"is_active"`
-	AuthProvider      pgtype.Text      `json:"auth_provider"`
-	ResetToken        pgtype.Text      `json:"reset_token"`
-	ResetTokenExpires pgtype.Timestamp `json:"reset_token_expires"`
-	CreatedAt         pgtype.Timestamp `json:"created_at"`
-	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+	ID string `json:"id"`
+	// Full name of the user (display)
+	Name            string      `json:"name"`
+	Email           pgtype.Text `json:"email"`
+	FirstName       pgtype.Text `json:"first_name"`
+	LastName        pgtype.Text `json:"last_name"`
+	ProfileImageUrl pgtype.Text `json:"profile_image_url"`
+	Password        pgtype.Text `json:"password"`
+	RoleID          string      `json:"role_id"`
+	IsActive        bool        `json:"is_active"`
+	// Whether the email has been verified
+	EmailVerified pgtype.Bool `json:"email_verified"`
+	// When the email was verified
+	EmailVerifiedAt pgtype.Timestamptz `json:"email_verified_at"`
+	// User id who last updated (set via app.current_user_id)
+	UpdatedBy pgtype.Text `json:"updated_by"`
+	// Soft delete; NULL = active
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type UserBadge struct {
-	ID        int32            `json:"id"`
+	ID        string           `json:"id"`
 	UserID    string           `json:"user_id"`
-	BadgeID   int32            `json:"badge_id"`
+	BadgeID   string           `json:"badge_id"`
 	AwardedAt pgtype.Timestamp `json:"awarded_at"`
 }
 
+// Per-user preferences (theme, language, notifications, privacy).
+type UserPreference struct {
+	ID                     string      `json:"id"`
+	UserID                 string      `json:"user_id"`
+	Theme                  string      `json:"theme"`
+	Language               string      `json:"language"`
+	EmailNotifications     bool        `json:"email_notifications"`
+	PushNotifications      bool        `json:"push_notifications"`
+	MarketingNotifications bool        `json:"marketing_notifications"`
+	ProfileVisibility      string      `json:"profile_visibility"`
+	DataSharing            bool        `json:"data_sharing"`
+	CreatedAt              time.Time   `json:"created_at"`
+	UpdatedBy              pgtype.Text `json:"updated_by"`
+	UpdatedAt              time.Time   `json:"updated_at"`
+}
+
 type UserStat struct {
-	ID                      int32            `json:"id"`
+	ID                      string           `json:"id"`
 	UserID                  string           `json:"user_id"`
 	ReceivingTasksCompleted pgtype.Int4      `json:"receiving_tasks_completed"`
 	PickingTasksCompleted   pgtype.Int4      `json:"picking_tasks_completed"`

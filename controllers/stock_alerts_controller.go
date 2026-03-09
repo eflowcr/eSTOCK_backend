@@ -55,12 +55,12 @@ func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
 }
 
 func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
-	alertIDInt, ok := tools.ParseIntParam(ctx, "id", "ResolveAlert", "resolve_stock_alert", "ID de alerta inválido")
+	alertID, ok := tools.ParseRequiredParam(ctx, "id", "ResolveAlert", "resolve_stock_alert", "ID de alerta inválido")
 	if !ok {
 		return
 	}
 
-	response := c.Service.ResolveAlert(alertIDInt)
+	response := c.Service.ResolveAlert(alertID)
 
 	if response != nil {
 		writeErrorResponse(ctx, "ResolveAlert", "resolve_stock_alert", response)

@@ -29,10 +29,10 @@ func (s *LotsService) Create(data *requests.CreateLotRequest) *responses.Interna
 	return s.Repository.CreateLot(data)
 }
 
-func (s *LotsService) UpdateUpdateLot(id int, data map[string]interface{}) *responses.InternalResponse {
+func (s *LotsService) UpdateUpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
 	return s.Repository.UpdateLot(id, data)
 }
 
-func (s *LotsService) DeleteLot(id int) *responses.InternalResponse {
+func (s *LotsService) DeleteLot(id string) *responses.InternalResponse {
 	return s.Repository.DeleteLot(id)
 }

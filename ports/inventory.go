@@ -15,10 +15,10 @@ type InventoryRepository interface {
 	Trend(sku string) (*dto.ConsumptionTrend, *responses.InternalResponse)
 	ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []*responses.InternalResponse)
 	ExportInventoryToExcel() ([]byte, *responses.InternalResponse)
-	GetInventoryLots(inventoryID int) ([]responses.InventoryLot, *responses.InternalResponse)
-	GetInventorySerials(inventoryID int) ([]responses.InventorySerialWithSerial, *responses.InternalResponse)
-	CreateInventoryLot(id int, input *requests.CreateInventoryLotRequest) *responses.InternalResponse
-	DeleteInventoryLot(id int) *responses.InternalResponse
-	CreateInventorySerial(id int, input *requests.CreateInventorySerial) *responses.InternalResponse
-	DeleteInventorySerial(id int) *responses.InternalResponse
+	GetInventoryLots(inventoryID string) ([]responses.InventoryLot, *responses.InternalResponse)
+	GetInventorySerials(inventoryID string) ([]responses.InventorySerialWithSerial, *responses.InternalResponse)
+	CreateInventoryLot(id string, input *requests.CreateInventoryLotRequest) *responses.InternalResponse
+	DeleteInventoryLot(id string) *responses.InternalResponse
+	CreateInventorySerial(id string, input *requests.CreateInventorySerial) *responses.InternalResponse
+	DeleteInventorySerial(id string) *responses.InternalResponse
 }

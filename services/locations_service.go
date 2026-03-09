@@ -29,11 +29,11 @@ func (s *LocationsService) CreateLocation(loc *requests.Location) *responses.Int
 	return s.Repository.CreateLocation(loc)
 }
 
-func (s *LocationsService) UpdateLocation(id int, data map[string]interface{}) *responses.InternalResponse {
+func (s *LocationsService) UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse {
 	return s.Repository.UpdateLocation(id, data)
 }
 
-func (s *LocationsService) DeleteLocation(id int) *responses.InternalResponse {
+func (s *LocationsService) DeleteLocation(id string) *responses.InternalResponse {
 	return s.Repository.DeleteLocation(id)
 }
 

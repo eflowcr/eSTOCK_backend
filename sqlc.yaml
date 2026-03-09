@@ -13,6 +13,8 @@ sql:
       - "db/query/serials"
       - "db/query/audit_logs"
       - "db/query/roles"
+      - "db/query/user_preferences"
+      - "db/query/location_types"
     engine: "postgresql"
     gen:
       go:

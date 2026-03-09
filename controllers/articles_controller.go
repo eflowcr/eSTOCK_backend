@@ -3,7 +3,6 @@ package controllers
 import (
 	"encoding/json"
 	"io"
-	"strconv"
 
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
@@ -41,7 +40,7 @@ func (c *ArticlesController) GetAllArticles(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
-	articleID, ok := tools.ParseIntParam(ctx, "id", "GetArticleByID", "get_article_by_id", "ID de artículo no válido")
+	articleID, ok := tools.ParseRequiredParam(ctx, "id", "GetArticleByID", "get_article_by_id", "ID de artículo no válido")
 	if !ok {
 		return
 	}
@@ -109,7 +108,7 @@ func (c *ArticlesController) CreateArticle(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "UpdateArticle", "update_article", "ID de artículo no válido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdateArticle", "update_article", "ID de artículo no válido")
 	if !ok {
 		return
 	}
@@ -139,7 +138,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		}
 		oldVal, _ := json.Marshal(article)
 		newVal, _ := json.Marshal(updatedArticle)
-		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionUpdate, tools.ResourceArticle, strconv.Itoa(id), oldVal, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
+		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionUpdate, tools.ResourceArticle, id, oldVal, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
 	}
 	payload := gin.H{"article": updatedArticle}
 	if len(warnings) > 0 {
@@ -194,7 +193,7 @@ func (c *ArticlesController) ExportArticlesToExcel(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "DeleteArticle", "delete_article", "ID de artículo no válido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteArticle", "delete_article", "ID de artículo no válido")
 	if !ok {
 		return
 	}
@@ -213,7 +212,7 @@ func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 			uid = &idStr
 		}
 		oldVal, _ := json.Marshal(article)
-		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionDelete, tools.ResourceArticle, strconv.Itoa(id), oldVal, nil, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
+		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionDelete, tools.ResourceArticle, id, oldVal, nil, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
 	}
 	tools.ResponseOK(ctx, "DeleteArticle", "Artículo eliminado con éxito", "delete_article", nil, false, "")
 }

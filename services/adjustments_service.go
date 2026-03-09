@@ -22,11 +22,11 @@ func (s *AdjustmentsService) GetAllAdjustments() ([]database.Adjustment, *respon
 	return s.Repository.GetAllAdjustments()
 }
 
-func (s *AdjustmentsService) GetAdjustmentByID(id int) (*database.Adjustment, *responses.InternalResponse) {
+func (s *AdjustmentsService) GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse) {
 	return s.Repository.GetAdjustmentByID(id)
 }
 
-func (s *AdjustmentsService) GetAdjustmentDetails(id int) (*dto.AdjustmentDetails, *responses.InternalResponse) {
+func (s *AdjustmentsService) GetAdjustmentDetails(id string) (*dto.AdjustmentDetails, *responses.InternalResponse) {
 	return s.Repository.GetAdjustmentDetails(id)
 }
 

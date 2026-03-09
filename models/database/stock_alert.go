@@ -3,7 +3,7 @@ package database
 import "time"
 
 type StockAlert struct {
-	ID                    int        `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID                    string     `gorm:"column:id;primaryKey" json:"id"`
 	SKU                   string     `gorm:"column:sku" json:"sku"`
 	AlertType             string     `gorm:"column:alert_type" json:"alert_type"`
 	CurrentStock          int        `gorm:"column:current_stock" json:"current_stock"`

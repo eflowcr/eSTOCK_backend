@@ -39,7 +39,7 @@ func (r *AdjustmentsRepository) GetAllAdjustments() ([]database.Adjustment, *res
 	return adjustments, nil
 }
 
-func (r *AdjustmentsRepository) GetAdjustmentByID(id int) (*database.Adjustment, *responses.InternalResponse) {
+func (r *AdjustmentsRepository) GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse) {
 	var adjustment database.Adjustment
 
 	err := r.DB.
@@ -65,7 +65,7 @@ func (r *AdjustmentsRepository) GetAdjustmentByID(id int) (*database.Adjustment,
 	return &adjustment, nil
 }
 
-func (r *AdjustmentsRepository) GetAdjustmentDetails(id int) (*dto.AdjustmentDetails, *responses.InternalResponse) {
+func (r *AdjustmentsRepository) GetAdjustmentDetails(id string) (*dto.AdjustmentDetails, *responses.InternalResponse) {
 	var adjustment database.Adjustment
 
 	err := r.DB.

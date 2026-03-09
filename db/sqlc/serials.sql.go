@@ -39,7 +39,7 @@ const deleteSerial = `-- name: DeleteSerial :exec
 DELETE FROM serials WHERE id = $1
 `
 
-func (q *Queries) DeleteSerial(ctx context.Context, id int32) error {
+func (q *Queries) DeleteSerial(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteSerial, id)
 	return err
 }
@@ -54,7 +54,7 @@ LIMIT 1
 
 // Serials CRUD for sqlc
 // Schema: db/migrations (serials table)
-func (q *Queries) GetSerialByID(ctx context.Context, id int32) (Serial, error) {
+func (q *Queries) GetSerialByID(ctx context.Context, id string) (Serial, error) {
 	row := q.db.QueryRow(ctx, getSerialByID, id)
 	var i Serial
 	err := row.Scan(
@@ -80,7 +80,7 @@ RETURNING id, serial_number, sku, status, created_at, updated_at
 `
 
 type UpdateSerialParams struct {
-	ID           int32  `json:"id"`
+	ID           string `json:"id"`
 	SerialNumber string `json:"serial_number"`
 	Sku          string `json:"sku"`
 	Status       string `json:"status"`

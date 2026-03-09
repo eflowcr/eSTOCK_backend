@@ -38,7 +38,7 @@ func (c *ReceivingTasksController) GetAllReceivingTasks(ctx *gin.Context) {
 }
 
 func (c *ReceivingTasksController) GetReceivingTaskByID(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "GetReceivingTaskByID", "get_receiving_task_by_id", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "GetReceivingTaskByID", "get_receiving_task_by_id", "ID de tarea inválido")
 	if !ok {
 		return
 	}
@@ -81,7 +81,7 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 }
 
 func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "PatchReceivingTask", "patch_receiving_task", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdateReceivingTask", "patch_receiving_task", "ID de tarea inválido")
 	if !ok {
 		return
 	}
@@ -146,7 +146,7 @@ func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) 
 }
 
 func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "CompleteFullTask", "complete_full_task", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CompleteFullTask", "complete_full_task", "ID de tarea inválido")
 	if !ok {
 		return
 	}
@@ -165,7 +165,7 @@ func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
 }
 
 func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "CompleteReceivingLine", "complete_receiving_line", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CompleteReceivingLine", "complete_receiving_line", "ID de tarea inválido")
 	if !ok {
 		return
 	}

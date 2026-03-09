@@ -49,19 +49,19 @@ func (m *mockLotsRepo) CreateLot(data *requests.CreateLotRequest) *responses.Int
 	return nil
 }
 
-func (m *mockLotsRepo) UpdateLot(id int, data map[string]interface{}) *responses.InternalResponse {
+func (m *mockLotsRepo) UpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
 	return nil
 }
 
-func (m *mockLotsRepo) DeleteLot(id int) *responses.InternalResponse {
+func (m *mockLotsRepo) DeleteLot(id string) *responses.InternalResponse {
 	return nil
 }
 
 func TestLotsService_GetAllLots(t *testing.T) {
 	repo := &mockLotsRepo{
 		lots: []database.Lot{
-			{ID: 1, LotNumber: "L1", SKU: "SKU-A", Quantity: 10},
-			{ID: 2, LotNumber: "L2", SKU: "SKU-B", Quantity: 20},
+			{ID: "1", LotNumber: "L1", SKU: "SKU-A", Quantity: 10},
+			{ID: "2", LotNumber: "L2", SKU: "SKU-B", Quantity: 20},
 		},
 	}
 	svc := NewLotsService(repo)
@@ -75,8 +75,8 @@ func TestLotsService_GetAllLots(t *testing.T) {
 func TestLotsService_GetLotsBySKU_NilSku_ReturnsAll(t *testing.T) {
 	repo := &mockLotsRepo{
 		lots: []database.Lot{
-			{ID: 1, SKU: "S1", Quantity: 1},
-			{ID: 2, SKU: "S2", Quantity: 2},
+			{ID: "1", SKU: "S1", Quantity: 1},
+			{ID: "2", SKU: "S2", Quantity: 2},
 		},
 	}
 	svc := NewLotsService(repo)
@@ -88,9 +88,9 @@ func TestLotsService_GetLotsBySKU_NilSku_ReturnsAll(t *testing.T) {
 func TestLotsService_GetLotsBySKU_Filtered(t *testing.T) {
 	repo := &mockLotsRepo{
 		lots: []database.Lot{
-			{ID: 1, SKU: "S1", Quantity: 1},
-			{ID: 2, SKU: "S1", Quantity: 2},
-			{ID: 3, SKU: "S2", Quantity: 3},
+			{ID: "1", SKU: "S1", Quantity: 1},
+			{ID: "2", SKU: "S1", Quantity: 2},
+			{ID: "3", SKU: "S2", Quantity: 3},
 		},
 	}
 	svc := NewLotsService(repo)

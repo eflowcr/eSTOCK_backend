@@ -7,7 +7,7 @@ import (
 )
 
 type EnhancedInventory struct {
-	ID              int               `json:"id"`
+	ID              string            `json:"id"`
 	SKU             string            `json:"sku"`
 	Location        string            `json:"location"`
 	Quantity        float64           `json:"quantity"`

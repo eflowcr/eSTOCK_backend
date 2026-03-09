@@ -3,7 +3,7 @@ package database
 import "time"
 
 type Location struct {
-	ID           int       `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID           string    `gorm:"column:id;primaryKey" json:"id"`
 	LocationCode string    `gorm:"column:location_code;unique" json:"location_code"`
 	Description  *string   `gorm:"column:description" json:"description"`
 	Zone         *string   `gorm:"column:zone" json:"zone"`

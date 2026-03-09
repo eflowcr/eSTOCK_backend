@@ -56,7 +56,13 @@ func NewAdjustments(db *gorm.DB) (ports.AdjustmentsRepository, *services.Adjustm
 
 func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.AuthenticationRepository, *services.AuthenticationService) {
 	r := &repositories.AuthenticationRepository{DB: db, JWTSecret: config.JWTSecret}
-	return r, services.NewAuthenticationService(r)
+	return r, services.NewAuthenticationService(r, nil)
+}
+
+// NewAuthenticationWithRoles builds the auth service with roles repo so login response includes permissions.
+func NewAuthenticationWithRoles(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository) (ports.AuthenticationRepository, *services.AuthenticationService) {
+	r := &repositories.AuthenticationRepository{DB: db, JWTSecret: config.JWTSecret}
+	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
 func NewDashboard(db *gorm.DB) (ports.DashboardRepository, *services.DashboardService) {
@@ -153,4 +159,23 @@ func NewStockAlerts(db *gorm.DB) (ports.StockAlertsRepository, *services.StockAl
 func NewUsers(db *gorm.DB, config configuration.Config) (ports.UsersRepository, *services.UserService) {
 	r := &repositories.UsersRepository{DB: db, JWTSecret: config.JWTSecret}
 	return r, services.NewUserService(r)
+}
+
+// NewLocationTypes builds LocationTypesRepository and LocationTypesService. Requires pool (Postgres).
+func NewLocationTypes(pool *pgxpool.Pool) (ports.LocationTypesRepository, *services.LocationTypesService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewLocationTypesRepositorySQLC(queries)
+	return r, services.NewLocationTypesService(r)
+}
+
+// NewUserPreferences builds UserPreferencesRepository. Returns nil if pool is nil (no Postgres).
+func NewUserPreferences(pool *pgxpool.Pool) ports.UserPreferencesRepository {
+	if pool == nil {
+		return nil
+	}
+	queries := sqlc.New(pool)
+	return repositories.NewUserPreferencesRepositorySQLC(queries)
 }

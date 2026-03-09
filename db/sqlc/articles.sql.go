@@ -89,7 +89,7 @@ const deleteArticle = `-- name: DeleteArticle :exec
 DELETE FROM articles WHERE id = $1
 `
 
-func (q *Queries) DeleteArticle(ctx context.Context, id int32) error {
+func (q *Queries) DeleteArticle(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteArticle, id)
 	return err
 }
@@ -104,7 +104,7 @@ WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetArticleByID(ctx context.Context, id int32) (Article, error) {
+func (q *Queries) GetArticleByID(ctx context.Context, id string) (Article, error) {
 	row := q.db.QueryRow(ctx, getArticleByID, id)
 	var i Article
 	err := row.Scan(
@@ -302,7 +302,7 @@ RETURNING id, sku, name, description, unit_price, presentation,
 `
 
 type UpdateArticleParams struct {
-	ID              int32          `json:"id"`
+	ID              string         `json:"id"`
 	Sku             string         `json:"sku"`
 	Name            string         `json:"name"`
 	Description     pgtype.Text    `json:"description"`

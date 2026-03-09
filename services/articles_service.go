@@ -24,7 +24,7 @@ func (s *ArticlesService) GetAllArticles() ([]database.Article, *responses.Inter
 	return s.Repository.GetAllArticles()
 }
 
-func (s *ArticlesService) GetArticleByID(id int) (*database.Article, *responses.InternalResponse) {
+func (s *ArticlesService) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
 	return s.Repository.GetArticleByID(id)
 }
 
@@ -40,7 +40,7 @@ func (s *ArticlesService) CreateArticle(article *requests.Article) *responses.In
 	return resp
 }
 
-func (s *ArticlesService) UpdateArticle(id int, data *requests.Article) (*database.Article, *responses.InternalResponse, []map[string]interface{}) {
+func (s *ArticlesService) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse, []map[string]interface{}) {
 	article, errResp := s.Repository.GetArticleByID(id)
 	if errResp != nil {
 		return nil, errResp, nil
@@ -85,6 +85,6 @@ func (s *ArticlesService) ExportArticlesToExcel() ([]byte, *responses.InternalRe
 	return s.Repository.ExportArticlesToExcel()
 }
 
-func (s *ArticlesService) DeleteArticle(id int) *responses.InternalResponse {
+func (s *ArticlesService) DeleteArticle(id string) *responses.InternalResponse {
 	return s.Repository.DeleteArticle(id)
 }

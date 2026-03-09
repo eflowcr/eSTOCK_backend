@@ -93,7 +93,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 	return tasks, nil
 }
 
-func (r *PickingTaskRepository) GetPickingTaskByID(id int) (*database.PickingTask, *responses.InternalResponse) {
+func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	var task database.PickingTask
 
 	err := r.DB.Table(database.PickingTask{}.TableName()).Where("id = ?", id).First(&task).Error
@@ -210,7 +210,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	return nil
 }
 
-func (r *PickingTaskRepository) UpdatePickingTask(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *PickingTaskRepository) UpdatePickingTask(id string, data map[string]interface{}) *responses.InternalResponse {
 	var task database.PickingTask
 	if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -526,7 +526,7 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	return buf.Bytes(), nil
 }
 
-func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId string) *responses.InternalResponse {
+func (r *PickingTaskRepository) CompletePickingTask(id string, location, userId string) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -738,7 +738,7 @@ func (r *PickingTaskRepository) CompletePickingTask(id int, location, userId str
 	return nil
 }
 
-func (r *PickingTaskRepository) CompletePickingLine(id int, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+func (r *PickingTaskRepository) CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {

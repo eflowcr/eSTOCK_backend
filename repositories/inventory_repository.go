@@ -143,7 +143,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			return errors.New("error al obtener artículo para la creación de inventario")
 		}
 
-		if article.ID == 0 {
+		if article.ID == "" {
 			return errors.New("artículo no encontrado para el SKU proporcionado")
 		}
 
@@ -388,7 +388,7 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 		}
 	}
 
-	if article.ID == 0 {
+	if article.ID == "" {
 		return &responses.InternalResponse{
 			Message:    "Artículo no encontrado para el SKU proporcionado",
 			Handled:    true,
@@ -890,7 +890,7 @@ func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.Inter
 	return buf.Bytes(), nil
 }
 
-func (r *InventoryRepository) GetInventoryLots(inventoryID int) ([]responses.InventoryLot, *responses.InternalResponse) {
+func (r *InventoryRepository) GetInventoryLots(inventoryID string) ([]responses.InventoryLot, *responses.InternalResponse) {
 	var result []responses.InventoryLot
 
 	err := r.DB.
@@ -911,7 +911,7 @@ func (r *InventoryRepository) GetInventoryLots(inventoryID int) ([]responses.Inv
 	return result, nil
 }
 
-func (r *InventoryRepository) GetInventorySerials(inventoryID int) ([]responses.InventorySerialWithSerial, *responses.InternalResponse) {
+func (r *InventoryRepository) GetInventorySerials(inventoryID string) ([]responses.InventorySerialWithSerial, *responses.InternalResponse) {
 	var result []responses.InventorySerialWithSerial
 
 	err := r.DB.
@@ -937,7 +937,7 @@ func (r *InventoryRepository) GetInventorySerials(inventoryID int) ([]responses.
 	return result, nil
 }
 
-func (r *InventoryRepository) CreateInventoryLot(id int, input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
+func (r *InventoryRepository) CreateInventoryLot(id string, input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
 	inventoryLot := &database.InventoryLot{
 		InventoryID: id,
 		LotID:       input.LotID,
@@ -957,7 +957,7 @@ func (r *InventoryRepository) CreateInventoryLot(id int, input *requests.CreateI
 	return nil
 }
 
-func (r *InventoryRepository) DeleteInventoryLot(id int) *responses.InternalResponse {
+func (r *InventoryRepository) DeleteInventoryLot(id string) *responses.InternalResponse {
 	if err := r.DB.Where("id = ?", id).Delete(&database.InventoryLot{}).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
@@ -969,7 +969,7 @@ func (r *InventoryRepository) DeleteInventoryLot(id int) *responses.InternalResp
 	return nil
 }
 
-func (r *InventoryRepository) CreateInventorySerial(id int, input *requests.CreateInventorySerial) *responses.InternalResponse {
+func (r *InventoryRepository) CreateInventorySerial(id string, input *requests.CreateInventorySerial) *responses.InternalResponse {
 	inventorySerial := &database.InventorySerial{
 		InventoryID: id,
 		SerialID:    input.SerialID,
@@ -988,7 +988,7 @@ func (r *InventoryRepository) CreateInventorySerial(id int, input *requests.Crea
 	return nil
 }
 
-func (r *InventoryRepository) DeleteInventorySerial(id int) *responses.InternalResponse {
+func (r *InventoryRepository) DeleteInventorySerial(id string) *responses.InternalResponse {
 	if err := r.DB.Where("id = ?", id).Delete(&database.InventorySerial{}).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,

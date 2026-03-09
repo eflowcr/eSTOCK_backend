@@ -10,6 +10,6 @@ type StockAlertsRepository interface {
 	GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse)
 	Analyze() (*responses.StockAlertResponse, *responses.InternalResponse)
 	LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse)
-	ResolveAlert(alertID int) *responses.InternalResponse
+	ResolveAlert(alertID string) *responses.InternalResponse
 	ExportAlertsToExcel() ([]byte, *responses.InternalResponse)
 }

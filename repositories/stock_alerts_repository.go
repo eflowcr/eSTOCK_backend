@@ -576,7 +576,7 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 	return response, nil
 }
 
-func (r *StockAlertsRepository) ResolveAlert(alertID int) *responses.InternalResponse {
+func (r *StockAlertsRepository) ResolveAlert(alertID string) *responses.InternalResponse {
 	var alert database.StockAlert
 	err := r.DB.First(&alert, alertID).Error
 	if err != nil {

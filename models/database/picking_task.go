@@ -6,7 +6,7 @@ import (
 )
 
 type PickingTask struct {
-	ID          int             `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID          string          `gorm:"column:id;primaryKey" json:"id"`
 	TaskID      string          `gorm:"column:task_id;unique" json:"task_id"`
 	OrderNumber string          `gorm:"column:order_number" json:"order_number"`
 	CreatedBy   string          `gorm:"column:created_by" json:"created_by"`

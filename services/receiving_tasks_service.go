@@ -21,7 +21,7 @@ func (s *ReceivingTasksService) GetAllReceivingTasks() ([]responses.ReceivingTas
 	return s.Repository.GetAllReceivingTasks()
 }
 
-func (s *ReceivingTasksService) GetReceivingTaskByID(id int) (*database.ReceivingTask, *responses.InternalResponse) {
+func (s *ReceivingTasksService) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	return s.Repository.GetReceivingTaskByID(id)
 }
 
@@ -29,7 +29,7 @@ func (s *ReceivingTasksService) CreateReceivingTask(userId string, task *request
 	return s.Repository.CreateReceivingTask(userId, task)
 }
 
-func (s *ReceivingTasksService) UpdateReceivingTask(id int, data map[string]interface{}) *responses.InternalResponse {
+func (s *ReceivingTasksService) UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse {
 	return s.Repository.UpdateReceivingTask(id, data)
 }
 
@@ -41,10 +41,10 @@ func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses
 	return s.Repository.ExportReceivingTaskToExcel()
 }
 
-func (s *ReceivingTasksService) CompleteFullTask(id int, location, userId string) *responses.InternalResponse {
+func (s *ReceivingTasksService) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {
 	return s.Repository.CompleteFullTask(id, location, userId)
 }
 
-func (s *ReceivingTasksService) CompleteReceivingLine(id int, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
+func (s *ReceivingTasksService) CompleteReceivingLine(id string, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
 	return s.Repository.CompleteReceivingLine(id, location, userId, item)
 }

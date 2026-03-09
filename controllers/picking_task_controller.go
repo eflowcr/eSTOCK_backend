@@ -38,7 +38,7 @@ func (c *PickingTasksController) GetAllPickingTasks(ctx *gin.Context) {
 }
 
 func (c *PickingTasksController) GetPickingTaskByID(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "GetPickingTaskByID", "get_picking_task_by_id", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "GetPickingTaskByID", "get_picking_task_by_id", "ID de tarea inválido")
 	if !ok {
 		return
 	}
@@ -82,7 +82,7 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 }
 
 func (c *PickingTasksController) UpdatePickingTask(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "UpdatePickingTask", "update_picking_task", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdatePickingTask", "update_picking_task", "ID de tarea inválido")
 	if !ok {
 		return
 	}
@@ -147,7 +147,7 @@ func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
 }
 
 func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "CompletePickingTask", "complete_picking_task", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CompletePickingTask", "complete_picking_task", "ID de tarea inválido")
 	if !ok {
 		return
 	}
@@ -167,7 +167,7 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 }
 
 func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "CompletePickingLine", "complete_picking_line", "ID de tarea inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CompletePickingLine", "complete_picking_line", "ID de tarea inválido")
 	if !ok {
 		return
 	}

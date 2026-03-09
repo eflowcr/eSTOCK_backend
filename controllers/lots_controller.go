@@ -71,7 +71,7 @@ func (c *LotsController) CreateLot(ctx *gin.Context) {
 }
 
 func (c *LotsController) UpdateLot(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "UpdateLot", "update_lot", "Invalid lot ID")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdateLot", "update_lot", "Invalid lot ID")
 	if !ok {
 		return
 	}
@@ -92,7 +92,7 @@ func (c *LotsController) UpdateLot(ctx *gin.Context) {
 }
 
 func (c *LotsController) DeleteLot(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "DeleteLot", "delete_lot", "Invalid lot ID")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteLot", "delete_lot", "Invalid lot ID")
 	if !ok {
 		return
 	}

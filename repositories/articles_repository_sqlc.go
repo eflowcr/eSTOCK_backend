@@ -48,9 +48,9 @@ func (r *ArticlesRepositorySQLC) GetAllArticles() ([]database.Article, *response
 	return out, nil
 }
 
-func (r *ArticlesRepositorySQLC) GetArticleByID(id int) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
 	ctx := context.Background()
-	a, err := r.queries.GetArticleByID(ctx, int32(id))
+	a, err := r.queries.GetArticleByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &responses.InternalResponse{
@@ -128,9 +128,9 @@ func (r *ArticlesRepositorySQLC) CreateArticle(data *requests.Article) *response
 	return nil
 }
 
-func (r *ArticlesRepositorySQLC) UpdateArticle(id int, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
 	ctx := context.Background()
-	existing, err := r.queries.GetArticleByID(ctx, int32(id))
+	existing, err := r.queries.GetArticleByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &responses.InternalResponse{
@@ -192,9 +192,9 @@ func (r *ArticlesRepositorySQLC) GetSerialsBySKU(sku string) ([]database.Serial,
 	return out, nil
 }
 
-func (r *ArticlesRepositorySQLC) DeleteArticle(id int) *responses.InternalResponse {
+func (r *ArticlesRepositorySQLC) DeleteArticle(id string) *responses.InternalResponse {
 	ctx := context.Background()
-	err := r.queries.DeleteArticle(ctx, int32(id))
+	err := r.queries.DeleteArticle(ctx, id)
 	if err != nil {
 		tools.LogRepoError("articles", "DeleteArticle", err, "Error al eliminar el artículo")
 		return &responses.InternalResponse{Error: err, Message: "Error al eliminar el artículo", Handled: false}
@@ -354,7 +354,7 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 
 func sqlcArticleToDatabase(a sqlc.Article) database.Article {
 	return database.Article{
-		ID:              int(a.ID),
+		ID:              a.ID,
 		SKU:             a.Sku,
 		Name:            a.Name,
 		Description:     pgTextToPtrString(a.Description),
@@ -375,7 +375,7 @@ func sqlcArticleToDatabase(a sqlc.Article) database.Article {
 func sqlcLotToDatabase(l sqlc.Lot) database.Lot {
 	st := l.Status
 	return database.Lot{
-		ID:             int(l.ID),
+		ID:             l.ID,
 		LotNumber:      l.LotNumber,
 		SKU:            l.Sku,
 		Quantity:       pgNumericToFloat(l.Quantity),
@@ -388,7 +388,7 @@ func sqlcLotToDatabase(l sqlc.Lot) database.Lot {
 
 func sqlcSerialToDatabase(s sqlc.Serial) database.Serial {
 	return database.Serial{
-		ID:           int(s.ID),
+		ID:           s.ID,
 		SerialNumber: s.SerialNumber,
 		SKU:          s.Sku,
 		Status:       s.Status,

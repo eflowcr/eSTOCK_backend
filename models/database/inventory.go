@@ -5,7 +5,7 @@ import (
 )
 
 type Inventory struct {
-	ID           int       `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID           string    `gorm:"column:id;primaryKey" json:"id"`
 	SKU          string    `gorm:"column:sku;index:sku_location_idx" json:"sku"`
 	Name         string    `gorm:"column:name" json:"name"`
 	Description  *string   `gorm:"column:description" json:"description"`

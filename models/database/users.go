@@ -4,16 +4,19 @@ import "time"
 
 type User struct {
 	ID                string     `gorm:"column:id;primaryKey" json:"id"`
-	Email             string     `gorm:"column:email;unique" json:"email"`
+	Name              string     `gorm:"column:name;not null" json:"name"`
+	Email             string     `gorm:"column:email" json:"email"`
 	FirstName         string     `gorm:"column:first_name" json:"first_name"`
 	LastName          string     `gorm:"column:last_name" json:"last_name"`
 	ProfileImageURL   *string    `gorm:"column:profile_image_url" json:"profile_image_url"`
 	Password          *string    `gorm:"column:password" json:"-"`
-	Role              string     `gorm:"column:role" json:"role"`
+	RoleID            string     `gorm:"column:role_id;not null" json:"role_id"`
+	Role              *Role      `gorm:"foreignKey:RoleID" json:"role,omitempty"`
 	IsActive          bool       `gorm:"column:is_active" json:"is_active"`
-	AuthProvider      string     `gorm:"column:auth_provider" json:"auth_provider"`
-	ResetToken        *string    `gorm:"column:reset_token" json:"-"`
-	ResetTokenExpires *time.Time `gorm:"column:reset_token_expires" json:"-"`
+	EmailVerified     bool       `gorm:"column:email_verified" json:"email_verified"`
+	EmailVerifiedAt   *time.Time `gorm:"column:email_verified_at" json:"email_verified_at"`
+	UpdatedBy         *string    `gorm:"column:updated_by" json:"-"`
+	DeletedAt         *time.Time `gorm:"column:deleted_at" json:"-"`
 	CreatedAt         time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt         time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }

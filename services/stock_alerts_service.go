@@ -28,7 +28,7 @@ func (s *StockAlertsService) LotExpiration() (*responses.StockAlertResponse, *re
 	return s.Repository.LotExpiration()
 }
 
-func (s *StockAlertsService) ResolveAlert(alertID int) *responses.InternalResponse {
+func (s *StockAlertsService) ResolveAlert(alertID string) *responses.InternalResponse {
 	return s.Repository.ResolveAlert(alertID)
 }
 

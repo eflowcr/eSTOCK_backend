@@ -36,7 +36,7 @@ func (c *AdjustmentsController) GetAllAdjustments(ctx *gin.Context) {
 }
 
 func (c *AdjustmentsController) GetAdjustmentByID(ctx *gin.Context) {
-	adjustmentID, ok := tools.ParseIntParam(ctx, "id", "GetAdjustmentByID", "get_adjustment_by_id", "El ID proporcionado no es válido")
+	adjustmentID, ok := tools.ParseRequiredParam(ctx, "id", "GetAdjustmentByID", "get_adjustment_by_id", "El ID proporcionado no es válido")
 	if !ok {
 		return
 	}
@@ -56,7 +56,7 @@ func (c *AdjustmentsController) GetAdjustmentByID(ctx *gin.Context) {
 }
 
 func (c *AdjustmentsController) GetAdjustmentDetails(ctx *gin.Context) {
-	adjustmentID, ok := tools.ParseIntParam(ctx, "id", "GetAdjustmentDetails", "get_adjustment_details", "El ID proporcionado no es válido")
+	adjustmentID, ok := tools.ParseRequiredParam(ctx, "id", "GetAdjustmentDetails", "get_adjustment_details", "El ID proporcionado no es válido")
 	if !ok {
 		return
 	}

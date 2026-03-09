@@ -51,7 +51,7 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		}
 	}
 
-	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.FirstName+" "+user.LastName, user.Email, user.Role)
+	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
@@ -65,6 +65,6 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		LastName: user.LastName,
 		Email:    user.Email,
 		Token:    token,
-		Role:     user.Role,
+		Role:     user.RoleID,
 	}, nil
 }

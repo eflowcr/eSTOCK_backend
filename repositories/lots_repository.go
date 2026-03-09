@@ -84,7 +84,7 @@ func (r *LotsRepository) CreateLot(data *requests.CreateLotRequest) *responses.I
 	return nil
 }
 
-func (r *LotsRepository) UpdateLot(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *LotsRepository) UpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
 	var lot database.Lot
 
 	err := r.DB.First(&lot, "id = ?", id).Error
@@ -127,7 +127,7 @@ func (r *LotsRepository) UpdateLot(id int, data map[string]interface{}) *respons
 	return nil
 }
 
-func (r *LotsRepository) DeleteLot(id int) *responses.InternalResponse {
+func (r *LotsRepository) DeleteLot(id string) *responses.InternalResponse {
 	result := r.DB.Delete(&database.Lot{}, id)
 	if result.Error != nil {
 		return &responses.InternalResponse{

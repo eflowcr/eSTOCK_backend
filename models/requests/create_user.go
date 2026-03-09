@@ -7,5 +7,5 @@ type User struct {
 	LastName        string  `gorm:"column:last_name" json:"last_name" validate:"required,max=100"`
 	ProfileImageURL *string `gorm:"column:profile_image_url" json:"profile_image_url"`
 	Password        *string `gorm:"column:password" json:"password" validate:"required,min=6"`
-	Role            string  `gorm:"column:role" json:"role" validate:"required,max=50"`
+	RoleID          string  `gorm:"column:role_id" json:"role_id" validate:"required,max=50"`
 }

@@ -16,7 +16,7 @@ func NewSerialsController(service services.SerialsService) *SerialsController {
 }
 
 func (c *SerialsController) GetSerialByID(ctx *gin.Context) {
-	serialID, ok := tools.ParseIntParam(ctx, "id", "GetSerialByID", "get_serial_by_id", "ID Serie inválido")
+	serialID, ok := tools.ParseRequiredParam(ctx, "id", "GetSerialByID", "get_serial_by_id", "ID Serie inválido")
 	if !ok {
 		return
 	}
@@ -72,7 +72,7 @@ func (c *SerialsController) CreateSerial(ctx *gin.Context) {
 }
 
 func (c *SerialsController) UpdateSerial(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "UpdateSerial", "update_serial", "ID de serie inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdateSerial", "update_serial", "ID de serie inválido")
 	if !ok {
 		return
 	}
@@ -93,7 +93,7 @@ func (c *SerialsController) UpdateSerial(ctx *gin.Context) {
 }
 
 func (c *SerialsController) DeleteSerial(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "DeleteSerial", "delete_serial", "ID de serie inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteSerial", "delete_serial", "ID de serie inválido")
 	if !ok {
 		return
 	}

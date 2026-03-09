@@ -14,12 +14,11 @@ const getRoleByID = `-- name: GetRoleByID :one
 
 SELECT id, name, description, permissions, is_active, created_at, updated_at
 FROM roles
-WHERE id = $1
+WHERE id = $1 OR LOWER(name) = LOWER($1)
 LIMIT 1
 `
 
-// Roles for RBAC: get by id (role name), get permissions only
-// Schema: db/migrations (000004_roles_schema)
+// Roles for RBAC: get by id or name (case-insensitive), get permissions only
 func (q *Queries) GetRoleByID(ctx context.Context, id string) (Role, error) {
 	row := q.db.QueryRow(ctx, getRoleByID, id)
 	var i Role
@@ -38,7 +37,7 @@ func (q *Queries) GetRoleByID(ctx context.Context, id string) (Role, error) {
 const getRolePermissions = `-- name: GetRolePermissions :one
 SELECT permissions
 FROM roles
-WHERE id = $1 AND is_active = true
+WHERE (id = $1 OR LOWER(name) = LOWER($1)) AND is_active = true
 LIMIT 1
 `
 
@@ -52,7 +51,7 @@ func (q *Queries) GetRolePermissions(ctx context.Context, id string) (json.RawMe
 const listRoles = `-- name: ListRoles :many
 SELECT id, name, description, permissions, is_active, created_at, updated_at
 FROM roles
-ORDER BY id
+ORDER BY name
 `
 
 func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {

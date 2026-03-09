@@ -38,7 +38,7 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 	}
 
 	// If user stats do not exist, create a new record with default values
-	if userStat.ID == 0 {
+	if userStat.ID == "" {
 		userStat = database.UserStat{
 			UserID:                  userId,
 			ReceivingTasksCompleted: 0,
@@ -162,7 +162,7 @@ func (s *GamificationRepository) CheckAndAwardBadges(userID string) ([]database.
 		return nil, err
 	}
 
-	userBadgeIDs := make(map[int]bool, len(userBadges))
+	userBadgeIDs := make(map[string]bool, len(userBadges))
 	for _, ub := range userBadges {
 		userBadgeIDs[ub.ID] = true
 	}
@@ -237,7 +237,7 @@ func (s *GamificationRepository) CheckAndAwardBadges(userID string) ([]database.
 	return newBadges, nil
 }
 
-func (r *GamificationRepository) AwardBadge(userId string, badgeId int) (*database.UserBadge, *responses.InternalResponse) {
+func (r *GamificationRepository) AwardBadge(userId string, badgeId string) (*database.UserBadge, *responses.InternalResponse) {
 	var userBadge database.UserBadge
 	userBadge.UserID = userId
 	userBadge.BadgeID = badgeId

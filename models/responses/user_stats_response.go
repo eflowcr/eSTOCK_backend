@@ -3,7 +3,7 @@ package responses
 import "time"
 
 type UserStatsResponse struct {
-	ID                      int       `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID                      string    `gorm:"column:id;primaryKey" json:"id"`
 	UserID                  string    `gorm:"column:user_id;unique" json:"user_id"`
 	ReceivingTasksCompleted int       `gorm:"column:receiving_tasks_completed" json:"receiving_tasks_completed"`
 	PickingTasksCompleted   int       `gorm:"column:picking_tasks_completed" json:"picking_tasks_completed"`

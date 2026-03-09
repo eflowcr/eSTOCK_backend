@@ -150,7 +150,7 @@ func (c *InventoryController) ExportInventoryToExcel(ctx *gin.Context) {
 }
 
 func (c *InventoryController) GetInventoryLots(ctx *gin.Context) {
-	inventoryID, ok := tools.ParseIntParam(ctx, "id", "GetInventoryLots", "get_inventory_lots", "Invalid inventory ID")
+	inventoryID, ok := tools.ParseRequiredParam(ctx, "id", "GetInventoryLots", "get_inventory_lots", "Invalid inventory ID")
 	if !ok {
 		return
 	}
@@ -165,7 +165,7 @@ func (c *InventoryController) GetInventoryLots(ctx *gin.Context) {
 }
 
 func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
-	inventoryID, ok := tools.ParseIntParam(ctx, "id", "GetInventorySerials", "get_inventory_serials", "ID de inventario no válido")
+	inventoryID, ok := tools.ParseRequiredParam(ctx, "id", "GetInventorySerials", "get_inventory_serials", "ID de inventario no válido")
 	if !ok {
 		return
 	}
@@ -180,7 +180,7 @@ func (c *InventoryController) GetInventorySerials(ctx *gin.Context) {
 }
 
 func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "CreateInventoryLot", "create_inventory_lot", "ID de inventario no válido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CreateInventoryLot", "create_inventory_lot", "ID de inventario no válido")
 	if !ok {
 		return
 	}
@@ -205,7 +205,7 @@ func (c *InventoryController) CreateInventoryLot(ctx *gin.Context) {
 }
 
 func (c *InventoryController) DeleteInventoryLot(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "DeleteInventoryLot", "delete_inventory_lot", "ID de lote no válido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteInventoryLot", "delete_inventory_lot", "ID de lote no válido")
 	if !ok {
 		return
 	}
@@ -220,7 +220,7 @@ func (c *InventoryController) DeleteInventoryLot(ctx *gin.Context) {
 }
 
 func (c *InventoryController) CreateInventorySerial(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "CreateInventorySerial", "create_inventory_serial", "ID de inventario no válido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CreateInventorySerial", "create_inventory_serial", "ID de inventario no válido")
 	if !ok {
 		return
 	}
@@ -245,7 +245,7 @@ func (c *InventoryController) CreateInventorySerial(ctx *gin.Context) {
 }
 
 func (c *InventoryController) DeleteInventorySerial(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "DeleteInventorySerial", "delete_inventory_serial", "ID de serie no válido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteInventorySerial", "delete_inventory_serial", "ID de serie no válido")
 	if !ok {
 		return
 	}

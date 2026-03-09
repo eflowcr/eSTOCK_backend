@@ -24,9 +24,9 @@ func NewSerialsRepositorySQLC(queries *sqlc.Queries) *SerialsRepositorySQLC {
 
 var _ ports.SerialsRepository = (*SerialsRepositorySQLC)(nil)
 
-func (r *SerialsRepositorySQLC) GetSerialByID(id int) (*database.Serial, *responses.InternalResponse) {
+func (r *SerialsRepositorySQLC) GetSerialByID(id string) (*database.Serial, *responses.InternalResponse) {
 	ctx := context.Background()
-	s, err := r.queries.GetSerialByID(ctx, int32(id))
+	s, err := r.queries.GetSerialByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &responses.InternalResponse{
@@ -69,9 +69,9 @@ func (r *SerialsRepositorySQLC) CreateSerial(data *requests.CreateSerialRequest)
 	return nil
 }
 
-func (r *SerialsRepositorySQLC) UpdateSerial(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *SerialsRepositorySQLC) UpdateSerial(id string, data map[string]interface{}) *responses.InternalResponse {
 	ctx := context.Background()
-	s, err := r.queries.GetSerialByID(ctx, int32(id))
+	s, err := r.queries.GetSerialByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -104,9 +104,9 @@ func (r *SerialsRepositorySQLC) UpdateSerial(id int, data map[string]interface{}
 	return nil
 }
 
-func (r *SerialsRepositorySQLC) DeleteSerial(id int) *responses.InternalResponse {
+func (r *SerialsRepositorySQLC) DeleteSerial(id string) *responses.InternalResponse {
 	ctx := context.Background()
-	_, err := r.queries.GetSerialByID(ctx, int32(id))
+	_, err := r.queries.GetSerialByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -117,7 +117,7 @@ func (r *SerialsRepositorySQLC) DeleteSerial(id int) *responses.InternalResponse
 		}
 		return &responses.InternalResponse{Error: err, Message: "Error al obtener la serie", Handled: false}
 	}
-	if err := r.queries.DeleteSerial(ctx, int32(id)); err != nil {
+	if err := r.queries.DeleteSerial(ctx, id); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al eliminar la serie", Handled: false}
 	}
 	return nil

@@ -1,7 +1,7 @@
 package requests
 
 type CreateInventorySerial struct {
-	InventoryID int    `json:"inventoryId" validate:"required,gt=0"`
-	SerialID    int    `json:"serialId" validate:"required,gt=0"`
+	InventoryID string `json:"inventoryId" validate:"required"`
+	SerialID    string `json:"serialId" validate:"required"`
 	Location    string `json:"location" validate:"required,max=100"`
 }

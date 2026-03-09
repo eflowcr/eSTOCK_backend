@@ -10,13 +10,13 @@ import (
 // Implemented by *repositories.ArticlesRepository (GORM).
 type ArticlesRepository interface {
 	GetAllArticles() ([]database.Article, *responses.InternalResponse)
-	GetArticleByID(id int) (*database.Article, *responses.InternalResponse)
+	GetArticleByID(id string) (*database.Article, *responses.InternalResponse)
 	GetBySku(sku string) (*database.Article, *responses.InternalResponse)
 	CreateArticle(data *requests.Article) *responses.InternalResponse
-	UpdateArticle(id int, data *requests.Article) (*database.Article, *responses.InternalResponse)
+	UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse)
 	GetLotsBySKU(sku string) ([]database.Lot, error)
 	GetSerialsBySKU(sku string) ([]database.Serial, error)
 	ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse)
 	ExportArticlesToExcel() ([]byte, *responses.InternalResponse)
-	DeleteArticle(id int) *responses.InternalResponse
+	DeleteArticle(id string) *responses.InternalResponse
 }

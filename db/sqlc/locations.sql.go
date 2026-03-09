@@ -51,7 +51,7 @@ const deleteLocation = `-- name: DeleteLocation :exec
 DELETE FROM locations WHERE id = $1
 `
 
-func (q *Queries) DeleteLocation(ctx context.Context, id int32) error {
+func (q *Queries) DeleteLocation(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteLocation, id)
 	return err
 }
@@ -63,7 +63,7 @@ WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetLocationByID(ctx context.Context, id int32) (Location, error) {
+func (q *Queries) GetLocationByID(ctx context.Context, id string) (Location, error) {
 	row := q.db.QueryRow(ctx, getLocationByID, id)
 	var i Location
 	err := row.Scan(
@@ -165,7 +165,7 @@ RETURNING id, location_code, description, zone, type, is_active, created_at, upd
 `
 
 type UpdateLocationParams struct {
-	ID           int32       `json:"id"`
+	ID           string      `json:"id"`
 	LocationCode string      `json:"location_code"`
 	Description  pgtype.Text `json:"description"`
 	Zone         pgtype.Text `json:"zone"`

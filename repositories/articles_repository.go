@@ -37,7 +37,7 @@ func (r *ArticlesRepository) GetAllArticles() ([]database.Article, *responses.In
 	return articles, nil
 }
 
-func (r *ArticlesRepository) GetArticleByID(id int) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepository) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
 	var article database.Article
 
 	err := r.DB.
@@ -130,7 +130,7 @@ func (r *ArticlesRepository) CreateArticle(data *requests.Article) *responses.In
 	return nil
 }
 
-func (r *ArticlesRepository) UpdateArticle(id int, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepository) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
 	var article database.Article
 	err := r.DB.First(&article, id).Error
 	if err != nil {
@@ -339,7 +339,7 @@ func boolToSiNo(value bool) string {
 	return "No"
 }
 
-func (r *ArticlesRepository) DeleteArticle(id int) *responses.InternalResponse {
+func (r *ArticlesRepository) DeleteArticle(id string) *responses.InternalResponse {
 	err := r.DB.
 		Table(database.Article{}.TableName()).
 		Where("id = ?", id).

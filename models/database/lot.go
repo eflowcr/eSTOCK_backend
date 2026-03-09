@@ -3,7 +3,7 @@ package database
 import "time"
 
 type Lot struct {
-	ID             int        `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID             string     `gorm:"column:id;primaryKey" json:"id"`
 	LotNumber      string     `gorm:"column:lot_number" json:"lot_number"`
 	SKU            string     `gorm:"column:sku" json:"sku"`
 	Quantity       float64    `gorm:"column:quantity" json:"quantity"`

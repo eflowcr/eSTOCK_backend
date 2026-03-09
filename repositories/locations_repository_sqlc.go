@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"errors"
-	"strconv"
 
 	"github.com/eflowcr/eSTOCK_backend/db/sqlc"
 	"github.com/eflowcr/eSTOCK_backend/models/database"
@@ -43,30 +42,21 @@ func (r *LocationsRepositorySQLC) GetAllLocations() ([]database.Location, *respo
 
 func (r *LocationsRepositorySQLC) GetLocationByID(id string) (*database.Location, *responses.InternalResponse) {
 	ctx := context.Background()
-	idInt, err := strconv.Atoi(id)
+	loc, err := r.queries.GetLocationByID(ctx, id)
 	if err != nil {
-		// Try as location_code
-		loc, err := r.queries.GetLocationByLocationCode(ctx, id)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Try as location_code for backward compatibility
+			loc2, err2 := r.queries.GetLocationByLocationCode(ctx, id)
+			if err2 == nil {
+				l := sqlcLocationToDatabase(loc2)
+				return &l, nil
+			}
+			if errors.Is(err2, pgx.ErrNoRows) {
 				return nil, &responses.InternalResponse{
 					Message:    "Ubicación no encontrada",
 					Handled:    true,
 					StatusCode: responses.StatusNotFound,
 				}
-			}
-			return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener la ubicación", Handled: false}
-		}
-		l := sqlcLocationToDatabase(loc)
-		return &l, nil
-	}
-	loc, err := r.queries.GetLocationByID(ctx, int32(idInt))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &responses.InternalResponse{
-				Message:    "Ubicación no encontrada",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
 			}
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener la ubicación", Handled: false}
@@ -101,9 +91,9 @@ func (r *LocationsRepositorySQLC) CreateLocation(input *requests.Location) *resp
 	return nil
 }
 
-func (r *LocationsRepositorySQLC) UpdateLocation(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *LocationsRepositorySQLC) UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse {
 	ctx := context.Background()
-	loc, err := r.queries.GetLocationByID(ctx, int32(id))
+	loc, err := r.queries.GetLocationByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -145,9 +135,9 @@ func (r *LocationsRepositorySQLC) UpdateLocation(id int, data map[string]interfa
 	return nil
 }
 
-func (r *LocationsRepositorySQLC) DeleteLocation(id int) *responses.InternalResponse {
+func (r *LocationsRepositorySQLC) DeleteLocation(id string) *responses.InternalResponse {
 	ctx := context.Background()
-	_, err := r.queries.GetLocationByID(ctx, int32(id))
+	_, err := r.queries.GetLocationByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -158,7 +148,7 @@ func (r *LocationsRepositorySQLC) DeleteLocation(id int) *responses.InternalResp
 		}
 		return &responses.InternalResponse{Error: err, Message: "Error al obtener la ubicación", Handled: false}
 	}
-	if err := r.queries.DeleteLocation(ctx, int32(id)); err != nil {
+	if err := r.queries.DeleteLocation(ctx, id); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al eliminar la ubicación", Handled: false}
 	}
 	return nil
@@ -174,7 +164,7 @@ func (r *LocationsRepositorySQLC) ExportLocationsToExcel() ([]byte, *responses.I
 
 func sqlcLocationToDatabase(l sqlc.Location) database.Location {
 	return database.Location{
-		ID:           int(l.ID),
+		ID:           l.ID,
 		LocationCode: l.LocationCode,
 		Description:  pgTextToPtrString(l.Description),
 		Zone:         pgTextToPtrString(l.Zone),

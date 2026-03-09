@@ -11,7 +11,7 @@ type SerialsService struct {
 	Repository ports.SerialsRepository
 }
 
-func (s *SerialsService) GetSerialByID(id int) (*database.Serial, *responses.InternalResponse) {
+func (s *SerialsService) GetSerialByID(id string) (*database.Serial, *responses.InternalResponse) {
 	return s.Repository.GetSerialByID(id)
 }
 
@@ -27,11 +27,11 @@ func (s *SerialsService) Create(data *requests.CreateSerialRequest) *responses.I
 	return s.Repository.CreateSerial(data)
 }
 
-func (s *SerialsService) UpdateSerial(id int, data map[string]interface{}) *responses.InternalResponse {
+func (s *SerialsService) UpdateSerial(id string, data map[string]interface{}) *responses.InternalResponse {
 	return s.Repository.UpdateSerial(id, data)
 }
 
-func (s *SerialsService) Delete(id int) *responses.InternalResponse {
+func (s *SerialsService) Delete(id string) *responses.InternalResponse {
 	return s.Repository.DeleteSerial(id)
 }
 

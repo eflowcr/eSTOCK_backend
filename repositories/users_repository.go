@@ -24,6 +24,7 @@ func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalRes
 
 	err := u.DB.
 		Table(database.User{}.TableName()).
+		Preload("Role").
 		Order("created_at DESC").
 		Find(&users).Error
 
@@ -41,7 +42,7 @@ func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalRes
 func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.InternalResponse) {
 	var user database.User
 
-	err := u.DB.First(&user, "id = ?", id).Error
+	err := u.DB.Preload("Role").First(&user, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &responses.InternalResponse{
 			Message:    "Usuario no encontrado",
@@ -61,8 +62,6 @@ func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.Int
 }
 
 func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalResponse {
-	user.ID = tools.GenerateGUID()
-
 	var count int64
 	err := u.DB.Model(&database.User{}).Where("email = ?", user.Email).Count(&count).Error
 	if err != nil {
@@ -93,15 +92,26 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 
 	var newUser database.User
 	tools.CopyStructFields(user, &newUser)
+	if newUser.RoleID == "" {
+		newUser.RoleID = "Operator"
+	}
+	// roles.id is nanoid; API may send name (Admin, Operator, Viewer) or id — resolve to role id
+	if resolvedID := resolveRoleIDByName(u.DB, newUser.RoleID); resolvedID != "" {
+		newUser.RoleID = resolvedID
+	}
+	newUser.ID = "" // Let DB generate id via DEFAULT nanoid()
+	// name is required; derive from first_name + last_name or fallback to email
+	name := strings.TrimSpace(newUser.FirstName + " " + newUser.LastName)
+	if name == "" {
+		name = newUser.Email
+	}
+	newUser.Name = name
 
 	newUser.IsActive = true
-	newUser.AuthProvider = "email"
-	newUser.ResetToken = nil
-	newUser.ResetTokenExpires = nil
 	newUser.CreatedAt = tools.GetCurrentTime()
 	newUser.UpdatedAt = tools.GetCurrentTime()
 
-	err = u.DB.Table(database.User{}.TableName()).Create(&newUser).Error
+	err = u.DB.Table(database.User{}.TableName()).Omit("id").Create(&newUser).Error
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
@@ -132,16 +142,39 @@ func (u *UsersRepository) UpdateUser(id string, data map[string]interface{}) *re
 	}
 
 	protectedFields := map[string]bool{
-		"id":                  true,
-		"password":            true,
-		"auth_provider":       true,
-		"reset_token":         true,
-		"reset_token_expires": true,
-		"created_at":          true,
+		"id":         true,
+		"password":   true,
+		"created_at": true,
 	}
 
 	for k := range protectedFields {
 		delete(data, k)
+	}
+
+	// Resolve role_id if sent as name (Admin, Operator, Viewer) or id
+	if v, ok := data["role_id"].(string); ok && v != "" {
+		if resolvedID := resolveRoleIDByName(u.DB, v); resolvedID != "" {
+			data["role_id"] = resolvedID
+		}
+	}
+
+	// Keep name in sync when first_name or last_name change
+	_, hasFirst := data["first_name"]
+	_, hasLast := data["last_name"]
+	if hasFirst || hasLast {
+		firstName := user.FirstName
+		if v, ok := data["first_name"].(string); ok {
+			firstName = v
+		}
+		lastName := user.LastName
+		if v, ok := data["last_name"].(string); ok {
+			lastName = v
+		}
+		name := strings.TrimSpace(firstName + " " + lastName)
+		if name == "" {
+			name = user.Email
+		}
+		data["name"] = name
 	}
 
 	data["updated_at"] = tools.GetCurrentTime()
@@ -235,9 +268,9 @@ func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*r
 		firstName := strings.TrimSpace(row[2])
 		lastName := strings.TrimSpace(row[3])
 		password := strings.TrimSpace(row[4])
-		role := strings.TrimSpace(row[5])
+		roleID := strings.TrimSpace(row[5])
 
-		if id == "" || email == "" || password == "" || role == "" {
+		if id == "" || email == "" || password == "" || roleID == "" {
 			continue
 		}
 
@@ -247,7 +280,7 @@ func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*r
 			FirstName: firstName,
 			LastName:  lastName,
 			Password:  &password,
-			Role:      role,
+			RoleID:    roleID,
 		}
 
 		resp := u.CreateUser(user)
@@ -284,12 +317,16 @@ func (u *UsersRepository) ExportUsersToExcel() ([]byte, *responses.InternalRespo
 
 	for idx, user := range users {
 		row := idx + 7
+		roleDisplay := user.RoleID
+		if user.Role != nil {
+			roleDisplay = user.Role.Name
+		}
 		values := []interface{}{
 			user.ID,
 			user.Email,
 			user.FirstName,
 			user.LastName,
-			user.Role,
+			roleDisplay,
 		}
 		for col, val := range values {
 			cell, _ := excelize.CoordinatesToCellName(col+1, row)
@@ -352,4 +389,16 @@ func (u *UsersRepository) UpdateUserPassword(id string, plainPassword string) *r
 	}
 
 	return nil
+}
+
+// resolveRoleIDByName returns roles.id for the given name (case-insensitive) or id.
+func resolveRoleIDByName(db *gorm.DB, roleIDOrName string) string {
+	if roleIDOrName == "" {
+		return ""
+	}
+	var r database.Role
+	if err := db.Where("id = ? OR LOWER(name) = LOWER(?)", roleIDOrName, roleIDOrName).First(&r).Error; err != nil {
+		return ""
+	}
+	return r.ID
 }

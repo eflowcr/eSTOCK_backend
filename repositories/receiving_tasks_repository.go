@@ -95,7 +95,7 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 	return tasks, nil
 }
 
-func (r *ReceivingTasksRepository) GetReceivingTaskByID(id int) (*database.ReceivingTask, *responses.InternalResponse) {
+func (r *ReceivingTasksRepository) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	var task database.ReceivingTask
 
 	err := r.DB.
@@ -270,7 +270,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 	return nil
 }
 
-func (r *ReceivingTasksRepository) UpdateReceivingTask(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse {
 	var handledResp *responses.InternalResponse
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -576,7 +576,7 @@ func (r *ReceivingTasksRepository) ExportReceivingTaskToExcel() ([]byte, *respon
 	return buf.Bytes(), nil
 }
 
-func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId string) *responses.InternalResponse {
+func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -812,7 +812,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id int, location, userId str
 	return nil
 }
 
-func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
+func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -1050,7 +1050,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id int, location, userI
 					return errors.New("failed to check existing lot")
 				}
 
-				lotId := 0
+				lotId := ""
 
 				if lotCount == 0 {
 					var expirationDate *time.Time

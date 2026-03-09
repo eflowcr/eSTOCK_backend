@@ -10,8 +10,8 @@ import (
 // AdjustmentsRepository defines persistence operations for adjustments.
 type AdjustmentsRepository interface {
 	GetAllAdjustments() ([]database.Adjustment, *responses.InternalResponse)
-	GetAdjustmentByID(id int) (*database.Adjustment, *responses.InternalResponse)
-	GetAdjustmentDetails(id int) (*dto.AdjustmentDetails, *responses.InternalResponse)
+	GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse)
+	GetAdjustmentDetails(id string) (*dto.AdjustmentDetails, *responses.InternalResponse)
 	CreateAdjustment(userId string, adjustment requests.CreateAdjustment) *responses.InternalResponse
 	ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse)
 }

@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
@@ -14,7 +15,7 @@ import (
 // mockArticlesRepo is a in-memory fake for unit testing ArticlesService.
 type mockArticlesRepo struct {
 	articles   []database.Article
-	byID       map[int]*database.Article
+	byID       map[string]*database.Article
 	bySku      map[string]*database.Article
 	createErr  *responses.InternalResponse
 	getIDErr   *responses.InternalResponse
@@ -30,7 +31,7 @@ func (m *mockArticlesRepo) GetAllArticles() ([]database.Article, *responses.Inte
 	return m.articles, nil
 }
 
-func (m *mockArticlesRepo) GetArticleByID(id int) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepo) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
 	if m.getIDErr != nil {
 		return nil, m.getIDErr
 	}
@@ -63,25 +64,26 @@ func (m *mockArticlesRepo) CreateArticle(data *requests.Article) *responses.Inte
 	if m.createErr != nil {
 		return m.createErr
 	}
+	id := fmt.Sprintf("art-%d", len(m.articles)+1)
 	a := database.Article{
-		ID:           len(m.articles) + 1,
-		SKU:          data.SKU,
-		Name:         data.Name,
-		Description:  data.Description,
-		UnitPrice:    data.UnitPrice,
-		Presentation: data.Presentation,
-		TrackByLot:   data.TrackByLot,
-		TrackBySerial: data.TrackBySerial,
+		ID:              id,
+		SKU:             data.SKU,
+		Name:            data.Name,
+		Description:     data.Description,
+		UnitPrice:       data.UnitPrice,
+		Presentation:    data.Presentation,
+		TrackByLot:      data.TrackByLot,
+		TrackBySerial:   data.TrackBySerial,
 		TrackExpiration: data.TrackExpiration,
-		MinQuantity:  data.MinQuantity,
-		MaxQuantity:  data.MaxQuantity,
-		ImageURL:     data.ImageURL,
+		MinQuantity:     data.MinQuantity,
+		MaxQuantity:     data.MaxQuantity,
+		ImageURL:        data.ImageURL,
 	}
 	m.articles = append(m.articles, a)
 	return nil
 }
 
-func (m *mockArticlesRepo) UpdateArticle(id int, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepo) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
 	return nil, nil
 }
 
@@ -107,7 +109,7 @@ func (m *mockArticlesRepo) ExportArticlesToExcel() ([]byte, *responses.InternalR
 	return nil, nil
 }
 
-func (m *mockArticlesRepo) DeleteArticle(id int) *responses.InternalResponse {
+func (m *mockArticlesRepo) DeleteArticle(id string) *responses.InternalResponse {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
@@ -117,8 +119,8 @@ func (m *mockArticlesRepo) DeleteArticle(id int) *responses.InternalResponse {
 func TestArticlesService_GetAllArticles(t *testing.T) {
 	repo := &mockArticlesRepo{
 		articles: []database.Article{
-			{ID: 1, SKU: "SKU1", Name: "Art1", Presentation: "unit"},
-			{ID: 2, SKU: "SKU2", Name: "Art2", Presentation: "unit"},
+			{ID: "1", SKU: "SKU1", Name: "Art1", Presentation: "unit"},
+			{ID: "2", SKU: "SKU2", Name: "Art2", Presentation: "unit"},
 		},
 	}
 	svc := NewArticlesService(repo)
@@ -130,9 +132,9 @@ func TestArticlesService_GetAllArticles(t *testing.T) {
 }
 
 func TestArticlesService_GetArticleByID_NotFound(t *testing.T) {
-	repo := &mockArticlesRepo{byID: map[int]*database.Article{}}
+	repo := &mockArticlesRepo{byID: map[string]*database.Article{}}
 	svc := NewArticlesService(repo)
-	art, errResp := svc.GetArticleByID(99)
+	art, errResp := svc.GetArticleByID("99")
 	require.NotNil(t, errResp)
 	assert.True(t, errResp.Handled)
 	assert.Equal(t, responses.StatusNotFound, errResp.StatusCode)
@@ -141,12 +143,12 @@ func TestArticlesService_GetArticleByID_NotFound(t *testing.T) {
 
 func TestArticlesService_GetArticleByID_Found(t *testing.T) {
 	repo := &mockArticlesRepo{
-		byID: map[int]*database.Article{
-			1: {ID: 1, SKU: "SKU1", Name: "Art1", Presentation: "unit"},
+		byID: map[string]*database.Article{
+			"1": {ID: "1", SKU: "SKU1", Name: "Art1", Presentation: "unit"},
 		},
 	}
 	svc := NewArticlesService(repo)
-	art, errResp := svc.GetArticleByID(1)
+	art, errResp := svc.GetArticleByID("1")
 	require.Nil(t, errResp)
 	require.NotNil(t, art)
 	assert.Equal(t, "SKU1", art.SKU)
@@ -184,7 +186,7 @@ func TestArticlesService_CreateArticle_Conflict(t *testing.T) {
 func TestArticlesService_DeleteArticle_Success(t *testing.T) {
 	repo := &mockArticlesRepo{}
 	svc := NewArticlesService(repo)
-	errResp := svc.DeleteArticle(1)
+	errResp := svc.DeleteArticle("1")
 	require.Nil(t, errResp)
 }
 
@@ -197,7 +199,7 @@ func TestArticlesService_DeleteArticle_Error(t *testing.T) {
 		},
 	}
 	svc := NewArticlesService(repo)
-	errResp := svc.DeleteArticle(1)
+	errResp := svc.DeleteArticle("1")
 	require.NotNil(t, errResp)
 	assert.False(t, errResp.Handled)
 }

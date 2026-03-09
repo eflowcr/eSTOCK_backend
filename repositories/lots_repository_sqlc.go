@@ -86,9 +86,9 @@ func (r *LotsRepositorySQLC) CreateLot(data *requests.CreateLotRequest) *respons
 	return nil
 }
 
-func (r *LotsRepositorySQLC) UpdateLot(id int, data map[string]interface{}) *responses.InternalResponse {
+func (r *LotsRepositorySQLC) UpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
 	ctx := context.Background()
-	lot, err := r.queries.GetLotByID(ctx, int32(id))
+	lot, err := r.queries.GetLotByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -131,9 +131,9 @@ func (r *LotsRepositorySQLC) UpdateLot(id int, data map[string]interface{}) *res
 	return nil
 }
 
-func (r *LotsRepositorySQLC) DeleteLot(id int) *responses.InternalResponse {
+func (r *LotsRepositorySQLC) DeleteLot(id string) *responses.InternalResponse {
 	ctx := context.Background()
-	_, err := r.queries.GetLotByID(ctx, int32(id))
+	_, err := r.queries.GetLotByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -144,7 +144,7 @@ func (r *LotsRepositorySQLC) DeleteLot(id int) *responses.InternalResponse {
 		}
 		return &responses.InternalResponse{Error: err, Message: "Failed to retrieve lot", Handled: false}
 	}
-	if err := r.queries.DeleteLot(ctx, int32(id)); err != nil {
+	if err := r.queries.DeleteLot(ctx, id); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Failed to delete lot", Handled: false}
 	}
 	return nil

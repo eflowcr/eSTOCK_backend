@@ -3,7 +3,7 @@ package database
 import "time"
 
 type InventoryMovement struct {
-	ID             int       `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID             string    `gorm:"column:id;primaryKey" json:"id"`
 	SKU            string    `gorm:"column:sku" json:"sku"`
 	Location       string    `gorm:"column:location" json:"location"`
 	MovementType   string    `gorm:"column:movement_type" json:"movement_type"`

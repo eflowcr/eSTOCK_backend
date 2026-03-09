@@ -78,7 +78,7 @@ func (c *LocationsController) CreateLocation(ctx *gin.Context) {
 }
 
 func (c *LocationsController) UpdateLocation(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "UpdateLocation", "update_location", "ID de ubicación inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "UpdateLocation", "update_location", "ID de ubicación inválido")
 	if !ok {
 		return
 	}
@@ -99,7 +99,7 @@ func (c *LocationsController) UpdateLocation(ctx *gin.Context) {
 }
 
 func (c *LocationsController) DeleteLocation(ctx *gin.Context) {
-	id, ok := tools.ParseIntParam(ctx, "id", "DeleteLocation", "delete_location", "ID de ubicación inválido")
+	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteLocation", "delete_location", "ID de ubicación inválido")
 	if !ok {
 		return
 	}
