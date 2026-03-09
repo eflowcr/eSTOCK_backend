@@ -124,7 +124,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		// 1 - Check if sku exists in the location
 		var inventoryCount int64
-		err := r.DB.Model(&database.Inventory{}).
+		err := tx.Model(&database.Inventory{}).
 			Where("sku = ? AND location = ?", item.SKU, item.Location).
 			Count(&inventoryCount).Error
 
@@ -138,7 +138,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 
 		// 2 - Get article information
 		var article database.Article
-		err = r.DB.Where("sku = ?", item.SKU).First(&article).Error
+		err = tx.Where("sku = ?", item.SKU).First(&article).Error
 		if err != nil {
 			return errors.New("error al obtener artículo para la creación de inventario")
 		}
@@ -149,6 +149,8 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 
 		var inventory database.Inventory
 
+		// Avoid inserting empty primary key values
+		inventory.ID = tools.GenerateGUID()
 		inventory.SKU = item.SKU
 		inventory.Name = item.Name
 		inventory.Description = item.Description
@@ -172,7 +174,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			inventory.UnitPrice = item.UnitPrice
 		}
 
-		if err := r.DB.Create(&inventory).Error; err != nil {
+		if err := tx.Create(&inventory).Error; err != nil {
 			return errors.New("error al crear inventario")
 		}
 
@@ -181,7 +183,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			for i := 0; i < len(item.Lots); i++ {
 				var lotCount int64
 
-				err := r.DB.Model(&database.Lot{}).
+				err := tx.Model(&database.Lot{}).
 					Where("lot_number = ? AND sku = ?", item.Lots[i].LotNumber, item.SKU).
 					Count(&lotCount).Error
 
@@ -199,6 +201,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 
 					// Create new lot
 					lot := &database.Lot{
+						ID:             tools.GenerateGUID(),
 						LotNumber:      item.Lots[i].LotNumber,
 						SKU:            item.SKU,
 						Quantity:       item.Lots[i].Quantity,
@@ -207,19 +210,20 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 						UpdatedAt:      tools.GetCurrentTime(),
 					}
 
-					if err := r.DB.Create(lot).Error; err != nil {
+					if err := tx.Create(lot).Error; err != nil {
 						return errors.New("error al crear lote")
 					}
 
 					// Create inventory_lot association
 					inventoryLot := &database.InventoryLot{
+						ID:          tools.GenerateGUID(),
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    item.Lots[i].Quantity,
 						Location:    item.Location,
 					}
 
-					if err := r.DB.Create(inventoryLot).Error; err != nil {
+					if err := tx.Create(inventoryLot).Error; err != nil {
 						return errors.New("error al crear asociación de inventario_lote")
 					}
 				}
@@ -231,7 +235,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			for i := 0; i < len(item.Serials); i++ {
 				// Check if serial already exists
 				var serialCount int64
-				err := r.DB.Model(&database.Serial{}).
+				err := tx.Model(&database.Serial{}).
 					Where("serial_number = ? AND sku = ?", item.Serials[i].SerialNumber, item.SKU).
 					Count(&serialCount).Error
 
@@ -242,6 +246,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 				if serialCount == 0 {
 					// Create new serial
 					newSerial := &database.Serial{
+						ID:           tools.GenerateGUID(),
 						SerialNumber: item.Serials[i].SerialNumber,
 						SKU:          item.SKU,
 						CreatedAt:    tools.GetCurrentTime(),
@@ -249,18 +254,19 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 						Status:       "available",
 					}
 
-					if err := r.DB.Create(newSerial).Error; err != nil {
+					if err := tx.Create(newSerial).Error; err != nil {
 						return errors.New("error al crear serial")
 					}
 
 					// Create inventory_serial association
 					inventorySerial := &database.InventorySerial{
+						ID:          tools.GenerateGUID(),
 						InventoryID: inventory.ID,
 						SerialID:    newSerial.ID,
 						Location:    item.Location,
 					}
 
-					if err := r.DB.Create(inventorySerial).Error; err != nil {
+					if err := tx.Create(inventorySerial).Error; err != nil {
 						return errors.New("error al crear asociación de inventario_serial")
 					}
 				}
@@ -272,6 +278,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 
 		// 5 - Create inventory movement
 		inventoryMovement := &database.InventoryMovement{
+			ID:             tools.GenerateGUID(),
 			SKU:            item.SKU,
 			Location:       item.Location,
 			MovementType:   reason,
@@ -282,7 +289,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			CreatedAt:      tools.GetCurrentTime(),
 		}
 
-		if err := r.DB.Create(inventoryMovement).Error; err != nil {
+		if err := tx.Create(inventoryMovement).Error; err != nil {
 			return errors.New("error al crear movimiento de inventario")
 		}
 
@@ -576,8 +583,8 @@ func (s *InventoryRepository) DeleteInventory(sku, location string) *responses.I
 		}
 	}
 
-	// Finally, delete the inventory item itself
-	if err := s.DB.Delete(&inventory).Error; err != nil {
+	// Finally, delete the inventory item itself (explicit WHERE to avoid GORM batch-delete safety when primary key is empty)
+	if err := s.DB.Where("sku = ? AND location = ?", sku, location).Delete(&database.Inventory{}).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
 			Message: "Error al eliminar artículo de inventario",
