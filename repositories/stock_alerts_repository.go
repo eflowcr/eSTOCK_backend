@@ -126,7 +126,18 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 
 		if analysis != nil && analysis.AlertLevel != "" {
+			alertID, genErr := tools.GenerateNanoid(tx)
+			if genErr != nil {
+				tx.Rollback()
+				return nil, &responses.InternalResponse{
+					Error:   genErr,
+					Message: "Error al generar ID para la alerta de stock",
+					Handled: false,
+				}
+			}
+
 			alert := database.StockAlert{
+				ID:               alertID,
 				SKU:              analysis.SKU,
 				AlertType:        analysis.AlertType,
 				CurrentStock:     analysis.CurrentStock,
@@ -504,7 +515,13 @@ func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gor
 		}
 
 		if shouldAlert {
+			alertID, genErr := tools.GenerateNanoid(tx)
+			if genErr != nil {
+				return nil, fmt.Errorf("failed to generate id for lot expiration alert: %w", genErr)
+			}
+
 			alert := database.StockAlert{
+				ID:               alertID,
 				SKU:              lots[i].SKU,
 				AlertType:        "lot_expiration",
 				CurrentStock:     int(lots[i].Quantity),

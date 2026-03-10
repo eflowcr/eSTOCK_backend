@@ -262,9 +262,21 @@ func (r *PickingTaskRepository) UpdatePickingTask(id string, data map[string]int
 
 	clean["updated_at"] = tools.GetCurrentTime()
 
+	var nextStatus string
+	currentStatus := strings.ToLower(strings.TrimSpace(task.Status))
+
 	if raw, ok := clean["status"]; ok {
 		if s, ok := raw.(string); ok {
 			sLower := strings.ToLower(strings.TrimSpace(s))
+			// Enforce allowed status transitions
+			if !isValidPickingStatusTransition(currentStatus, sLower) {
+				return &responses.InternalResponse{
+					Message:    fmt.Sprintf("Transición de estado no permitida: %s → %s", currentStatus, sLower),
+					Handled:    true,
+					StatusCode: responses.StatusConflict,
+				}
+			}
+			nextStatus = sLower
 			switch sLower {
 			case "closed":
 				clean["completed_at"] = tools.GetCurrentTime()
@@ -286,11 +298,39 @@ func (r *PickingTaskRepository) UpdatePickingTask(id string, data map[string]int
 		}
 	}
 
-	if err := r.DB.Model(&task).Updates(clean).Error; err != nil {
+	// Optimistic locking: ensure we only update when status has not changed.
+	query := r.DB.Model(&task).Where("id = ?", id)
+	if nextStatus != "" {
+		query = query.Where("status = ?", currentStatus)
+	}
+
+	if err := query.Updates(clean).Error; err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de picking"}
 	}
 
 	return nil
+}
+
+// isValidPickingStatusTransition returns true when a status change is allowed.
+// Allowed paths:
+// - open -> in_progress
+// - in_progress -> completed
+// - open|in_progress -> cancelled
+// - same -> same (idempotent)
+func isValidPickingStatusTransition(current, next string) bool {
+	if current == next || next == "" {
+		return true
+	}
+
+	switch current {
+	case "open":
+		return next == "in_progress" || next == "cancelled"
+	case "in_progress":
+		return next == "completed" || next == "cancelled"
+	default:
+		// completed / closed / cancelled are terminal in this simple model
+		return false
+	}
 }
 
 func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {

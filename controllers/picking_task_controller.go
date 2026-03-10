@@ -146,6 +146,38 @@ func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
 
+// StartPickingTask sets status from open -> in_progress.
+func (c *PickingTasksController) StartPickingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "StartPickingTask", "start_picking_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+
+	resp := c.Service.UpdatePickingTask(id, map[string]interface{}{"status": "in_progress"})
+	if resp != nil {
+		writeErrorResponse(ctx, "StartPickingTask", "start_picking_task", resp)
+		return
+	}
+
+	tools.ResponseOK(ctx, "StartPickingTask", "Tarea de picking iniciada con éxito", "start_picking_task", nil, false, "")
+}
+
+// CancelPickingTask sets status to cancelled from open or in_progress.
+func (c *PickingTasksController) CancelPickingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "CancelPickingTask", "cancel_picking_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+
+	resp := c.Service.UpdatePickingTask(id, map[string]interface{}{"status": "cancelled"})
+	if resp != nil {
+		writeErrorResponse(ctx, "CancelPickingTask", "cancel_picking_task", resp)
+		return
+	}
+
+	tools.ResponseOK(ctx, "CancelPickingTask", "Tarea de picking cancelada con éxito", "cancel_picking_task", nil, false, "")
+}
+
 func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "CompletePickingTask", "complete_picking_task", "ID de tarea inválido")
 	if !ok {
