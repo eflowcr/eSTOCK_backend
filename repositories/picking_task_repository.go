@@ -184,7 +184,13 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 			priority = "normal"
 		}
 
+		id, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generar id picking task: %w", err)
+		}
+
 		pickingTask := database.PickingTask{
+			ID:          id,
 			TaskID:      taskID,
 			OrderNumber: task.OutboundNumber,
 			CreatedBy:   userId,

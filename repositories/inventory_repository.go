@@ -147,10 +147,13 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 			return errors.New("artículo no encontrado para el SKU proporcionado")
 		}
 
-		var inventory database.Inventory
+		inventoryID, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generar id inventario: %w", err)
+		}
 
-		// Avoid inserting empty primary key values
-		inventory.ID = tools.GenerateGUID()
+		var inventory database.Inventory
+		inventory.ID = inventoryID
 		inventory.SKU = item.SKU
 		inventory.Name = item.Name
 		inventory.Description = item.Description
@@ -200,8 +203,12 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					// Create new lot
+					lotID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generar id lote: %w", err)
+					}
 					lot := &database.Lot{
-						ID:             tools.GenerateGUID(),
+						ID:             lotID,
 						LotNumber:      item.Lots[i].LotNumber,
 						SKU:            item.SKU,
 						Quantity:       item.Lots[i].Quantity,
@@ -215,8 +222,12 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					// Create inventory_lot association
+					invLotID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generar id inventory_lot: %w", err)
+					}
 					inventoryLot := &database.InventoryLot{
-						ID:          tools.GenerateGUID(),
+						ID:          invLotID,
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    item.Lots[i].Quantity,
@@ -245,8 +256,12 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 
 				if serialCount == 0 {
 					// Create new serial
+					serialID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generar id serial: %w", err)
+					}
 					newSerial := &database.Serial{
-						ID:           tools.GenerateGUID(),
+						ID:           serialID,
 						SerialNumber: item.Serials[i].SerialNumber,
 						SKU:          item.SKU,
 						CreatedAt:    tools.GetCurrentTime(),
@@ -259,8 +274,12 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 
 					// Create inventory_serial association
+					invSerialID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generar id inventory_serial: %w", err)
+					}
 					inventorySerial := &database.InventorySerial{
-						ID:          tools.GenerateGUID(),
+						ID:          invSerialID,
 						InventoryID: inventory.ID,
 						SerialID:    newSerial.ID,
 						Location:    item.Location,
@@ -277,8 +296,12 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 		reason := "in"
 
 		// 5 - Create inventory movement
+		movementID, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generar id movimiento: %w", err)
+		}
 		inventoryMovement := &database.InventoryMovement{
-			ID:             tools.GenerateGUID(),
+			ID:             movementID,
 			SKU:            item.SKU,
 			Location:       item.Location,
 			MovementType:   reason,

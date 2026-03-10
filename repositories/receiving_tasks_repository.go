@@ -195,7 +195,13 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 			return fmt.Errorf("marshal items: %w", err)
 		}
 
+		id, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generar id receiving task: %w", err)
+		}
+
 		receivingTask := database.ReceivingTask{
+			ID:            id,
 			TaskID:        taskID,
 			InboundNumber: task.InboundNumber,
 			CreatedBy:     userId,
