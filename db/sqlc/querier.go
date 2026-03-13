@@ -20,12 +20,14 @@ type Querier interface {
 	CreateLocationType(ctx context.Context, arg CreateLocationTypeParams) (LocationType, error)
 	CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error)
 	CreatePresentation(ctx context.Context, arg CreatePresentationParams) (Presentation, error)
+	CreatePresentationType(ctx context.Context, arg CreatePresentationTypeParams) (PresentationType, error)
 	CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error)
 	DeleteArticle(ctx context.Context, id string) error
 	DeleteLocation(ctx context.Context, id string) error
 	DeleteLocationType(ctx context.Context, id string) error
 	DeleteLot(ctx context.Context, id string) error
 	DeletePresentation(ctx context.Context, presentationID string) error
+	DeletePresentationType(ctx context.Context, id string) error
 	DeleteSerial(ctx context.Context, id string) error
 	GetArticleByID(ctx context.Context, id string) (Article, error)
 	GetArticleBySku(ctx context.Context, sku string) (Article, error)
@@ -36,6 +38,8 @@ type Querier interface {
 	GetLotByID(ctx context.Context, id string) (Lot, error)
 	GetOrCreateUserPreferences(ctx context.Context, userID string) (UserPreference, error)
 	GetPresentationByID(ctx context.Context, presentationID string) (Presentation, error)
+	GetPresentationTypeByCode(ctx context.Context, code string) (PresentationType, error)
+	GetPresentationTypeByID(ctx context.Context, id string) (PresentationType, error)
 	// Roles for RBAC: get by id or name (case-insensitive), get permissions only
 	GetRoleByID(ctx context.Context, id string) (Role, error)
 	GetRolePermissions(ctx context.Context, id string) (json.RawMessage, error)
@@ -59,6 +63,9 @@ type Querier interface {
 	ListLots(ctx context.Context) ([]Lot, error)
 	// Lots by SKU (for UpdateArticle warnings)
 	ListLotsBySku(ctx context.Context, sku string) ([]Lot, error)
+	// Presentation types CRUD for sqlc. Schema: db/migrations (presentation_types table)
+	ListPresentationTypes(ctx context.Context) ([]PresentationType, error)
+	ListPresentationTypesAdmin(ctx context.Context) ([]PresentationType, error)
 	// Presentations CRUD for sqlc
 	// Schema: db/migrations (presentations table)
 	ListPresentations(ctx context.Context) ([]Presentation, error)
@@ -68,11 +75,13 @@ type Querier interface {
 	LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error)
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
+	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (Article, error)
 	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (Location, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)
 	UpdatePresentation(ctx context.Context, arg UpdatePresentationParams) (Presentation, error)
+	UpdatePresentationType(ctx context.Context, arg UpdatePresentationTypeParams) (PresentationType, error)
 	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) (Role, error)
 	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error)
 	UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (UserPreference, error)

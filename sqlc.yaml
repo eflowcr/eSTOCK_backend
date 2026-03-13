@@ -15,6 +15,7 @@ sql:
       - "db/query/roles"
       - "db/query/user_preferences"
       - "db/query/location_types"
+      - "db/query/presentation_types"
     engine: "postgresql"
     gen:
       go:

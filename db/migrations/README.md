@@ -20,7 +20,7 @@ Run from `backend/` so paths resolve correctly.
 | `make migrate-force version=N` | Force schema version (fix broken state) |
 | `make help` | Show all targets |
 
-Requires `.env` with `DATABASE_URL` or `DB_SOURCE` (same as the app). See **eSTOCK doc/Roadmap - Migrations Backend** for full setup and conventions.
+Requires `.env` with `DATABASE_URL` or `DB_SOURCE` (same as the app). See **eSTOCK doc/Roadmap - Migrations Backend** for full setup and conventions. For a full list of tables and columns, see **eSTOCK/Database Tables.md**.
 
 ## Install migrate CLI (for local/CI)
 

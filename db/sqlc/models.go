@@ -163,6 +163,17 @@ type Presentation struct {
 	Description    pgtype.Text `json:"description"`
 }
 
+// Presentation type catalog (Unidad, Caja, Pallet, Paquete, etc.); used by articles.presentation as code reference
+type PresentationType struct {
+	ID        string           `json:"id"`
+	Code      string           `json:"code"`
+	Name      string           `json:"name"`
+	SortOrder int32            `json:"sort_order"`
+	IsActive  bool             `json:"is_active"`
+	CreatedAt pgtype.Timestamp `json:"created_at"`
+	UpdatedAt pgtype.Timestamp `json:"updated_at"`
+}
+
 type ReceivingTask struct {
 	ID            string           `json:"id"`
 	TaskID        string           `json:"task_id"`

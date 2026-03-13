@@ -171,6 +171,16 @@ func NewLocationTypes(pool *pgxpool.Pool) (ports.LocationTypesRepository, *servi
 	return r, services.NewLocationTypesService(r)
 }
 
+// NewPresentationTypes builds PresentationTypesRepository and PresentationTypesService. Requires pool (Postgres).
+func NewPresentationTypes(pool *pgxpool.Pool) (ports.PresentationTypesRepository, *services.PresentationTypesService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewPresentationTypesRepositorySQLC(queries)
+	return r, services.NewPresentationTypesService(r)
+}
+
 // NewUserPreferences builds UserPreferencesRepository. Returns nil if pool is nil (no Postgres).
 func NewUserPreferences(pool *pgxpool.Pool) ports.UserPreferencesRepository {
 	if pool == nil {
