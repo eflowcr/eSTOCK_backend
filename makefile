@@ -1,7 +1,7 @@
 # eSTOCK Backend — Makefile
 # Run from backend/ so paths (db/migrations, .env) resolve correctly.
 
-.PHONY: help server docs build-docker migrate-up migrate-down migrate-up-1 migrate-down-1 create-migration migrate-force sqlc sqlc-validate sqlc-clean sqlc-diff test test-unit test-articles-integration
+.PHONY: help server docs build-docker migrate-up migrate-down migrate-up-1 migrate-down-1 create-migration migrate-force db-drop-all sqlc sqlc-validate sqlc-clean sqlc-diff test test-unit test-articles-integration
 
 # DB URL from .env: prefer DATABASE_URL or DB_SOURCE; else build from DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
 get-db-url = $(shell \
@@ -27,6 +27,7 @@ help: ## Show available commands
 	@echo "  migrate-down-1     Revert one migration"
 	@echo "  create-migration   Create new migration (name=short_description)"
 	@echo "  migrate-force      Force schema version (version=N)"
+	@echo "  db-drop-all        Drop all tables in public schema (requires confirmation)"
 	@echo "  server             Run the backend server (go run cmd/main.go)"
 	@echo "  docs               Show API docs URLs (route list, OpenAPI, Swagger UI)"
 	@echo "  build-docker       Docker buildx and push"
@@ -83,6 +84,18 @@ migrate-force: ## Force schema version (usage: make migrate-force version=0)
 	echo "Forcing version $$v..."; \
 	migrate -path db/migrations -database "$$DB_URL" force $$v; \
 	echo "Done."
+
+db-drop-all: ## Drop all tables in public schema (run migrate-up after to restore)
+	@DB_URL="$(call get-db-url)"; \
+	if [ -z "$$DB_URL" ]; then echo "Error: set DATABASE_URL or DB_* in .env"; exit 1; fi; \
+	echo "WARNING: This will drop ALL tables in public schema for $$DB_URL"; \
+	read -p "Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		psql "$$DB_URL" -f db/scripts/drop_all_tables.sql; \
+		echo "Done. Run 'make migrate-up' to reapply migrations."; \
+	else \
+		echo "Aborted."; \
+	fi
 
 server: ## Run the backend server
 	go run cmd/main.go

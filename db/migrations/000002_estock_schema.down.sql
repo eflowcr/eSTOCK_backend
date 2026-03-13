@@ -1,9 +1,8 @@
 -- =============================================================================
 -- eSTOCK schema - ROLLBACK
 -- =============================================================================
-
-ALTER TABLE public.inventory DROP CONSTRAINT IF EXISTS inventory_sku_fkey;
-ALTER TABLE public.user_badges DROP CONSTRAINT IF EXISTS user_badges_badge_id_fkey;
+-- Idempotent: only DROP TABLE IF EXISTS so this is safe when migration 000004
+-- down has already dropped these tables (migrate down runs in reverse order).
 
 DROP TABLE IF EXISTS public.picking_tasks;
 DROP TABLE IF EXISTS public.inventory_movements;

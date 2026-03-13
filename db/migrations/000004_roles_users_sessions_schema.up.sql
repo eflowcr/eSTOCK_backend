@@ -2,7 +2,7 @@
 -- 000004 — Roles, users & sessions schema (consolidated)
 -- =============================================================================
 -- Replaces 000004–000012. Requires 000001 (nanoid), 000002 (estock base), 000003 (audit_logs).
--- Outcome: roles (nanoid; name is identifier), session_types, token-based sessions only, users identity-only.
+-- Outcome: roles (nanoid id; name is identifier), session_types, token-based sessions, users identity-only.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -279,7 +279,7 @@ CREATE TABLE public.adjustments (
     new_quantity int4 NOT NULL,
     reason varchar NOT NULL,
     notes text,
-    user_id varchar NOT NULL,
+    user_id TEXT NOT NULL,
     created_at timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -314,7 +314,7 @@ CREATE TABLE public.stock_alerts (
 
 CREATE TABLE public.user_stats (
     id TEXT PRIMARY KEY DEFAULT nanoid(),
-    user_id varchar NOT NULL,
+    user_id TEXT NOT NULL,
     receiving_tasks_completed int4 DEFAULT 0,
     picking_tasks_completed int4 DEFAULT 0,
     avg_pick_time int4 DEFAULT 0,
@@ -339,7 +339,7 @@ CREATE TABLE public.badges (
 
 CREATE TABLE public.user_badges (
     id TEXT PRIMARY KEY DEFAULT nanoid(),
-    user_id varchar NOT NULL,
+    user_id TEXT NOT NULL,
     badge_id TEXT NOT NULL REFERENCES public.badges(id),
     awarded_at timestamp DEFAULT CURRENT_TIMESTAMP
 );
@@ -393,8 +393,8 @@ CREATE TABLE public.receiving_tasks (
     id TEXT PRIMARY KEY DEFAULT nanoid(),
     task_id varchar NOT NULL,
     inbound_number varchar NOT NULL,
-    created_by varchar NOT NULL,
-    assigned_to varchar,
+    created_by TEXT NOT NULL,
+    assigned_to TEXT,
     status varchar NOT NULL DEFAULT 'open',
     priority varchar NOT NULL DEFAULT 'normal',
     notes text,
@@ -409,8 +409,8 @@ CREATE TABLE public.picking_tasks (
     id TEXT PRIMARY KEY DEFAULT nanoid(),
     task_id varchar NOT NULL,
     order_number varchar NOT NULL,
-    created_by varchar NOT NULL,
-    assigned_to varchar,
+    created_by TEXT NOT NULL,
+    assigned_to TEXT,
     status varchar NOT NULL DEFAULT 'open',
     priority varchar NOT NULL DEFAULT 'normal',
     notes text,
@@ -429,7 +429,7 @@ CREATE TABLE public.inventory_movements (
     quantity numeric(10,3) NOT NULL DEFAULT 0,
     remaining_stock numeric(10,3) NOT NULL DEFAULT 0,
     reason varchar(100),
-    created_by varchar(50) NOT NULL,
+    created_by TEXT NOT NULL,
     created_at timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
