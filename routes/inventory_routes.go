@@ -8,13 +8,14 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 var _ ports.InventoryRepository = (*repositories.InventoryRepository)(nil)
 
-func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
-	_, inventoryService := wire.NewInventory(db)
+func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+	_, inventoryService := wire.NewInventory(db, pool)
 	inventoryController := controllers.NewInventoryController(*inventoryService, config.JWTSecret)
 
 	route := router.Group("/inventory")
@@ -24,6 +25,7 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, config config
 		route.GET("/export", inventoryController.ExportInventoryToExcel)
 
 		route.GET("/", inventoryController.GetAllInventory)
+		route.GET("/pick-suggestions/:sku", inventoryController.GetPickSuggestions)
 		route.GET("/sku/:sku/location/:location", inventoryController.GetInventoryBySkuAndLocation)
 		route.POST("/", inventoryController.CreateInventory)
 

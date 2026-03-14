@@ -85,9 +85,15 @@ func NewGamification(db *gorm.DB) (ports.GamificationRepository, *services.Gamif
 	return r, services.NewGamificationService(r)
 }
 
-func NewInventory(db *gorm.DB) (ports.InventoryRepository, *services.InventoryService) {
+// NewInventory builds InventoryRepository and InventoryService. When pool is non-nil, injects
+// ArticlesRepository so GetPickSuggestionsBySKU sorts by rotation (FIFO/FEFO) then quantity.
+func NewInventory(db *gorm.DB, pool *pgxpool.Pool) (ports.InventoryRepository, *services.InventoryService) {
 	r := &repositories.InventoryRepository{DB: db}
-	return r, services.NewInventoryService(r)
+	var articlesRepo ports.ArticlesRepository
+	if pool != nil {
+		articlesRepo, _ = NewArticles(db, pool)
+	}
+	return r, services.NewInventoryService(r, articlesRepo)
 }
 
 func NewInventoryMovements(db *gorm.DB) (ports.InventoryMovementsRepository, *services.InventoryMovementsService) {

@@ -1004,6 +1004,27 @@ func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.Inter
 	return buf.Bytes(), nil
 }
 
+// GetPickSuggestionsBySKU returns all (location, lot, quantity) rows for the given SKU.
+// Caller (service) is responsible for sorting by rotation (FIFO/FEFO) then by quantity ascending.
+func (r *InventoryRepository) GetPickSuggestionsBySKU(sku string) ([]dto.PickSuggestion, *responses.InternalResponse) {
+	var rows []dto.PickSuggestion
+	err := r.DB.
+		Table("inventory_lots").
+		Select("inv.location AS location, lots.id AS lot_id, lots.lot_number AS lot_number, inventory_lots.quantity AS quantity, lots.expiration_date AS expiration_date, lots.created_at AS lot_created_at").
+		Joins("INNER JOIN inventory inv ON inventory_lots.inventory_id = inv.id").
+		Joins("INNER JOIN lots ON inventory_lots.lot_id = lots.id").
+		Where("inv.sku = ? AND inventory_lots.quantity > 0", sku).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener sugerencias de picking",
+			Handled: false,
+		}
+	}
+	return rows, nil
+}
+
 func (r *InventoryRepository) GetInventoryLots(inventoryID string) ([]responses.InventoryLot, *responses.InternalResponse) {
 	var result []responses.InventoryLot
 

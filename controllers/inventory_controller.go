@@ -3,6 +3,7 @@ package controllers
 import (
 	"io"
 
+	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -51,6 +52,23 @@ func (c *InventoryController) GetInventoryBySkuAndLocation(ctx *gin.Context) {
 	}
 
 	tools.ResponseOK(ctx, "GetInventoryBySkuAndLocation", "Inventario obtenido con éxito", "get_inventory_by_sku_location", item, false, "")
+}
+
+func (c *InventoryController) GetPickSuggestions(ctx *gin.Context) {
+	sku := ctx.Param("sku")
+	if sku == "" {
+		tools.ResponseBadRequest(ctx, "GetPickSuggestions", "SKU es requerido", "get_pick_suggestions")
+		return
+	}
+	list, response := c.Service.GetPickSuggestionsBySKU(sku)
+	if response != nil {
+		writeErrorResponse(ctx, "GetPickSuggestions", "get_pick_suggestions", response)
+		return
+	}
+	if list == nil {
+		list = []dto.PickSuggestion{}
+	}
+	tools.ResponseOK(ctx, "GetPickSuggestions", "Sugerencias de picking obtenidas", "get_pick_suggestions", list, false, "")
 }
 
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
