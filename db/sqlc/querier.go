@@ -23,6 +23,8 @@ type Querier interface {
 	CreatePresentationConversion(ctx context.Context, arg CreatePresentationConversionParams) (PresentationConversion, error)
 	CreatePresentationType(ctx context.Context, arg CreatePresentationTypeParams) (PresentationType, error)
 	CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error)
+	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (StockTransfer, error)
+	CreateStockTransferLine(ctx context.Context, arg CreateStockTransferLineParams) (StockTransferLine, error)
 	DeleteArticle(ctx context.Context, id string) error
 	DeleteLocation(ctx context.Context, id string) error
 	DeleteLocationType(ctx context.Context, id string) error
@@ -31,6 +33,9 @@ type Querier interface {
 	DeletePresentationConversion(ctx context.Context, id string) error
 	DeletePresentationType(ctx context.Context, id string) error
 	DeleteSerial(ctx context.Context, id string) error
+	DeleteStockTransfer(ctx context.Context, id string) error
+	DeleteStockTransferLine(ctx context.Context, id string) error
+	DeleteStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) error
 	GetArticleByID(ctx context.Context, id string) (Article, error)
 	GetArticleBySku(ctx context.Context, sku string) (Article, error)
 	GetLocationByID(ctx context.Context, id string) (Location, error)
@@ -50,6 +55,9 @@ type Querier interface {
 	// Serials CRUD for sqlc
 	// Schema: db/migrations (serials table)
 	GetSerialByID(ctx context.Context, id string) (Serial, error)
+	GetStockTransferByID(ctx context.Context, id string) (StockTransfer, error)
+	GetStockTransferByTransferNumber(ctx context.Context, transferNumber string) (StockTransfer, error)
+	GetStockTransferLineByID(ctx context.Context, id string) (StockTransferLine, error)
 	// User preferences: get, update, get-or-create (from backend_template)
 	GetUserPreferences(ctx context.Context, userID string) (UserPreference, error)
 	// Articles CRUD and related queries for sqlc
@@ -79,6 +87,10 @@ type Querier interface {
 	ListRoles(ctx context.Context) ([]Role, error)
 	// Serials by SKU (for UpdateArticle warnings)
 	ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error)
+	ListStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) ([]StockTransferLine, error)
+	// Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
+	ListStockTransfers(ctx context.Context) ([]StockTransfer, error)
+	ListStockTransfersByStatus(ctx context.Context, status string) ([]StockTransfer, error)
 	LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error)
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
@@ -92,6 +104,9 @@ type Querier interface {
 	UpdatePresentationType(ctx context.Context, arg UpdatePresentationTypeParams) (PresentationType, error)
 	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) (Role, error)
 	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error)
+	UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (StockTransfer, error)
+	UpdateStockTransferLine(ctx context.Context, arg UpdateStockTransferLineParams) (StockTransferLine, error)
+	UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (StockTransfer, error)
 	UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (UserPreference, error)
 }
 

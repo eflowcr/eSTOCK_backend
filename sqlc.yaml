@@ -17,6 +17,7 @@ sql:
       - "db/query/location_types"
       - "db/query/presentation_types"
       - "db/query/presentation_conversions"
+      - "db/query/stock_transfers"
     engine: "postgresql"
     gen:
       go:

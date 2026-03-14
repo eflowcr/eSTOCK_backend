@@ -277,6 +277,30 @@ type StockAlert struct {
 	ResolvedAt            pgtype.Timestamp `json:"resolved_at"`
 }
 
+type StockTransfer struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+type StockTransferLine struct {
+	ID              string           `json:"id"`
+	StockTransferID string           `json:"stock_transfer_id"`
+	Sku             string           `json:"sku"`
+	Quantity        pgtype.Numeric   `json:"quantity"`
+	Presentation    pgtype.Text      `json:"presentation"`
+	LineStatus      string           `json:"line_status"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
 // User identity and account; session and token data are in sessions table.
 type User struct {
 	ID string `json:"id"`

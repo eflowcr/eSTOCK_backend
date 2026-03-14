@@ -191,6 +191,16 @@ func NewPresentationConversions(pool *pgxpool.Pool) (ports.PresentationConversio
 	return r, services.NewPresentationConversionsService(r)
 }
 
+// NewStockTransfers builds StockTransfersRepository and StockTransfersService. Requires pool (Postgres).
+func NewStockTransfers(pool *pgxpool.Pool) (ports.StockTransfersRepository, *services.StockTransfersService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewStockTransfersRepositorySQLC(queries)
+	return r, services.NewStockTransfersService(r)
+}
+
 // NewUserPreferences builds UserPreferencesRepository. Returns nil if pool is nil (no Postgres).
 func NewUserPreferences(pool *pgxpool.Pool) ports.UserPreferencesRepository {
 	if pool == nil {

@@ -3,18 +3,20 @@ package tools
 
 // Audit actions
 const (
-	ActionCreate = "create"
-	ActionUpdate = "update"
-	ActionDelete = "delete"
-	ActionLogin  = "login"
-	ActionLogout = "logout"
+	ActionCreate  = "create"
+	ActionUpdate  = "update"
+	ActionDelete  = "delete"
+	ActionExecute = "execute"
+	ActionLogin   = "login"
+	ActionLogout  = "logout"
 )
 
 // Audit resource types (must match path/domain names used in API)
 const (
-	ResourceArticle   = "article"
-	ResourceLot       = "lot"
-	ResourceLocation  = "location"
-	ResourceSerial    = "serial"
-	ResourceInventory = "inventory"
+	ResourceArticle      = "article"
+	ResourceLot          = "lot"
+	ResourceLocation     = "location"
+	ResourceSerial       = "serial"
+	ResourceInventory    = "inventory"
+	ResourceStockTransfer = "stock_transfer"
 )
