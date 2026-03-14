@@ -43,6 +43,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterLocationRoutes(api, db, pool, config, rolesRepo)
 	RegisterLocationTypesRoutes(api, pool, config, rolesRepo)
 	RegisterPresentationTypesRoutes(api, pool, config, rolesRepo)
+	RegisterPresentationConversionsRoutes(api, pool, config, rolesRepo)
 	RegisterLotsRoutes(api, db, pool, config, rolesRepo)
 	RegisterRolesRoutes(api, config, rolesRepo)
 

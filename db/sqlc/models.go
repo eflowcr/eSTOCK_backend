@@ -163,6 +163,17 @@ type Presentation struct {
 	Description    pgtype.Text `json:"description"`
 }
 
+// Conversion factors between presentation types: 1 unit of from = conversion_factor units of to (e.g. 1 PALLET = 20 CAJA).
+type PresentationConversion struct {
+	ID                     string           `json:"id"`
+	FromPresentationTypeID string           `json:"from_presentation_type_id"`
+	ToPresentationTypeID   string           `json:"to_presentation_type_id"`
+	ConversionFactor       pgtype.Numeric   `json:"conversion_factor"`
+	IsActive               bool             `json:"is_active"`
+	CreatedAt              pgtype.Timestamp `json:"created_at"`
+	UpdatedAt              pgtype.Timestamp `json:"updated_at"`
+}
+
 // Presentation type catalog (Unidad, Caja, Pallet, Paquete, etc.); used by articles.presentation as code reference
 type PresentationType struct {
 	ID        string           `json:"id"`

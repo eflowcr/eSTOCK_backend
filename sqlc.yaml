@@ -16,6 +16,7 @@ sql:
       - "db/query/user_preferences"
       - "db/query/location_types"
       - "db/query/presentation_types"
+      - "db/query/presentation_conversions"
     engine: "postgresql"
     gen:
       go:
