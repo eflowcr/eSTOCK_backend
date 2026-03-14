@@ -25,32 +25,52 @@ func (q *Queries) ArticleExistsBySku(ctx context.Context, sku string) (bool, err
 const createArticle = `-- name: CreateArticle :one
 INSERT INTO articles (
     sku, name, description, unit_price, presentation,
-    track_by_lot, track_by_serial, track_expiration,
+    track_by_lot, track_by_serial, track_expiration, rotation_strategy,
     min_quantity, max_quantity, image_url
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 )
 RETURNING id, sku, name, description, unit_price, presentation,
-          track_by_lot, track_by_serial, track_expiration,
+          track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
           created_at, updated_at
 `
 
 type CreateArticleParams struct {
-	Sku             string         `json:"sku"`
-	Name            string         `json:"name"`
-	Description     pgtype.Text    `json:"description"`
-	UnitPrice       pgtype.Numeric `json:"unit_price"`
-	Presentation    string         `json:"presentation"`
-	TrackByLot      bool           `json:"track_by_lot"`
-	TrackBySerial   bool           `json:"track_by_serial"`
-	TrackExpiration bool           `json:"track_expiration"`
-	MinQuantity     pgtype.Int4    `json:"min_quantity"`
-	MaxQuantity     pgtype.Int4    `json:"max_quantity"`
-	ImageUrl        pgtype.Text    `json:"image_url"`
+	Sku              string         `json:"sku"`
+	Name             string         `json:"name"`
+	Description      pgtype.Text    `json:"description"`
+	UnitPrice        pgtype.Numeric `json:"unit_price"`
+	Presentation     string         `json:"presentation"`
+	TrackByLot       bool           `json:"track_by_lot"`
+	TrackBySerial    bool           `json:"track_by_serial"`
+	TrackExpiration  bool           `json:"track_expiration"`
+	RotationStrategy string         `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4    `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4    `json:"max_quantity"`
+	ImageUrl         pgtype.Text    `json:"image_url"`
 }
 
-func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (Article, error) {
+type CreateArticleRow struct {
+	ID               string           `json:"id"`
+	Sku              string           `json:"sku"`
+	Name             string           `json:"name"`
+	Description      pgtype.Text      `json:"description"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	Presentation     string           `json:"presentation"`
+	TrackByLot       bool             `json:"track_by_lot"`
+	TrackBySerial    bool             `json:"track_by_serial"`
+	TrackExpiration  bool             `json:"track_expiration"`
+	RotationStrategy string           `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
+	ImageUrl         pgtype.Text      `json:"image_url"`
+	IsActive         pgtype.Bool      `json:"is_active"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error) {
 	row := q.db.QueryRow(ctx, createArticle,
 		arg.Sku,
 		arg.Name,
@@ -60,11 +80,12 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (A
 		arg.TrackByLot,
 		arg.TrackBySerial,
 		arg.TrackExpiration,
+		arg.RotationStrategy,
 		arg.MinQuantity,
 		arg.MaxQuantity,
 		arg.ImageUrl,
 	)
-	var i Article
+	var i CreateArticleRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sku,
@@ -75,6 +96,7 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (A
 		&i.TrackByLot,
 		&i.TrackBySerial,
 		&i.TrackExpiration,
+		&i.RotationStrategy,
 		&i.MinQuantity,
 		&i.MaxQuantity,
 		&i.ImageUrl,
@@ -96,7 +118,7 @@ func (q *Queries) DeleteArticle(ctx context.Context, id string) error {
 
 const getArticleByID = `-- name: GetArticleByID :one
 SELECT id, sku, name, description, unit_price, presentation,
-       track_by_lot, track_by_serial, track_expiration,
+       track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
        created_at, updated_at
 FROM articles
@@ -104,9 +126,28 @@ WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetArticleByID(ctx context.Context, id string) (Article, error) {
+type GetArticleByIDRow struct {
+	ID               string           `json:"id"`
+	Sku              string           `json:"sku"`
+	Name             string           `json:"name"`
+	Description      pgtype.Text      `json:"description"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	Presentation     string           `json:"presentation"`
+	TrackByLot       bool             `json:"track_by_lot"`
+	TrackBySerial    bool             `json:"track_by_serial"`
+	TrackExpiration  bool             `json:"track_expiration"`
+	RotationStrategy string           `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
+	ImageUrl         pgtype.Text      `json:"image_url"`
+	IsActive         pgtype.Bool      `json:"is_active"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error) {
 	row := q.db.QueryRow(ctx, getArticleByID, id)
-	var i Article
+	var i GetArticleByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sku,
@@ -117,6 +158,7 @@ func (q *Queries) GetArticleByID(ctx context.Context, id string) (Article, error
 		&i.TrackByLot,
 		&i.TrackBySerial,
 		&i.TrackExpiration,
+		&i.RotationStrategy,
 		&i.MinQuantity,
 		&i.MaxQuantity,
 		&i.ImageUrl,
@@ -129,7 +171,7 @@ func (q *Queries) GetArticleByID(ctx context.Context, id string) (Article, error
 
 const getArticleBySku = `-- name: GetArticleBySku :one
 SELECT id, sku, name, description, unit_price, presentation,
-       track_by_lot, track_by_serial, track_expiration,
+       track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
        created_at, updated_at
 FROM articles
@@ -137,9 +179,28 @@ WHERE sku = $1
 LIMIT 1
 `
 
-func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (Article, error) {
+type GetArticleBySkuRow struct {
+	ID               string           `json:"id"`
+	Sku              string           `json:"sku"`
+	Name             string           `json:"name"`
+	Description      pgtype.Text      `json:"description"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	Presentation     string           `json:"presentation"`
+	TrackByLot       bool             `json:"track_by_lot"`
+	TrackBySerial    bool             `json:"track_by_serial"`
+	TrackExpiration  bool             `json:"track_expiration"`
+	RotationStrategy string           `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
+	ImageUrl         pgtype.Text      `json:"image_url"`
+	IsActive         pgtype.Bool      `json:"is_active"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error) {
 	row := q.db.QueryRow(ctx, getArticleBySku, sku)
-	var i Article
+	var i GetArticleBySkuRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sku,
@@ -150,6 +211,7 @@ func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (Article, err
 		&i.TrackByLot,
 		&i.TrackBySerial,
 		&i.TrackExpiration,
+		&i.RotationStrategy,
 		&i.MinQuantity,
 		&i.MaxQuantity,
 		&i.ImageUrl,
@@ -163,24 +225,43 @@ func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (Article, err
 const listArticles = `-- name: ListArticles :many
 
 SELECT id, sku, name, description, unit_price, presentation,
-       track_by_lot, track_by_serial, track_expiration,
+       track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
        created_at, updated_at
 FROM articles
 ORDER BY created_at ASC
 `
 
+type ListArticlesRow struct {
+	ID               string           `json:"id"`
+	Sku              string           `json:"sku"`
+	Name             string           `json:"name"`
+	Description      pgtype.Text      `json:"description"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	Presentation     string           `json:"presentation"`
+	TrackByLot       bool             `json:"track_by_lot"`
+	TrackBySerial    bool             `json:"track_by_serial"`
+	TrackExpiration  bool             `json:"track_expiration"`
+	RotationStrategy string           `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
+	ImageUrl         pgtype.Text      `json:"image_url"`
+	IsActive         pgtype.Bool      `json:"is_active"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
 // Articles CRUD and related queries for sqlc
 // Schema: db/migrations (articles, lots, serials tables)
-func (q *Queries) ListArticles(ctx context.Context) ([]Article, error) {
+func (q *Queries) ListArticles(ctx context.Context) ([]ListArticlesRow, error) {
 	rows, err := q.db.Query(ctx, listArticles)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Article{}
+	items := []ListArticlesRow{}
 	for rows.Next() {
-		var i Article
+		var i ListArticlesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Sku,
@@ -191,6 +272,7 @@ func (q *Queries) ListArticles(ctx context.Context) ([]Article, error) {
 			&i.TrackByLot,
 			&i.TrackBySerial,
 			&i.TrackExpiration,
+			&i.RotationStrategy,
 			&i.MinQuantity,
 			&i.MaxQuantity,
 			&i.ImageUrl,
@@ -289,35 +371,56 @@ SET
     track_by_lot = $7,
     track_by_serial = $8,
     track_expiration = $9,
-    min_quantity = $10,
-    max_quantity = $11,
-    image_url = $12,
-    is_active = $13,
+    rotation_strategy = $10,
+    min_quantity = $11,
+    max_quantity = $12,
+    image_url = $13,
+    is_active = $14,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, sku, name, description, unit_price, presentation,
-          track_by_lot, track_by_serial, track_expiration,
+          track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
           created_at, updated_at
 `
 
 type UpdateArticleParams struct {
-	ID              string         `json:"id"`
-	Sku             string         `json:"sku"`
-	Name            string         `json:"name"`
-	Description     pgtype.Text    `json:"description"`
-	UnitPrice       pgtype.Numeric `json:"unit_price"`
-	Presentation    string         `json:"presentation"`
-	TrackByLot      bool           `json:"track_by_lot"`
-	TrackBySerial   bool           `json:"track_by_serial"`
-	TrackExpiration bool           `json:"track_expiration"`
-	MinQuantity     pgtype.Int4    `json:"min_quantity"`
-	MaxQuantity     pgtype.Int4    `json:"max_quantity"`
-	ImageUrl        pgtype.Text    `json:"image_url"`
-	IsActive        pgtype.Bool    `json:"is_active"`
+	ID               string         `json:"id"`
+	Sku              string         `json:"sku"`
+	Name             string         `json:"name"`
+	Description      pgtype.Text    `json:"description"`
+	UnitPrice        pgtype.Numeric `json:"unit_price"`
+	Presentation     string         `json:"presentation"`
+	TrackByLot       bool           `json:"track_by_lot"`
+	TrackBySerial    bool           `json:"track_by_serial"`
+	TrackExpiration  bool           `json:"track_expiration"`
+	RotationStrategy string         `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4    `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4    `json:"max_quantity"`
+	ImageUrl         pgtype.Text    `json:"image_url"`
+	IsActive         pgtype.Bool    `json:"is_active"`
 }
 
-func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (Article, error) {
+type UpdateArticleRow struct {
+	ID               string           `json:"id"`
+	Sku              string           `json:"sku"`
+	Name             string           `json:"name"`
+	Description      pgtype.Text      `json:"description"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	Presentation     string           `json:"presentation"`
+	TrackByLot       bool             `json:"track_by_lot"`
+	TrackBySerial    bool             `json:"track_by_serial"`
+	TrackExpiration  bool             `json:"track_expiration"`
+	RotationStrategy string           `json:"rotation_strategy"`
+	MinQuantity      pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
+	ImageUrl         pgtype.Text      `json:"image_url"`
+	IsActive         pgtype.Bool      `json:"is_active"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error) {
 	row := q.db.QueryRow(ctx, updateArticle,
 		arg.ID,
 		arg.Sku,
@@ -328,12 +431,13 @@ func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (A
 		arg.TrackByLot,
 		arg.TrackBySerial,
 		arg.TrackExpiration,
+		arg.RotationStrategy,
 		arg.MinQuantity,
 		arg.MaxQuantity,
 		arg.ImageUrl,
 		arg.IsActive,
 	)
-	var i Article
+	var i UpdateArticleRow
 	err := row.Scan(
 		&i.ID,
 		&i.Sku,
@@ -344,6 +448,7 @@ func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (A
 		&i.TrackByLot,
 		&i.TrackBySerial,
 		&i.TrackExpiration,
+		&i.RotationStrategy,
 		&i.MinQuantity,
 		&i.MaxQuantity,
 		&i.ImageUrl,

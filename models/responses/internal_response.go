@@ -4,6 +4,7 @@ package responses
 // Controllers use these to choose the right response helper.
 const (
 	StatusBadRequest          = 400
+	StatusForbidden           = 403
 	StatusNotFound            = 404
 	StatusConflict            = 409
 	StatusInternalServerError = 500

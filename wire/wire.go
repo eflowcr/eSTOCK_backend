@@ -49,9 +49,14 @@ func NewRoles(pool *pgxpool.Pool) ports.RolesRepository {
 	return repositories.NewRolesRepositoryCache(base, 2*time.Minute)
 }
 
-func NewAdjustments(db *gorm.DB) (ports.AdjustmentsRepository, *services.AdjustmentsService) {
+func NewAdjustments(db *gorm.DB, pool *pgxpool.Pool) (ports.AdjustmentsRepository, *services.AdjustmentsService) {
 	r := &repositories.AdjustmentsRepository{DB: db}
-	return r, services.NewAdjustmentsService(r)
+	var reasonRepo ports.AdjustmentReasonCodesRepository
+	if pool != nil {
+		queries := sqlc.New(pool)
+		reasonRepo = repositories.NewAdjustmentReasonCodesRepositorySQLC(queries)
+	}
+	return r, services.NewAdjustmentsService(r, reasonRepo)
 }
 
 func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.AuthenticationRepository, *services.AuthenticationService) {
@@ -179,6 +184,16 @@ func NewPresentationTypes(pool *pgxpool.Pool) (ports.PresentationTypesRepository
 	queries := sqlc.New(pool)
 	r := repositories.NewPresentationTypesRepositorySQLC(queries)
 	return r, services.NewPresentationTypesService(r)
+}
+
+// NewAdjustmentReasonCodes builds AdjustmentReasonCodesRepository and AdjustmentReasonCodesService. Requires pool (Postgres).
+func NewAdjustmentReasonCodes(pool *pgxpool.Pool) (ports.AdjustmentReasonCodesRepository, *services.AdjustmentReasonCodesService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewAdjustmentReasonCodesRepositorySQLC(queries)
+	return r, services.NewAdjustmentReasonCodesService(r)
 }
 
 // NewPresentationConversions builds PresentationConversionsRepository and PresentationConversionsService. Requires pool (Postgres).

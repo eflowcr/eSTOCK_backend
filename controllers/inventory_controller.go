@@ -32,6 +32,27 @@ func (c *InventoryController) GetAllInventory(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "GetAllInventory", "Inventario obtenido con éxito", "get_all_inventory", inventory, false, "")
 }
 
+func (c *InventoryController) GetInventoryBySkuAndLocation(ctx *gin.Context) {
+	sku := ctx.Param("sku")
+	location := ctx.Param("location")
+	if sku == "" || location == "" {
+		tools.ResponseBadRequest(ctx, "GetInventoryBySkuAndLocation", "SKU y ubicación son requeridos", "get_inventory_by_sku_location")
+		return
+	}
+
+	item, response := c.Service.GetInventoryBySkuAndLocation(sku, location)
+	if response != nil {
+		writeErrorResponse(ctx, "GetInventoryBySkuAndLocation", "get_inventory_by_sku_location", response)
+		return
+	}
+	if item == nil {
+		tools.ResponseNotFound(ctx, "GetInventoryBySkuAndLocation", "No existe inventario para este SKU en la ubicación indicada", "get_inventory_by_sku_location")
+		return
+	}
+
+	tools.ResponseOK(ctx, "GetInventoryBySkuAndLocation", "Inventario obtenido con éxito", "get_inventory_by_sku_location", item, false, "")
+}
+
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
 	userId, _ := tools.GetUserId(c.JWTSecret, token)

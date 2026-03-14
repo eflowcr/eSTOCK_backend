@@ -12,6 +12,6 @@ type AdjustmentsRepository interface {
 	GetAllAdjustments() ([]database.Adjustment, *responses.InternalResponse)
 	GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse)
 	GetAdjustmentDetails(id string) (*dto.AdjustmentDetails, *responses.InternalResponse)
-	CreateAdjustment(userId string, adjustment requests.CreateAdjustment) *responses.InternalResponse
+	CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse)
 	ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse)
 }

@@ -18,6 +18,7 @@ sql:
       - "db/query/presentation_types"
       - "db/query/presentation_conversions"
       - "db/query/stock_transfers"
+      - "db/query/adjustment_reason_codes"
     engine: "postgresql"
     gen:
       go:

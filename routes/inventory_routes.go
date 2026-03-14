@@ -24,6 +24,7 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, config config
 		route.GET("/export", inventoryController.ExportInventoryToExcel)
 
 		route.GET("/", inventoryController.GetAllInventory)
+		route.GET("/sku/:sku/location/:location", inventoryController.GetInventoryBySkuAndLocation)
 		route.POST("/", inventoryController.CreateInventory)
 
 		id := route.Group("/id/:id")

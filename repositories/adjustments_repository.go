@@ -175,7 +175,8 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id string) (*dto.Adjustment
 	return &details, nil
 }
 
-func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) *responses.InternalResponse {
+func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+	var created *database.Adjustment
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 
 		// Get inventory
@@ -221,6 +222,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 		if err != nil {
 			return errors.New("error al crear el ajuste")
 		}
+		created = &newAdjustment
 
 		// Update inventory
 		inventory.Quantity = newQuantity
@@ -371,7 +373,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 				statusCode = responses.StatusConflict
 			}
 		}
-		return &responses.InternalResponse{
+		return nil, &responses.InternalResponse{
 			Error:      err,
 			Message:    errorMessage,
 			Handled:    isHandled,
@@ -379,7 +381,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 		}
 	}
 
-	return nil
+	return created, nil
 }
 
 func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {

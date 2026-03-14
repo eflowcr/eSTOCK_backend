@@ -43,7 +43,13 @@ func (r *ArticlesRepositorySQLC) GetAllArticles() ([]database.Article, *response
 	}
 	out := make([]database.Article, len(list))
 	for i, a := range list {
-		out[i] = sqlcArticleToDatabase(a)
+		out[i] = articleRowToDatabase(articleRowData{
+			ID: a.ID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+			Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
+			TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
+			MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
+			IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		})
 	}
 	return out, nil
 }
@@ -62,7 +68,13 @@ func (r *ArticlesRepositorySQLC) GetArticleByID(id string) (*database.Article, *
 		tools.LogRepoError("articles", "GetArticleByID", err, "Error al obtener el artículo")
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
 	}
-	art := sqlcArticleToDatabase(a)
+	art := articleRowToDatabase(articleRowData{
+		ID: a.ID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+		Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
+		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
+		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
+		IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+	})
 	return &art, nil
 }
 
@@ -80,7 +92,13 @@ func (r *ArticlesRepositorySQLC) GetBySku(sku string) (*database.Article, *respo
 		tools.LogRepoError("articles", "GetBySku", err, "Error al obtener el artículo por SKU")
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo por SKU", Handled: false}
 	}
-	art := sqlcArticleToDatabase(a)
+	art := articleRowToDatabase(articleRowData{
+		ID: a.ID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+		Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
+		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
+		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
+		IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+	})
 	return &art, nil
 }
 
@@ -99,18 +117,24 @@ func (r *ArticlesRepositorySQLC) CreateArticle(data *requests.Article) *response
 		}
 	}
 
+	rotationStrategy := strings.TrimSpace(strings.ToLower(data.RotationStrategy))
+	if rotationStrategy == "" || (rotationStrategy != "fifo" && rotationStrategy != "fefo") {
+		rotationStrategy = "fifo"
+	}
+
 	arg := sqlc.CreateArticleParams{
-		Sku:             data.SKU,
-		Name:            data.Name,
-		Description:     ptrStringToPgText(data.Description),
-		UnitPrice:       ptrFloatToPgNumeric(data.UnitPrice),
-		Presentation:    data.Presentation,
-		TrackByLot:      data.TrackByLot,
+		Sku:              data.SKU,
+		Name:             data.Name,
+		Description:      ptrStringToPgText(data.Description),
+		UnitPrice:        ptrFloatToPgNumeric(data.UnitPrice),
+		Presentation:     data.Presentation,
+		TrackByLot:       data.TrackByLot,
 		TrackBySerial:   data.TrackBySerial,
-		TrackExpiration: data.TrackExpiration,
-		MinQuantity:     ptrIntToPgInt4(data.MinQuantity),
+		TrackExpiration:  data.TrackExpiration,
+		RotationStrategy: rotationStrategy,
+		MinQuantity:      ptrIntToPgInt4(data.MinQuantity),
 		MaxQuantity:     ptrIntToPgInt4(data.MaxQuantity),
-		ImageUrl:        ptrStringToPgText(data.ImageURL),
+		ImageUrl:         ptrStringToPgText(data.ImageURL),
 	}
 
 	_, err = r.queries.CreateArticle(ctx, arg)
@@ -142,27 +166,39 @@ func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
 	}
 
+	rotationStrategy := strings.TrimSpace(strings.ToLower(data.RotationStrategy))
+	if rotationStrategy == "" || (rotationStrategy != "fifo" && rotationStrategy != "fefo") {
+		rotationStrategy = existing.RotationStrategy
+	}
+
 	arg := sqlc.UpdateArticleParams{
-		ID:              existing.ID,
-		Sku:             data.SKU,
-		Name:            data.Name,
-		Description:     ptrStringToPgText(data.Description),
-		UnitPrice:       ptrFloatToPgNumeric(data.UnitPrice),
-		Presentation:    data.Presentation,
-		TrackByLot:      data.TrackByLot,
-		TrackBySerial:   data.TrackBySerial,
-		TrackExpiration: data.TrackExpiration,
-		MinQuantity:     ptrIntToPgInt4(data.MinQuantity),
-		MaxQuantity:     ptrIntToPgInt4(data.MaxQuantity),
-		ImageUrl:        ptrStringToPgText(data.ImageURL),
-		IsActive:        existing.IsActive,
+		ID:               existing.ID,
+		Sku:              data.SKU,
+		Name:             data.Name,
+		Description:      ptrStringToPgText(data.Description),
+		UnitPrice:        ptrFloatToPgNumeric(data.UnitPrice),
+		Presentation:     data.Presentation,
+		TrackByLot:       data.TrackByLot,
+		TrackBySerial:    data.TrackBySerial,
+		TrackExpiration:  data.TrackExpiration,
+		RotationStrategy: rotationStrategy,
+		MinQuantity:      ptrIntToPgInt4(data.MinQuantity),
+		MaxQuantity:      ptrIntToPgInt4(data.MaxQuantity),
+		ImageUrl:         ptrStringToPgText(data.ImageURL),
+		IsActive:         existing.IsActive,
 	}
 
 	updated, err := r.queries.UpdateArticle(ctx, arg)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al actualizar el artículo", Handled: false}
 	}
-	art := sqlcArticleToDatabase(updated)
+	art := articleRowToDatabase(articleRowData{
+		ID: updated.ID, Sku: updated.Sku, Name: updated.Name, Description: updated.Description, UnitPrice: updated.UnitPrice,
+		Presentation: updated.Presentation, TrackByLot: updated.TrackByLot, TrackBySerial: updated.TrackBySerial,
+		TrackExpiration: updated.TrackExpiration, RotationStrategy: updated.RotationStrategy,
+		MinQuantity: updated.MinQuantity, MaxQuantity: updated.MaxQuantity, ImageUrl: updated.ImageUrl,
+		IsActive: updated.IsActive, CreatedAt: updated.CreatedAt, UpdatedAt: updated.UpdatedAt,
+	})
 	return &art, nil
 }
 
@@ -244,6 +280,13 @@ func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]st
 		trackExpiration := strings.TrimSpace(row[7]) == "Si"
 		maxQtyStr := strings.TrimSpace(row[8])
 		minQtyStr := strings.TrimSpace(row[9])
+		rotationStrategy := "fifo"
+		if len(row) > 10 {
+			rs := strings.TrimSpace(strings.ToLower(row[10]))
+			if rs == "fefo" {
+				rotationStrategy = "fefo"
+			}
+		}
 
 		if sku == "" || name == "" || presentation == "" {
 			continue
@@ -272,17 +315,18 @@ func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]st
 		}
 
 		article := &requests.Article{
-			SKU:             sku,
-			Name:            name,
-			Description:     descPtr,
-			UnitPrice:       unitPrice,
-			Presentation:    presentation,
-			TrackByLot:      trackByLot,
-			TrackBySerial:   trackBySerial,
-			TrackExpiration: trackExpiration,
-			MinQuantity:     minQty,
-			MaxQuantity:     maxQty,
-			ImageURL:        nil,
+			SKU:              sku,
+			Name:             name,
+			Description:      descPtr,
+			UnitPrice:        unitPrice,
+			Presentation:     presentation,
+			TrackByLot:       trackByLot,
+			TrackBySerial:    trackBySerial,
+			TrackExpiration:  trackExpiration,
+			RotationStrategy: rotationStrategy,
+			MinQuantity:      minQty,
+			MaxQuantity:      maxQty,
+			ImageURL:         nil,
 		}
 
 		resp := r.CreateArticle(article)
@@ -312,7 +356,7 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 	headers := []string{
 		"ID", "Nombre", "Descripción", "Precio", "Presentación",
 		"Rastrear por lote", "Rastrear por serie", "Rastrear por expiración",
-		"Cantidad Máxima", "Cantidad Mínima",
+		"Cantidad Máxima", "Cantidad Mínima", "Rotación (FIFO/FEFO)",
 	}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
@@ -321,6 +365,10 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 
 	for idx, article := range articles {
 		row := idx + 7
+		rotStr := article.RotationStrategy
+		if rotStr == "" {
+			rotStr = "fifo"
+		}
 		values := []interface{}{
 			article.ID,
 			article.Name,
@@ -332,6 +380,7 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 			boolToSiNo(article.TrackExpiration),
 			getOrEmpty(article.MaxQuantity),
 			getOrEmpty(article.MinQuantity),
+			strings.ToUpper(rotStr),
 		}
 		for col, val := range values {
 			cell, _ := excelize.CoordinatesToCellName(col+1, row)
@@ -352,23 +401,48 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 
 // --- mapping helpers ---
 
-func sqlcArticleToDatabase(a sqlc.Article) database.Article {
+// articleRowData holds the common shape of sqlc article row types (ListArticlesRow, GetArticleByIDRow, GetArticleBySkuRow, UpdateArticleRow).
+type articleRowData struct {
+	ID               string
+	Sku              string
+	Name             string
+	Description      pgtype.Text
+	UnitPrice        pgtype.Numeric
+	Presentation     string
+	TrackByLot       bool
+	TrackBySerial    bool
+	TrackExpiration  bool
+	RotationStrategy string
+	MinQuantity      pgtype.Int4
+	MaxQuantity      pgtype.Int4
+	ImageUrl         pgtype.Text
+	IsActive         pgtype.Bool
+	CreatedAt        pgtype.Timestamp
+	UpdatedAt        pgtype.Timestamp
+}
+
+func articleRowToDatabase(a articleRowData) database.Article {
+	rotationStrategy := strings.TrimSpace(strings.ToLower(a.RotationStrategy))
+	if rotationStrategy == "" {
+		rotationStrategy = "fifo"
+	}
 	return database.Article{
-		ID:              a.ID,
-		SKU:             a.Sku,
-		Name:            a.Name,
-		Description:     pgTextToPtrString(a.Description),
-		UnitPrice:       pgNumericToPtrFloat(a.UnitPrice),
-		Presentation:    a.Presentation,
-		TrackByLot:      a.TrackByLot,
-		TrackBySerial:   a.TrackBySerial,
-		TrackExpiration: a.TrackExpiration,
-		MinQuantity:     pgInt4ToPtrInt(a.MinQuantity),
-		MaxQuantity:     pgInt4ToPtrInt(a.MaxQuantity),
-		ImageURL:        pgTextToPtrString(a.ImageUrl),
-		IsActive:        pgBoolToPtrBool(a.IsActive),
-		CreatedAt:       pgTimestampToTime(a.CreatedAt),
-		UpdatedAt:       pgTimestampToTime(a.UpdatedAt),
+		ID:               a.ID,
+		SKU:              a.Sku,
+		Name:             a.Name,
+		Description:      pgTextToPtrString(a.Description),
+		UnitPrice:        pgNumericToPtrFloat(a.UnitPrice),
+		Presentation:     a.Presentation,
+		TrackByLot:       a.TrackByLot,
+		TrackBySerial:    a.TrackBySerial,
+		TrackExpiration:  a.TrackExpiration,
+		RotationStrategy: rotationStrategy,
+		MinQuantity:      pgInt4ToPtrInt(a.MinQuantity),
+		MaxQuantity:      pgInt4ToPtrInt(a.MaxQuantity),
+		ImageURL:         pgTextToPtrString(a.ImageUrl),
+		IsActive:         pgBoolToPtrBool(a.IsActive),
+		CreatedAt:        pgTimestampToTime(a.CreatedAt),
+		UpdatedAt:        pgTimestampToTime(a.UpdatedAt),
 	}
 }
 

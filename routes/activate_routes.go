@@ -19,6 +19,10 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	if pool != nil {
 		rolesRepo = wire.NewRoles(pool)
 	}
+	var auditSvc *services.AuditService
+	if pool != nil {
+		_, auditSvc = wire.NewAuditLog(pool)
+	}
 	RegisterAuthenticationRoutes(api, db, config, rolesRepo)
 	RegisterEncryptionRoutes(api, config)
 	RegisterUserRoutes(api, db, config)
@@ -28,21 +32,17 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterSerialRoutes(api, db, pool, config)
 	RegisterReceivingTasksRoutes(api, db, config)
 	RegisterPickingTasksRoutes(api, db, config)
-	RegisterAdjustmentsRoutes(api, db, config)
+	RegisterAdjustmentsRoutes(api, db, pool, config, auditSvc)
 	RegisterStockAlertsRoutes(api, db, config)
 	RegisterInventoryMovementsRoutes(api, db, config)
 	RegisterGamificationRoutes(api, db, config)
 	RegisterPresentationsRoutes(api, db, pool, config)
-
-	var auditSvc *services.AuditService
-	if pool != nil {
-		_, auditSvc = wire.NewAuditLog(pool)
-	}
 	RegisterAuditRoutes(api, pool, config, auditSvc, rolesRepo)
 	RegisterArticlesRoutes(api, db, pool, config, auditSvc, rolesRepo)
 	RegisterLocationRoutes(api, db, pool, config, rolesRepo)
 	RegisterLocationTypesRoutes(api, pool, config, rolesRepo)
 	RegisterPresentationTypesRoutes(api, pool, config, rolesRepo)
+	RegisterAdjustmentReasonCodesRoutes(api, pool, config, rolesRepo)
 	RegisterPresentationConversionsRoutes(api, pool, config, rolesRepo)
 	RegisterStockTransfersRoutes(api, db, pool, config, rolesRepo, auditSvc)
 	RegisterLotsRoutes(api, db, pool, config, rolesRepo)

@@ -9,6 +9,7 @@ import (
 // InventoryRepository defines persistence operations for inventory.
 type InventoryRepository interface {
 	GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse)
+	GetInventoryBySkuAndLocation(sku, location string) (*dto.EnhancedInventory, *responses.InternalResponse)
 	CreateInventory(userId string, item *requests.CreateInventory) *responses.InternalResponse
 	UpdateInventory(item *requests.UpdateInventory) *responses.InternalResponse
 	DeleteInventory(sku, location string) *responses.InternalResponse

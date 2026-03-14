@@ -19,4 +19,5 @@ const (
 	ResourceSerial       = "serial"
 	ResourceInventory    = "inventory"
 	ResourceStockTransfer = "stock_transfer"
+	ResourceAdjustment    = "adjustment"
 )

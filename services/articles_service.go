@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
@@ -33,6 +34,9 @@ func (s *ArticlesService) GetBySku(sku string) (*database.Article, *responses.In
 }
 
 func (s *ArticlesService) CreateArticle(article *requests.Article) *responses.InternalResponse {
+	if errResp := s.validateRotationStrategy(article.RotationStrategy, article.TrackExpiration); errResp != nil {
+		return errResp
+	}
 	resp := s.Repository.CreateArticle(article)
 	if resp != nil && resp.Error != nil && !resp.Handled {
 		tools.LogServiceError("articles", "CreateArticle", resp.Error, resp.Message)
@@ -73,6 +77,10 @@ func (s *ArticlesService) UpdateArticle(id string, data *requests.Article) (*dat
 		}
 	}
 
+	if errResp := s.validateRotationStrategy(data.RotationStrategy, data.TrackExpiration); errResp != nil {
+		return nil, errResp, nil
+	}
+
 	updated, errResp := s.Repository.UpdateArticle(id, data)
 	return updated, errResp, warnings
 }
@@ -87,4 +95,20 @@ func (s *ArticlesService) ExportArticlesToExcel() ([]byte, *responses.InternalRe
 
 func (s *ArticlesService) DeleteArticle(id string) *responses.InternalResponse {
 	return s.Repository.DeleteArticle(id)
+}
+
+// validateRotationStrategy enforces WMS rule: FEFO requires expiration tracking.
+func (s *ArticlesService) validateRotationStrategy(rotationStrategy string, trackExpiration bool) *responses.InternalResponse {
+	rs := strings.TrimSpace(strings.ToLower(rotationStrategy))
+	if rs != "fefo" {
+		return nil
+	}
+	if !trackExpiration {
+		return &responses.InternalResponse{
+			Message:    "FEFO (First Expiry, First Out) requires expiration tracking to be enabled. Enable 'Track expiration' or use FIFO.",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+	return nil
 }

@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"encoding/json"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -8,14 +10,16 @@ import (
 )
 
 type AdjustmentsController struct {
-	Service   services.AdjustmentsService
-	JWTSecret string
+	Service      services.AdjustmentsService
+	JWTSecret    string
+	AuditService *services.AuditService
 }
 
-func NewAdjustmentsController(service services.AdjustmentsService, jwtSecret string) *AdjustmentsController {
+func NewAdjustmentsController(service services.AdjustmentsService, jwtSecret string, auditSvc *services.AuditService) *AdjustmentsController {
 	return &AdjustmentsController{
-		Service:   service,
-		JWTSecret: jwtSecret,
+		Service:      service,
+		JWTSecret:    jwtSecret,
+		AuditService: auditSvc,
 	}
 }
 
@@ -90,13 +94,25 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
 	userId, _ := tools.GetUserId(c.JWTSecret, token)
 
-	response := c.Service.CreateAdjustment(userId, adjustment)
+	created, response := c.Service.CreateAdjustment(userId, adjustment)
 	if response != nil {
 		writeErrorResponse(ctx, "CreateAdjustment", "create_adjustment", response)
 		return
 	}
 
-	tools.ResponseCreated(ctx, "CreateAdjustment", "Ajuste creado con éxito", "create_adjustment", adjustment, false, "")
+	if c.AuditService != nil && created != nil {
+		newVal, _ := json.Marshal(map[string]interface{}{
+			"id":         created.ID,
+			"sku":        created.SKU,
+			"location":   created.Location,
+			"quantity":   created.AdjustmentQty,
+			"reason":     created.Reason,
+			"user_id":    created.UserID,
+		})
+		c.AuditService.Log(ctx.Request.Context(), &userId, tools.ActionCreate, tools.ResourceAdjustment, created.ID, nil, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
+	}
+
+	tools.ResponseCreated(ctx, "CreateAdjustment", "Ajuste creado con éxito", "create_adjustment", created, false, "")
 }
 
 func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {

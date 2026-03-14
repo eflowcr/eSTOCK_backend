@@ -12,7 +12,8 @@ import (
 type Querier interface {
 	ArticleExistsBySku(ctx context.Context, sku string) (bool, error)
 	CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error)
-	CreateArticle(ctx context.Context, arg CreateArticleParams) (Article, error)
+	CreateAdjustmentReasonCode(ctx context.Context, arg CreateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
+	CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error)
 	// Audit logs: who did what, when, how
 	// Schema: db/migrations (000003_audit_logs_schema)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
@@ -25,6 +26,7 @@ type Querier interface {
 	CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error)
 	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (StockTransfer, error)
 	CreateStockTransferLine(ctx context.Context, arg CreateStockTransferLineParams) (StockTransferLine, error)
+	DeleteAdjustmentReasonCode(ctx context.Context, id string) error
 	DeleteArticle(ctx context.Context, id string) error
 	DeleteLocation(ctx context.Context, id string) error
 	DeleteLocationType(ctx context.Context, id string) error
@@ -36,8 +38,10 @@ type Querier interface {
 	DeleteStockTransfer(ctx context.Context, id string) error
 	DeleteStockTransferLine(ctx context.Context, id string) error
 	DeleteStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) error
-	GetArticleByID(ctx context.Context, id string) (Article, error)
-	GetArticleBySku(ctx context.Context, sku string) (Article, error)
+	GetAdjustmentReasonCodeByCode(ctx context.Context, code string) (AdjustmentReasonCode, error)
+	GetAdjustmentReasonCodeByID(ctx context.Context, id string) (AdjustmentReasonCode, error)
+	GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error)
+	GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error)
 	GetLocationByID(ctx context.Context, id string) (Location, error)
 	GetLocationByLocationCode(ctx context.Context, locationCode string) (Location, error)
 	GetLocationTypeByCode(ctx context.Context, code string) (LocationType, error)
@@ -60,9 +64,12 @@ type Querier interface {
 	GetStockTransferLineByID(ctx context.Context, id string) (StockTransferLine, error)
 	// User preferences: get, update, get-or-create (from backend_template)
 	GetUserPreferences(ctx context.Context, userID string) (UserPreference, error)
+	// Adjustment reason codes CRUD for sqlc. Schema: db/migrations (adjustment_reason_codes table)
+	ListAdjustmentReasonCodes(ctx context.Context) ([]AdjustmentReasonCode, error)
+	ListAdjustmentReasonCodesAdmin(ctx context.Context) ([]AdjustmentReasonCode, error)
 	// Articles CRUD and related queries for sqlc
 	// Schema: db/migrations (articles, lots, serials tables)
-	ListArticles(ctx context.Context) ([]Article, error)
+	ListArticles(ctx context.Context) ([]ListArticlesRow, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// Location types CRUD for sqlc. Schema: db/migrations (location_types table)
 	ListLocationTypes(ctx context.Context) ([]LocationType, error)
@@ -95,7 +102,8 @@ type Querier interface {
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
 	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
-	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (Article, error)
+	UpdateAdjustmentReasonCode(ctx context.Context, arg UpdateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
+	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error)
 	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (Location, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)

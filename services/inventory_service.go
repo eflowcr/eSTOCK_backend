@@ -21,6 +21,10 @@ func (s *InventoryService) GetAllInventory() ([]*dto.EnhancedInventory, *respons
 	return s.Repository.GetAllInventory()
 }
 
+func (s *InventoryService) GetInventoryBySkuAndLocation(sku, location string) (*dto.EnhancedInventory, *responses.InternalResponse) {
+	return s.Repository.GetInventoryBySkuAndLocation(sku, location)
+}
+
 func (s *InventoryService) CreateInventory(userId string, item *requests.CreateInventory) *responses.InternalResponse {
 	return s.Repository.CreateInventory(userId, item)
 }

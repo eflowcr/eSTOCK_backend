@@ -120,6 +120,90 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 	return enhanced, nil
 }
 
+// GetInventoryBySkuAndLocation returns a single inventory record by SKU and location, or nil if not found.
+func (r *InventoryRepository) GetInventoryBySkuAndLocation(sku, location string) (*dto.EnhancedInventory, *responses.InternalResponse) {
+	var item database.Inventory
+	err := r.DB.Where("sku = ? AND location = ?", sku, location).First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener inventario por SKU y ubicación",
+			Handled: false,
+		}
+	}
+
+	var article database.Article
+	err = r.DB.Where("sku = ?", item.SKU).First(&article).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener artículo para el elemento de inventario",
+			Handled: false,
+		}
+	}
+
+	var lots []database.Lot
+	if article.TrackByLot {
+		_ = r.DB.
+			Table(database.Lot{}.TableName()).
+			Joins("JOIN inventory_lots ON lots.id = inventory_lots.lot_id").
+			Where("inventory_lots.inventory_id = ?", item.ID).
+			Find(&lots).Error
+	}
+
+	var serials []database.Serial
+	if article.TrackBySerial {
+		_ = r.DB.
+			Table(database.Serial{}.TableName()).
+			Joins("JOIN inventory_serials ON serials.id = inventory_serials.serial_id").
+			Where("inventory_serials.inventory_id = ?", item.ID).
+			Find(&serials).Error
+	}
+
+	imageURL := ""
+	if article.ImageURL != nil {
+		imageURL = *article.ImageURL
+	}
+
+	desc := ""
+	if article.Description != nil {
+		desc = *article.Description
+	}
+
+	minQty, maxQty := 0, 0
+	if article.MinQuantity != nil {
+		minQty = *article.MinQuantity
+	}
+	if article.MaxQuantity != nil {
+		maxQty = *article.MaxQuantity
+	}
+
+	return &dto.EnhancedInventory{
+		ID:              item.ID,
+		SKU:             item.SKU,
+		Location:        item.Location,
+		Quantity:        item.Quantity,
+		Status:          item.Status,
+		UnitPrice:       item.UnitPrice,
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
+		Name:            article.Name,
+		Description:     desc,
+		Presentation:    article.Presentation,
+		TrackByLot:      article.TrackByLot,
+		TrackBySerial:   article.TrackBySerial,
+		TrackExpiration: article.TrackExpiration,
+		ImageURL:        imageURL,
+		MinQuantity:     minQty,
+		MaxQuantity:     maxQty,
+		Lots:            lots,
+		Serials:         serials,
+	}, nil
+}
+
 func (r *InventoryRepository) CreateInventory(userId string, item *requests.CreateInventory) *responses.InternalResponse {
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		// 1 - Check if sku exists in the location

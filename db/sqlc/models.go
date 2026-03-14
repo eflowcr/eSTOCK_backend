@@ -25,6 +25,19 @@ type Adjustment struct {
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 }
 
+// Reason codes for stock adjustments; direction determines add (inbound) or subtract (outbound).
+type AdjustmentReasonCode struct {
+	ID           string           `json:"id"`
+	Code         string           `json:"code"`
+	Name         string           `json:"name"`
+	Direction    string           `json:"direction"`
+	IsSystem     bool             `json:"is_system"`
+	DisplayOrder int32            `json:"display_order"`
+	IsActive     bool             `json:"is_active"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
 type Article struct {
 	ID              string           `json:"id"`
 	Sku             string           `json:"sku"`
@@ -41,6 +54,8 @@ type Article struct {
 	IsActive        pgtype.Bool      `json:"is_active"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+	// WMS rotation rule: fifo = oldest first, fefo = earliest expiry first (requires track_expiration)
+	RotationStrategy string `json:"rotation_strategy"`
 }
 
 type AuditLog struct {
