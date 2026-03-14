@@ -9,10 +9,11 @@ type StockTransferLineInput struct {
 
 // StockTransferCreate is the request body for creating a stock transfer (header + lines).
 type StockTransferCreate struct {
-	FromLocationID string                  `json:"from_location_id" binding:"required"`
-	ToLocationID   string                  `json:"to_location_id" binding:"required"`
-	AssignedTo     *string                 `json:"assigned_to"`
-	Notes          *string                 `json:"notes"`
+	FromLocationID string                   `json:"from_location_id" binding:"required"`
+	ToLocationID   string                   `json:"to_location_id" binding:"required"`
+	AssignedTo     *string                  `json:"assigned_to"`
+	Notes          *string                  `json:"notes"`
+	DockLocation   *string                  `json:"dock_location"`
 	Lines          []StockTransferLineInput `json:"lines" binding:"required,dive"`
 }
 
@@ -23,6 +24,7 @@ type StockTransferUpdate struct {
 	Status         string  `json:"status" binding:"required" validate:"required,oneof=draft in_progress completed cancelled"`
 	AssignedTo     *string `json:"assigned_to"`
 	Notes          *string `json:"notes"`
+	DockLocation   *string `json:"dock_location"`
 }
 
 // StockTransferLineUpdate is the request body for updating a transfer line.

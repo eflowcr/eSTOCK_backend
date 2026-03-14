@@ -5,4 +5,5 @@ type Location struct {
 	Description  *string `json:"description"`
 	Zone         *string `json:"zone"`
 	Type         string  `json:"type" binding:"required" validate:"required,max=50"`
+	IsWayOut     bool    `json:"is_way_out"`
 }

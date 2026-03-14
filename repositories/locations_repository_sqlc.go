@@ -35,7 +35,7 @@ func (r *LocationsRepositorySQLC) GetAllLocations() ([]database.Location, *respo
 	}
 	out := make([]database.Location, len(list))
 	for i, loc := range list {
-		out[i] = sqlcLocationToDatabase(loc)
+		out[i] = locationRowToDatabase(loc.ID, loc.LocationCode, loc.Description, loc.Zone, loc.Type, loc.IsActive, loc.IsWayOut, loc.CreatedAt, loc.UpdatedAt)
 	}
 	return out, nil
 }
@@ -48,7 +48,7 @@ func (r *LocationsRepositorySQLC) GetLocationByID(id string) (*database.Location
 			// Try as location_code for backward compatibility
 			loc2, err2 := r.queries.GetLocationByLocationCode(ctx, id)
 			if err2 == nil {
-				l := sqlcLocationToDatabase(loc2)
+				l := locationRowToDatabase(loc2.ID, loc2.LocationCode, loc2.Description, loc2.Zone, loc2.Type, loc2.IsActive, loc2.IsWayOut, loc2.CreatedAt, loc2.UpdatedAt)
 				return &l, nil
 			}
 			if errors.Is(err2, pgx.ErrNoRows) {
@@ -61,7 +61,7 @@ func (r *LocationsRepositorySQLC) GetLocationByID(id string) (*database.Location
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener la ubicación", Handled: false}
 	}
-	l := sqlcLocationToDatabase(loc)
+	l := locationRowToDatabase(loc.ID, loc.LocationCode, loc.Description, loc.Zone, loc.Type, loc.IsActive, loc.IsWayOut, loc.CreatedAt, loc.UpdatedAt)
 	return &l, nil
 }
 
@@ -83,6 +83,7 @@ func (r *LocationsRepositorySQLC) CreateLocation(input *requests.Location) *resp
 		Zone:         ptrStringToPgText(input.Zone),
 		Type:         input.Type,
 		IsActive:     true,
+		IsWayOut:     input.IsWayOut,
 	}
 	_, err = r.queries.CreateLocation(ctx, arg)
 	if err != nil {
@@ -120,6 +121,9 @@ func (r *LocationsRepositorySQLC) UpdateLocation(id string, data map[string]inte
 	if v, ok := data["is_active"].(bool); ok {
 		loc.IsActive = v
 	}
+	if v, ok := data["is_way_out"].(bool); ok {
+		loc.IsWayOut = v
+	}
 	arg := sqlc.UpdateLocationParams{
 		ID:           loc.ID,
 		LocationCode: loc.LocationCode,
@@ -127,6 +131,7 @@ func (r *LocationsRepositorySQLC) UpdateLocation(id string, data map[string]inte
 		Zone:         loc.Zone,
 		Type:         loc.Type,
 		IsActive:     loc.IsActive,
+		IsWayOut:     loc.IsWayOut,
 	}
 	_, err = r.queries.UpdateLocation(ctx, arg)
 	if err != nil {
@@ -162,15 +167,16 @@ func (r *LocationsRepositorySQLC) ExportLocationsToExcel() ([]byte, *responses.I
 	return r.gorm.ExportLocationsToExcel()
 }
 
-func sqlcLocationToDatabase(l sqlc.Location) database.Location {
+func locationRowToDatabase(id, locationCode string, description, zone pgtype.Text, locType string, isActive, isWayOut bool, createdAt, updatedAt pgtype.Timestamp) database.Location {
 	return database.Location{
-		ID:           l.ID,
-		LocationCode: l.LocationCode,
-		Description:  pgTextToPtrString(l.Description),
-		Zone:         pgTextToPtrString(l.Zone),
-		Type:         l.Type,
-		IsActive:     l.IsActive,
-		CreatedAt:    pgTimestampToTime(l.CreatedAt),
-		UpdatedAt:    pgTimestampToTime(l.UpdatedAt),
+		ID:           id,
+		LocationCode: locationCode,
+		Description:  pgTextToPtrString(description),
+		Zone:         pgTextToPtrString(zone),
+		Type:         locType,
+		IsActive:     isActive,
+		IsWayOut:     isWayOut,
+		CreatedAt:    pgTimestampToTime(createdAt),
+		UpdatedAt:    pgTimestampToTime(updatedAt),
 	}
 }

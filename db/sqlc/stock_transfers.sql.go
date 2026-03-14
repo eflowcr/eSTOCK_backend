@@ -12,9 +12,9 @@ import (
 )
 
 const createStockTransfer = `-- name: CreateStockTransfer :one
-INSERT INTO stock_transfers (transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+INSERT INTO stock_transfers (transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 `
 
 type CreateStockTransferParams struct {
@@ -25,9 +25,25 @@ type CreateStockTransferParams struct {
 	CreatedBy      string      `json:"created_by"`
 	AssignedTo     pgtype.Text `json:"assigned_to"`
 	Notes          pgtype.Text `json:"notes"`
+	DockLocation   pgtype.Text `json:"dock_location"`
 }
 
-func (q *Queries) CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (StockTransfer, error) {
+type CreateStockTransferRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+func (q *Queries) CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (CreateStockTransferRow, error) {
 	row := q.db.QueryRow(ctx, createStockTransfer,
 		arg.TransferNumber,
 		arg.FromLocationID,
@@ -36,8 +52,9 @@ func (q *Queries) CreateStockTransfer(ctx context.Context, arg CreateStockTransf
 		arg.CreatedBy,
 		arg.AssignedTo,
 		arg.Notes,
+		arg.DockLocation,
 	)
-	var i StockTransfer
+	var i CreateStockTransferRow
 	err := row.Scan(
 		&i.ID,
 		&i.TransferNumber,
@@ -47,6 +64,7 @@ func (q *Queries) CreateStockTransfer(ctx context.Context, arg CreateStockTransf
 		&i.CreatedBy,
 		&i.AssignedTo,
 		&i.Notes,
+		&i.DockLocation,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
@@ -117,15 +135,30 @@ func (q *Queries) DeleteStockTransferLinesByTransferID(ctx context.Context, stoc
 }
 
 const getStockTransferByID = `-- name: GetStockTransferByID :one
-SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 FROM stock_transfers
 WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetStockTransferByID(ctx context.Context, id string) (StockTransfer, error) {
+type GetStockTransferByIDRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+func (q *Queries) GetStockTransferByID(ctx context.Context, id string) (GetStockTransferByIDRow, error) {
 	row := q.db.QueryRow(ctx, getStockTransferByID, id)
-	var i StockTransfer
+	var i GetStockTransferByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TransferNumber,
@@ -135,6 +168,7 @@ func (q *Queries) GetStockTransferByID(ctx context.Context, id string) (StockTra
 		&i.CreatedBy,
 		&i.AssignedTo,
 		&i.Notes,
+		&i.DockLocation,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
@@ -143,15 +177,30 @@ func (q *Queries) GetStockTransferByID(ctx context.Context, id string) (StockTra
 }
 
 const getStockTransferByTransferNumber = `-- name: GetStockTransferByTransferNumber :one
-SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 FROM stock_transfers
 WHERE transfer_number = $1
 LIMIT 1
 `
 
-func (q *Queries) GetStockTransferByTransferNumber(ctx context.Context, transferNumber string) (StockTransfer, error) {
+type GetStockTransferByTransferNumberRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+func (q *Queries) GetStockTransferByTransferNumber(ctx context.Context, transferNumber string) (GetStockTransferByTransferNumberRow, error) {
 	row := q.db.QueryRow(ctx, getStockTransferByTransferNumber, transferNumber)
-	var i StockTransfer
+	var i GetStockTransferByTransferNumberRow
 	err := row.Scan(
 		&i.ID,
 		&i.TransferNumber,
@@ -161,6 +210,7 @@ func (q *Queries) GetStockTransferByTransferNumber(ctx context.Context, transfer
 		&i.CreatedBy,
 		&i.AssignedTo,
 		&i.Notes,
+		&i.DockLocation,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
@@ -227,21 +277,36 @@ func (q *Queries) ListStockTransferLinesByTransferID(ctx context.Context, stockT
 
 const listStockTransfers = `-- name: ListStockTransfers :many
 
-SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 FROM stock_transfers
 ORDER BY created_at DESC
 `
 
+type ListStockTransfersRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
 // Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
-func (q *Queries) ListStockTransfers(ctx context.Context) ([]StockTransfer, error) {
+func (q *Queries) ListStockTransfers(ctx context.Context) ([]ListStockTransfersRow, error) {
 	rows, err := q.db.Query(ctx, listStockTransfers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []StockTransfer{}
+	items := []ListStockTransfersRow{}
 	for rows.Next() {
-		var i StockTransfer
+		var i ListStockTransfersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TransferNumber,
@@ -251,6 +316,7 @@ func (q *Queries) ListStockTransfers(ctx context.Context) ([]StockTransfer, erro
 			&i.CreatedBy,
 			&i.AssignedTo,
 			&i.Notes,
+			&i.DockLocation,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CompletedAt,
@@ -266,21 +332,36 @@ func (q *Queries) ListStockTransfers(ctx context.Context) ([]StockTransfer, erro
 }
 
 const listStockTransfersByStatus = `-- name: ListStockTransfersByStatus :many
-SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+SELECT id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 FROM stock_transfers
 WHERE status = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListStockTransfersByStatus(ctx context.Context, status string) ([]StockTransfer, error) {
+type ListStockTransfersByStatusRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+func (q *Queries) ListStockTransfersByStatus(ctx context.Context, status string) ([]ListStockTransfersByStatusRow, error) {
 	rows, err := q.db.Query(ctx, listStockTransfersByStatus, status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []StockTransfer{}
+	items := []ListStockTransfersByStatusRow{}
 	for rows.Next() {
-		var i StockTransfer
+		var i ListStockTransfersByStatusRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TransferNumber,
@@ -290,6 +371,7 @@ func (q *Queries) ListStockTransfersByStatus(ctx context.Context, status string)
 			&i.CreatedBy,
 			&i.AssignedTo,
 			&i.Notes,
+			&i.DockLocation,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CompletedAt,
@@ -306,10 +388,10 @@ func (q *Queries) ListStockTransfersByStatus(ctx context.Context, status string)
 
 const updateStockTransfer = `-- name: UpdateStockTransfer :one
 UPDATE stock_transfers
-SET from_location_id = $2, to_location_id = $3, status = $4, assigned_to = $5, notes = $6, updated_at = CURRENT_TIMESTAMP,
+SET from_location_id = $2, to_location_id = $3, status = $4, assigned_to = $5, notes = $6, dock_location = $7, updated_at = CURRENT_TIMESTAMP,
     completed_at = CASE WHEN $4 = 'completed' AND status != 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END
 WHERE id = $1
-RETURNING id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+RETURNING id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 `
 
 type UpdateStockTransferParams struct {
@@ -319,9 +401,25 @@ type UpdateStockTransferParams struct {
 	Status         string      `json:"status"`
 	AssignedTo     pgtype.Text `json:"assigned_to"`
 	Notes          pgtype.Text `json:"notes"`
+	DockLocation   pgtype.Text `json:"dock_location"`
 }
 
-func (q *Queries) UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (StockTransfer, error) {
+type UpdateStockTransferRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+func (q *Queries) UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (UpdateStockTransferRow, error) {
 	row := q.db.QueryRow(ctx, updateStockTransfer,
 		arg.ID,
 		arg.FromLocationID,
@@ -329,8 +427,9 @@ func (q *Queries) UpdateStockTransfer(ctx context.Context, arg UpdateStockTransf
 		arg.Status,
 		arg.AssignedTo,
 		arg.Notes,
+		arg.DockLocation,
 	)
-	var i StockTransfer
+	var i UpdateStockTransferRow
 	err := row.Scan(
 		&i.ID,
 		&i.TransferNumber,
@@ -340,6 +439,7 @@ func (q *Queries) UpdateStockTransfer(ctx context.Context, arg UpdateStockTransf
 		&i.CreatedBy,
 		&i.AssignedTo,
 		&i.Notes,
+		&i.DockLocation,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
@@ -385,7 +485,7 @@ const updateStockTransferStatus = `-- name: UpdateStockTransferStatus :one
 UPDATE stock_transfers
 SET status = $2, updated_at = CURRENT_TIMESTAMP, completed_at = CASE WHEN $2 = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END
 WHERE id = $1
-RETURNING id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, created_at, updated_at, completed_at
+RETURNING id, transfer_number, from_location_id, to_location_id, status, created_by, assigned_to, notes, dock_location, created_at, updated_at, completed_at
 `
 
 type UpdateStockTransferStatusParams struct {
@@ -393,9 +493,24 @@ type UpdateStockTransferStatusParams struct {
 	Status string `json:"status"`
 }
 
-func (q *Queries) UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (StockTransfer, error) {
+type UpdateStockTransferStatusRow struct {
+	ID             string           `json:"id"`
+	TransferNumber string           `json:"transfer_number"`
+	FromLocationID string           `json:"from_location_id"`
+	ToLocationID   string           `json:"to_location_id"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	AssignedTo     pgtype.Text      `json:"assigned_to"`
+	Notes          pgtype.Text      `json:"notes"`
+	DockLocation   pgtype.Text      `json:"dock_location"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+}
+
+func (q *Queries) UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (UpdateStockTransferStatusRow, error) {
 	row := q.db.QueryRow(ctx, updateStockTransferStatus, arg.ID, arg.Status)
-	var i StockTransfer
+	var i UpdateStockTransferStatusRow
 	err := row.Scan(
 		&i.ID,
 		&i.TransferNumber,
@@ -405,6 +520,7 @@ func (q *Queries) UpdateStockTransferStatus(ctx context.Context, arg UpdateStock
 		&i.CreatedBy,
 		&i.AssignedTo,
 		&i.Notes,
+		&i.DockLocation,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,

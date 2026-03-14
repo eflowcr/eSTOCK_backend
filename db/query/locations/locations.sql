@@ -2,18 +2,18 @@
 -- Schema: db/migrations (locations table)
 
 -- name: ListLocations :many
-SELECT id, location_code, description, zone, type, is_active, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 FROM locations
 ORDER BY created_at ASC;
 
 -- name: GetLocationByID :one
-SELECT id, location_code, description, zone, type, is_active, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 FROM locations
 WHERE id = $1
 LIMIT 1;
 
 -- name: GetLocationByLocationCode :one
-SELECT id, location_code, description, zone, type, is_active, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 FROM locations
 WHERE location_code = $1
 LIMIT 1;
@@ -22,9 +22,9 @@ LIMIT 1;
 SELECT EXISTS(SELECT 1 FROM locations WHERE location_code = $1) AS exists;
 
 -- name: CreateLocation :one
-INSERT INTO locations (location_code, description, zone, type, is_active)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, location_code, description, zone, type, is_active, created_at, updated_at;
+INSERT INTO locations (location_code, description, zone, type, is_active, is_way_out)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at;
 
 -- name: UpdateLocation :one
 UPDATE locations
@@ -34,9 +34,10 @@ SET
     zone = $4,
     type = $5,
     is_active = $6,
+    is_way_out = $7,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, location_code, description, zone, type, is_active, created_at, updated_at;
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at;
 
 -- name: DeleteLocation :exec
 DELETE FROM locations WHERE id = $1;

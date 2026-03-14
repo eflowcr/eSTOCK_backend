@@ -17,14 +17,14 @@ type Querier interface {
 	// Audit logs: who did what, when, how
 	// Schema: db/migrations (000003_audit_logs_schema)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
-	CreateLocation(ctx context.Context, arg CreateLocationParams) (Location, error)
+	CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error)
 	CreateLocationType(ctx context.Context, arg CreateLocationTypeParams) (LocationType, error)
 	CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error)
 	CreatePresentation(ctx context.Context, arg CreatePresentationParams) (Presentation, error)
 	CreatePresentationConversion(ctx context.Context, arg CreatePresentationConversionParams) (PresentationConversion, error)
 	CreatePresentationType(ctx context.Context, arg CreatePresentationTypeParams) (PresentationType, error)
 	CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error)
-	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (StockTransfer, error)
+	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (CreateStockTransferRow, error)
 	CreateStockTransferLine(ctx context.Context, arg CreateStockTransferLineParams) (StockTransferLine, error)
 	DeleteAdjustmentReasonCode(ctx context.Context, id string) error
 	DeleteArticle(ctx context.Context, id string) error
@@ -42,8 +42,8 @@ type Querier interface {
 	GetAdjustmentReasonCodeByID(ctx context.Context, id string) (AdjustmentReasonCode, error)
 	GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error)
 	GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error)
-	GetLocationByID(ctx context.Context, id string) (Location, error)
-	GetLocationByLocationCode(ctx context.Context, locationCode string) (Location, error)
+	GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error)
+	GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error)
 	GetLocationTypeByCode(ctx context.Context, code string) (LocationType, error)
 	GetLocationTypeByID(ctx context.Context, id string) (LocationType, error)
 	GetLotByID(ctx context.Context, id string) (Lot, error)
@@ -59,8 +59,8 @@ type Querier interface {
 	// Serials CRUD for sqlc
 	// Schema: db/migrations (serials table)
 	GetSerialByID(ctx context.Context, id string) (Serial, error)
-	GetStockTransferByID(ctx context.Context, id string) (StockTransfer, error)
-	GetStockTransferByTransferNumber(ctx context.Context, transferNumber string) (StockTransfer, error)
+	GetStockTransferByID(ctx context.Context, id string) (GetStockTransferByIDRow, error)
+	GetStockTransferByTransferNumber(ctx context.Context, transferNumber string) (GetStockTransferByTransferNumberRow, error)
 	GetStockTransferLineByID(ctx context.Context, id string) (StockTransferLine, error)
 	// User preferences: get, update, get-or-create (from backend_template)
 	GetUserPreferences(ctx context.Context, userID string) (UserPreference, error)
@@ -76,7 +76,7 @@ type Querier interface {
 	ListLocationTypesAdmin(ctx context.Context) ([]LocationType, error)
 	// Locations CRUD for sqlc
 	// Schema: db/migrations (locations table)
-	ListLocations(ctx context.Context) ([]Location, error)
+	ListLocations(ctx context.Context) ([]ListLocationsRow, error)
 	// Lots CRUD for sqlc
 	// Schema: db/migrations (lots table)
 	ListLots(ctx context.Context) ([]Lot, error)
@@ -96,15 +96,15 @@ type Querier interface {
 	ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error)
 	ListStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) ([]StockTransferLine, error)
 	// Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
-	ListStockTransfers(ctx context.Context) ([]StockTransfer, error)
-	ListStockTransfersByStatus(ctx context.Context, status string) ([]StockTransfer, error)
+	ListStockTransfers(ctx context.Context) ([]ListStockTransfersRow, error)
+	ListStockTransfersByStatus(ctx context.Context, status string) ([]ListStockTransfersByStatusRow, error)
 	LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error)
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
 	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	UpdateAdjustmentReasonCode(ctx context.Context, arg UpdateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
 	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error)
-	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (Location, error)
+	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)
 	UpdatePresentation(ctx context.Context, arg UpdatePresentationParams) (Presentation, error)
@@ -112,9 +112,9 @@ type Querier interface {
 	UpdatePresentationType(ctx context.Context, arg UpdatePresentationTypeParams) (PresentationType, error)
 	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) (Role, error)
 	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error)
-	UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (StockTransfer, error)
+	UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (UpdateStockTransferRow, error)
 	UpdateStockTransferLine(ctx context.Context, arg UpdateStockTransferLineParams) (StockTransferLine, error)
-	UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (StockTransfer, error)
+	UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (UpdateStockTransferStatusRow, error)
 	UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (UserPreference, error)
 }
 

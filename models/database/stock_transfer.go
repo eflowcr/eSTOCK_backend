@@ -12,6 +12,7 @@ type StockTransfer struct {
 	CreatedBy      string     `json:"created_by"`
 	AssignedTo     *string    `json:"assigned_to,omitempty"`
 	Notes          *string    `json:"notes,omitempty"`
+	DockLocation   *string    `json:"dock_location,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`

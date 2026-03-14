@@ -12,9 +12,9 @@ import (
 )
 
 const createLocation = `-- name: CreateLocation :one
-INSERT INTO locations (location_code, description, zone, type, is_active)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, location_code, description, zone, type, is_active, created_at, updated_at
+INSERT INTO locations (location_code, description, zone, type, is_active, is_way_out)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 `
 
 type CreateLocationParams struct {
@@ -23,17 +23,31 @@ type CreateLocationParams struct {
 	Zone         pgtype.Text `json:"zone"`
 	Type         string      `json:"type"`
 	IsActive     bool        `json:"is_active"`
+	IsWayOut     bool        `json:"is_way_out"`
 }
 
-func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) (Location, error) {
+type CreateLocationRow struct {
+	ID           string           `json:"id"`
+	LocationCode string           `json:"location_code"`
+	Description  pgtype.Text      `json:"description"`
+	Zone         pgtype.Text      `json:"zone"`
+	Type         string           `json:"type"`
+	IsActive     bool             `json:"is_active"`
+	IsWayOut     bool             `json:"is_way_out"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error) {
 	row := q.db.QueryRow(ctx, createLocation,
 		arg.LocationCode,
 		arg.Description,
 		arg.Zone,
 		arg.Type,
 		arg.IsActive,
+		arg.IsWayOut,
 	)
-	var i Location
+	var i CreateLocationRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -41,6 +55,7 @@ func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) 
 		&i.Zone,
 		&i.Type,
 		&i.IsActive,
+		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -57,15 +72,27 @@ func (q *Queries) DeleteLocation(ctx context.Context, id string) error {
 }
 
 const getLocationByID = `-- name: GetLocationByID :one
-SELECT id, location_code, description, zone, type, is_active, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 FROM locations
 WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetLocationByID(ctx context.Context, id string) (Location, error) {
+type GetLocationByIDRow struct {
+	ID           string           `json:"id"`
+	LocationCode string           `json:"location_code"`
+	Description  pgtype.Text      `json:"description"`
+	Zone         pgtype.Text      `json:"zone"`
+	Type         string           `json:"type"`
+	IsActive     bool             `json:"is_active"`
+	IsWayOut     bool             `json:"is_way_out"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error) {
 	row := q.db.QueryRow(ctx, getLocationByID, id)
-	var i Location
+	var i GetLocationByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -73,6 +100,7 @@ func (q *Queries) GetLocationByID(ctx context.Context, id string) (Location, err
 		&i.Zone,
 		&i.Type,
 		&i.IsActive,
+		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -80,15 +108,27 @@ func (q *Queries) GetLocationByID(ctx context.Context, id string) (Location, err
 }
 
 const getLocationByLocationCode = `-- name: GetLocationByLocationCode :one
-SELECT id, location_code, description, zone, type, is_active, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 FROM locations
 WHERE location_code = $1
 LIMIT 1
 `
 
-func (q *Queries) GetLocationByLocationCode(ctx context.Context, locationCode string) (Location, error) {
+type GetLocationByLocationCodeRow struct {
+	ID           string           `json:"id"`
+	LocationCode string           `json:"location_code"`
+	Description  pgtype.Text      `json:"description"`
+	Zone         pgtype.Text      `json:"zone"`
+	Type         string           `json:"type"`
+	IsActive     bool             `json:"is_active"`
+	IsWayOut     bool             `json:"is_way_out"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error) {
 	row := q.db.QueryRow(ctx, getLocationByLocationCode, locationCode)
-	var i Location
+	var i GetLocationByLocationCodeRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -96,6 +136,7 @@ func (q *Queries) GetLocationByLocationCode(ctx context.Context, locationCode st
 		&i.Zone,
 		&i.Type,
 		&i.IsActive,
+		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -104,22 +145,34 @@ func (q *Queries) GetLocationByLocationCode(ctx context.Context, locationCode st
 
 const listLocations = `-- name: ListLocations :many
 
-SELECT id, location_code, description, zone, type, is_active, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 FROM locations
 ORDER BY created_at ASC
 `
 
+type ListLocationsRow struct {
+	ID           string           `json:"id"`
+	LocationCode string           `json:"location_code"`
+	Description  pgtype.Text      `json:"description"`
+	Zone         pgtype.Text      `json:"zone"`
+	Type         string           `json:"type"`
+	IsActive     bool             `json:"is_active"`
+	IsWayOut     bool             `json:"is_way_out"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
 // Locations CRUD for sqlc
 // Schema: db/migrations (locations table)
-func (q *Queries) ListLocations(ctx context.Context) ([]Location, error) {
+func (q *Queries) ListLocations(ctx context.Context) ([]ListLocationsRow, error) {
 	rows, err := q.db.Query(ctx, listLocations)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Location{}
+	items := []ListLocationsRow{}
 	for rows.Next() {
-		var i Location
+		var i ListLocationsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.LocationCode,
@@ -127,6 +180,7 @@ func (q *Queries) ListLocations(ctx context.Context) ([]Location, error) {
 			&i.Zone,
 			&i.Type,
 			&i.IsActive,
+			&i.IsWayOut,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -159,9 +213,10 @@ SET
     zone = $4,
     type = $5,
     is_active = $6,
+    is_way_out = $7,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, location_code, description, zone, type, is_active, created_at, updated_at
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
 `
 
 type UpdateLocationParams struct {
@@ -171,9 +226,22 @@ type UpdateLocationParams struct {
 	Zone         pgtype.Text `json:"zone"`
 	Type         string      `json:"type"`
 	IsActive     bool        `json:"is_active"`
+	IsWayOut     bool        `json:"is_way_out"`
 }
 
-func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) (Location, error) {
+type UpdateLocationRow struct {
+	ID           string           `json:"id"`
+	LocationCode string           `json:"location_code"`
+	Description  pgtype.Text      `json:"description"`
+	Zone         pgtype.Text      `json:"zone"`
+	Type         string           `json:"type"`
+	IsActive     bool             `json:"is_active"`
+	IsWayOut     bool             `json:"is_way_out"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error) {
 	row := q.db.QueryRow(ctx, updateLocation,
 		arg.ID,
 		arg.LocationCode,
@@ -181,8 +249,9 @@ func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) 
 		arg.Zone,
 		arg.Type,
 		arg.IsActive,
+		arg.IsWayOut,
 	)
-	var i Location
+	var i UpdateLocationRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -190,6 +259,7 @@ func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) 
 		&i.Zone,
 		&i.Type,
 		&i.IsActive,
+		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

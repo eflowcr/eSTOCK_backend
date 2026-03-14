@@ -89,6 +89,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 		Zone:         input.Zone,
 		Type:         input.Type,
 		IsActive:     true,
+		IsWayOut:     input.IsWayOut,
 		CreatedAt:    tools.GetCurrentTime(),
 		UpdatedAt:    tools.GetCurrentTime(),
 	}

@@ -30,19 +30,24 @@ var _ ports.StockTransfersRepository = (*StockTransfersRepositorySQLC)(nil)
 
 func (r *StockTransfersRepositorySQLC) ListStockTransfers(status string) ([]database.StockTransfer, *responses.InternalResponse) {
 	ctx := context.Background()
-	var list []sqlc.StockTransfer
-	var err error
 	if status != "" {
-		list, err = r.queries.ListStockTransfersByStatus(ctx, status)
-	} else {
-		list, err = r.queries.ListStockTransfers(ctx)
+		list, err := r.queries.ListStockTransfersByStatus(ctx, status)
+		if err != nil {
+			return nil, &responses.InternalResponse{Error: err, Message: "Error listing stock transfers", Handled: false}
+		}
+		out := make([]database.StockTransfer, len(list))
+		for i, row := range list {
+			out[i] = stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
+		}
+		return out, nil
 	}
+	list, err := r.queries.ListStockTransfers(ctx)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error listing stock transfers", Handled: false}
 	}
 	out := make([]database.StockTransfer, len(list))
 	for i, row := range list {
-		out[i] = sqlcTransferToDatabase(row)
+		out[i] = stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
 	}
 	return out, nil
 }
@@ -56,7 +61,7 @@ func (r *StockTransfersRepositorySQLC) GetStockTransferByID(id string) (*databas
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error getting stock transfer", Handled: false}
 	}
-	t := sqlcTransferToDatabase(row)
+	t := stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
 	return &t, nil
 }
 
@@ -69,7 +74,7 @@ func (r *StockTransfersRepositorySQLC) GetStockTransferByTransferNumber(transfer
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error getting stock transfer", Handled: false}
 	}
-	t := sqlcTransferToDatabase(row)
+	t := stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
 	return &t, nil
 }
 
@@ -91,12 +96,13 @@ func (r *StockTransfersRepositorySQLC) CreateStockTransfer(req *requests.StockTr
 		CreatedBy:      createdBy,
 		AssignedTo:     textToPgType(req.AssignedTo),
 		Notes:          textToPgType(req.Notes),
+		DockLocation:   textToPgType(req.DockLocation),
 	}
 	row, err := r.queries.CreateStockTransfer(ctx, arg)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error creating stock transfer", Handled: false}
 	}
-	transfer := sqlcTransferToDatabase(row)
+	transfer := stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
 
 	for _, line := range req.Lines {
 		lineArg := sqlc.CreateStockTransferLineParams{
@@ -135,12 +141,13 @@ func (r *StockTransfersRepositorySQLC) UpdateStockTransfer(id string, req *reque
 		Status:         req.Status,
 		AssignedTo:     textToPgType(req.AssignedTo),
 		Notes:          textToPgType(req.Notes),
+		DockLocation:   textToPgType(req.DockLocation),
 	}
 	row, err := r.queries.UpdateStockTransfer(ctx, arg)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error updating stock transfer", Handled: false}
 	}
-	t := sqlcTransferToDatabase(row)
+	t := stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
 	return &t, nil
 }
 
@@ -153,7 +160,7 @@ func (r *StockTransfersRepositorySQLC) UpdateStockTransferStatus(id string, stat
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error updating stock transfer status", Handled: false}
 	}
-	t := sqlcTransferToDatabase(row)
+	t := stockTransferRowToDatabase(row.ID, row.TransferNumber, row.FromLocationID, row.ToLocationID, row.Status, row.CreatedBy, row.AssignedTo, row.Notes, row.DockLocation, row.CreatedAt, row.UpdatedAt, row.CompletedAt)
 	return &t, nil
 }
 
@@ -236,19 +243,20 @@ func textToPgType(s *string) pgtype.Text {
 	return t
 }
 
-func sqlcTransferToDatabase(row sqlc.StockTransfer) database.StockTransfer {
+func stockTransferRowToDatabase(id, transferNumber, fromLocationID, toLocationID, status, createdBy string, assignedTo, notes, dockLocation pgtype.Text, createdAt, updatedAt, completedAt pgtype.Timestamp) database.StockTransfer {
 	return database.StockTransfer{
-		ID:             row.ID,
-		TransferNumber: row.TransferNumber,
-		FromLocationID: row.FromLocationID,
-		ToLocationID:   row.ToLocationID,
-		Status:         row.Status,
-		CreatedBy:      row.CreatedBy,
-		AssignedTo:     pgTextToPtrString(row.AssignedTo),
-		Notes:          pgTextToPtrString(row.Notes),
-		CreatedAt:      pgTimestampToTime(row.CreatedAt),
-		UpdatedAt:      pgTimestampToTime(row.UpdatedAt),
-		CompletedAt:    pgTimestampToPtrTime(row.CompletedAt),
+		ID:             id,
+		TransferNumber: transferNumber,
+		FromLocationID: fromLocationID,
+		ToLocationID:   toLocationID,
+		Status:         status,
+		CreatedBy:      createdBy,
+		AssignedTo:     pgTextToPtrString(assignedTo),
+		Notes:          pgTextToPtrString(notes),
+		DockLocation:   pgTextToPtrString(dockLocation),
+		CreatedAt:      pgTimestampToTime(createdAt),
+		UpdatedAt:      pgTimestampToTime(updatedAt),
+		CompletedAt:    pgTimestampToPtrTime(completedAt),
 	}
 }
 

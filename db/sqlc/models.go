@@ -134,6 +134,8 @@ type Location struct {
 	IsActive     bool             `json:"is_active"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	// When true, location is used as dock, loading bay, or exit point in WMS.
+	IsWayOut bool `json:"is_way_out"`
 }
 
 // Location type catalog (Pallet, Shelf, Bin, etc.); used by locations.type as code reference
@@ -304,6 +306,8 @@ type StockTransfer struct {
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 	CompletedAt    pgtype.Timestamp `json:"completed_at"`
+	// Optional dock or loading bay at destination for receiving (WMS).
+	DockLocation pgtype.Text `json:"dock_location"`
 }
 
 type StockTransferLine struct {

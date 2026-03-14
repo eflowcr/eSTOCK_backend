@@ -9,6 +9,7 @@ type Location struct {
 	Zone         *string   `gorm:"column:zone" json:"zone"`
 	Type         string    `gorm:"column:type" json:"type"`
 	IsActive     bool      `gorm:"column:is_active" json:"is_active"`
+	IsWayOut     bool      `gorm:"column:is_way_out" json:"is_way_out"`
 	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
