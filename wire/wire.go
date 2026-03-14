@@ -109,16 +109,19 @@ func NewLocations(db *gorm.DB, pool *pgxpool.Pool) (ports.LocationsRepository, *
 	return r, services.NewLocationsService(r)
 }
 
-// NewLots builds LotsRepository and LotsService. When pool is non-nil, uses LotsRepositorySQLC.
+// NewLots builds LotsRepository and LotsService. When pool is non-nil, uses LotsRepositorySQLC and
+// injects ArticlesRepository so GetLotsBySKU returns lots in rotation order (FIFO/FEFO) for picking/receiving.
 func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.LotsService) {
 	var r ports.LotsRepository
+	var articlesRepo ports.ArticlesRepository
 	if pool != nil {
 		queries := sqlc.New(pool)
 		r = repositories.NewLotsRepositorySQLC(queries)
+		articlesRepo, _ = NewArticles(db, pool)
 	} else {
 		r = &repositories.LotsRepository{DB: db}
 	}
-	return r, services.NewLotsService(r)
+	return r, services.NewLotsService(r, articlesRepo)
 }
 
 func NewPickingTask(db *gorm.DB) (ports.PickingTaskRepository, *services.PickingTaskService) {
