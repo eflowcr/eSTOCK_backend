@@ -2,7 +2,7 @@ name: Build & Push Backend (Dev)
 
 on:
   push:
-    branches: [develop, dev]
+    branches: [development, develop, dev]
   workflow_dispatch:
 
 env:
