@@ -39,10 +39,10 @@ jobs:
 
       - name: Fetch runtime secrets from VPS Manager
         run: |
-          echo "Fetching eSTOCK secrets from VPS Manager..."
+          echo "Fetching eSTOCK backend secrets from VPS Manager..."
           curl -sf \
             -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
-            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/service/secrets?env=production&format=env" \
+            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/service/secrets?env=dev&format=env" \
             >> $GITHUB_ENV
           echo "✅ Secrets loaded into environment"
 
@@ -55,6 +55,16 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ github.sha }}
+
+      - name: Deploy to k3s
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            kubectl rollout restart deployment/estock-backend -n estock-dev
+            kubectl rollout status deployment/estock-backend -n estock-dev --timeout=120s
 
       - name: Verify
         run: |
