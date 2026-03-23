@@ -27,7 +27,7 @@ jobs:
         with:
           buildkitd-config-inline: |
             [registry."${{ secrets.REGISTRY_HOST }}"]
-              http = true
+              http = false
               insecure = true
 
       - name: Login to VPS Registry
