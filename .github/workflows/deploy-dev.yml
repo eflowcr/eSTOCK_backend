@@ -37,6 +37,15 @@ jobs:
             --password-stdin \
             "${{ secrets.REGISTRY_HOST }}"
 
+      - name: Fetch runtime secrets from VPS Manager
+        run: |
+          echo "Fetching eSTOCK secrets from VPS Manager..."
+          curl -sf \
+            -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
+            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/service/secrets?env=production&format=env" \
+            >> $GITHUB_ENV
+          echo "✅ Secrets loaded into environment"
+
       - name: Build and Push
         uses: docker/build-push-action@v5
         with:
@@ -46,3 +55,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ github.sha }}
+
+      - name: Verify
+        run: |
+          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest pushed"
+          echo "Branch: ${{ github.ref_name }} | SHA: ${{ github.sha }}"
