@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ${{ secrets.REGISTRY_HOST }}
   IMAGE_NAME: estock-backend
 
 jobs:
@@ -16,35 +15,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fetch CI secrets from VPS Manager
+        run: |
+          echo "Fetching CI secrets from VPS Manager (env: ci)..."
+          SECRETS=$(curl -sf \
+            -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
+            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/service/secrets?env=ci&format=env")
+
+          echo "$SECRETS" >> $GITHUB_ENV
+
+          # Fetch runtime backend secrets (env: dev)
+          curl -sf \
+            -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
+            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/service/secrets?env=dev&format=env" \
+            >> $GITHUB_ENV
+
+          echo "✅ Secrets loaded"
+
       - name: Configure Docker for insecure registry
         run: |
           sudo mkdir -p /etc/docker
-          echo '{"insecure-registries": ["${{ secrets.REGISTRY_HOST }}"]}' | sudo tee /etc/docker/daemon.json
+          echo "{\"insecure-registries\": [\"${REGISTRY_HOST}\"]}" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           buildkitd-config-inline: |
-            [registry."${{ secrets.REGISTRY_HOST }}"]
+            [registry."${{ env.REGISTRY_HOST }}"]
               http = false
               insecure = true
 
       - name: Login to VPS Registry
         run: |
-          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login \
-            --username "${{ secrets.REGISTRY_USER }}" \
+          echo "${REGISTRY_PASSWORD}" | docker login \
+            --username "${REGISTRY_USER}" \
             --password-stdin \
-            "${{ secrets.REGISTRY_HOST }}"
-
-      - name: Fetch runtime secrets from VPS Manager
-        run: |
-          echo "Fetching eSTOCK backend secrets from VPS Manager..."
-          curl -sf \
-            -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
-            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/service/secrets?env=dev&format=env" \
-            >> $GITHUB_ENV
-          echo "✅ Secrets loaded into environment"
+            "${REGISTRY_HOST}"
 
       - name: Build and Push
         uses: docker/build-push-action@v5
@@ -53,18 +60,18 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ github.sha }}
+            ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:dev-latest
+            ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:dev-${{ github.sha }}
 
       - name: Deploy to k3s
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: eprac
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_SSH_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: estock-backend
 
       - name: Verify
         run: |
-          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest pushed"
+          echo "✅ ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:dev-latest pushed"
           echo "Branch: ${{ github.ref_name }} | SHA: ${{ github.sha }}"
