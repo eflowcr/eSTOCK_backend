@@ -71,6 +71,17 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: estock-backend
 
+      - name: Notify VPS Manager — update all client stacks
+        run: |
+          echo "Triggering update-all for client stacks..."
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"image_tag\":\"dev-${{ github.sha }}\"}" \
+            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/stacks/update" \
+            && echo "✅ Client stacks update triggered" \
+            || echo "⚠️  No active client stacks (or update skipped)"
+
       - name: Verify
         run: |
           echo "✅ ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:dev-latest pushed"
