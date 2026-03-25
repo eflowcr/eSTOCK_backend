@@ -34,6 +34,7 @@ func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 			route.GET("/table", read, tools.GenericListHandler(pool, cfg))
 			route.GET("/table/export", read, tools.GenericExportHandler(pool, cfg, "articles.csv"))
 		}
+		route.GET("/import/template", read, articlesController.DownloadImportTemplate)
 		route.GET("/:id", read, articlesController.GetArticleByID)
 		route.GET("/sku/:sku", read, articlesController.GetBySku)
 		route.POST("/", create, articlesController.CreateArticle)

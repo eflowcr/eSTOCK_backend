@@ -192,6 +192,18 @@ func (c *ArticlesController) ExportArticlesToExcel(ctx *gin.Context) {
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
 }
 
+func (c *ArticlesController) DownloadImportTemplate(ctx *gin.Context) {
+	fileBytes, response := c.Service.GenerateImportTemplate()
+	if response != nil {
+		writeErrorResponse(ctx, "DownloadImportTemplate", "download_articles_import_template", response)
+		return
+	}
+
+	ctx.Header("Content-Description", "File Transfer")
+	ctx.Header("Content-Disposition", `attachment; filename="ImportArticles.xlsx"`)
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
+}
+
 func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "DeleteArticle", "delete_article", "ID de artículo no válido")
 	if !ok {

@@ -219,6 +219,14 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		maxQtyStr := strings.TrimSpace(row[8])
 		minQtyStr := strings.TrimSpace(row[9])
 
+		rotationStrategy := ""
+		if len(row) > 10 {
+			rs := strings.ToLower(strings.TrimSpace(row[10]))
+			if rs == "fifo" || rs == "fefo" {
+				rotationStrategy = rs
+			}
+		}
+
 		if sku == "" || name == "" || presentation == "" {
 			continue
 		}
@@ -250,17 +258,18 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		}
 
 		article := &requests.Article{
-			SKU:             sku,
-			Name:            name,
-			Description:     descPtr,
-			UnitPrice:       unitPrice,
-			Presentation:    presentation,
-			TrackByLot:      trackByLot,
-			TrackBySerial:   trackBySerial,
-			TrackExpiration: trackExpiration,
-			MinQuantity:     minQty,
-			MaxQuantity:     maxQty,
-			ImageURL:        nil,
+			SKU:              sku,
+			Name:             name,
+			Description:      descPtr,
+			UnitPrice:        unitPrice,
+			Presentation:     presentation,
+			TrackByLot:       trackByLot,
+			TrackBySerial:    trackBySerial,
+			TrackExpiration:  trackExpiration,
+			RotationStrategy: rotationStrategy,
+			MinQuantity:      minQty,
+			MaxQuantity:      maxQty,
+			ImageURL:         nil,
 		}
 
 		resp := r.CreateArticle(article)
@@ -334,6 +343,46 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 		}
 	}
 
+	return buf.Bytes(), nil
+}
+
+func (r *ArticlesRepository) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+	var presentations []string
+	r.DB.Table("articles").Distinct("presentation").Pluck("presentation", &presentations)
+	return buildImportTemplate(presentations)
+}
+
+func buildImportTemplate(presentations []string) ([]byte, *responses.InternalResponse) {
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	f.SetSheetName("Sheet1", sheet)
+
+	headers := []string{
+		"SKU", "Nombre", "Descripción", "Precio", "Presentación",
+		"Rastrear por lote", "Rastrear por serie", "Rastrear por expiración",
+		"Cantidad Máxima", "Cantidad Mínima", "Estrategia de Rotación",
+	}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
+		f.SetCellValue(sheet, cell, h)
+	}
+
+	if err := applyArticleTemplateValidations(f, sheet, presentations); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al generar la plantilla de importación",
+			Handled: false,
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al escribir la plantilla de importación",
+			Handled: false,
+		}
+	}
 	return buf.Bytes(), nil
 }
 

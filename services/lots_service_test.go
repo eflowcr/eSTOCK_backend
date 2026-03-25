@@ -95,6 +95,11 @@ func (m *mockArticlesRepoForLots) ImportArticlesFromExcel(fileBytes []byte) ([]s
 func (m *mockArticlesRepoForLots) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
 	return nil, nil
 }
+
+func (m *mockArticlesRepoForLots) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+	return nil, nil
+}
+
 func (m *mockArticlesRepoForLots) DeleteArticle(id string) *responses.InternalResponse {
 	return nil
 }

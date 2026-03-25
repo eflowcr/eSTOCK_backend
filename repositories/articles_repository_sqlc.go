@@ -554,3 +554,15 @@ func pgTimestampToPtrTime(t pgtype.Timestamp) *time.Time {
 	return &t.Time
 }
 
+
+func (r *ArticlesRepositorySQLC) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+	articles, errResp := r.GetAllArticles()
+	if errResp != nil {
+		return nil, errResp
+	}
+	var presentations []string
+	for _, a := range articles {
+		presentations = append(presentations, a.Presentation)
+	}
+	return buildImportTemplate(presentations)
+}

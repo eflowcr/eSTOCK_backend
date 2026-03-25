@@ -109,6 +109,10 @@ func (m *mockArticlesRepo) ExportArticlesToExcel() ([]byte, *responses.InternalR
 	return nil, nil
 }
 
+func (m *mockArticlesRepo) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+	return nil, nil
+}
+
 func (m *mockArticlesRepo) DeleteArticle(id string) *responses.InternalResponse {
 	if m.deleteErr != nil {
 		return m.deleteErr
