@@ -213,9 +213,9 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		description := strings.TrimSpace(row[2])
 		priceStr := strings.TrimSpace(row[3])
 		presentation := strings.TrimSpace(row[4])
-		trackByLot := strings.TrimSpace(row[5]) == "Si"
-		trackBySerial := strings.TrimSpace(row[6]) == "Si"
-		trackExpiration := strings.TrimSpace(row[7]) == "Si"
+		trackByLot := parseBoolCell(strings.TrimSpace(row[5]))
+		trackBySerial := parseBoolCell(strings.TrimSpace(row[6]))
+		trackExpiration := parseBoolCell(strings.TrimSpace(row[7]))
 		maxQtyStr := strings.TrimSpace(row[8])
 		minQtyStr := strings.TrimSpace(row[9])
 
@@ -290,9 +290,9 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 	f.SetSheetName("Sheet1", sheet)
 
 	headers := []string{
-		"ID", "Nombre", "Descripción", "Precio", "Presentación",
+		"SKU", "Nombre", "Descripción", "Precio", "Presentación",
 		"Rastrear por lote", "Rastrear por serie", "Rastrear por expiración",
-		"Cantidad Máxima", "Cantidad Mínima",
+		"Cantidad Máxima", "Cantidad Mínima", "Activo",
 	}
 
 	for i, h := range headers {
@@ -302,8 +302,12 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 
 	for idx, article := range articles {
 		row := idx + 7
+		isActive := false
+		if article.IsActive != nil {
+			isActive = *article.IsActive
+		}
 		values := []interface{}{
-			article.ID,
+			article.SKU,
 			article.Name,
 			getOrEmpty(article.Description),
 			getOrEmpty(article.UnitPrice),
@@ -313,6 +317,7 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 			boolToSiNo(article.TrackExpiration),
 			getOrEmpty(article.MaxQuantity),
 			getOrEmpty(article.MinQuantity),
+			boolToSiNo(isActive),
 		}
 		for col, val := range values {
 			cell, _ := excelize.CoordinatesToCellName(col+1, row)
@@ -337,6 +342,11 @@ func boolToSiNo(value bool) string {
 		return "Sí"
 	}
 	return "No"
+}
+
+func parseBoolCell(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == "si" || s == "sí" || s == "yes" || s == "true" || s == "1"
 }
 
 func (r *ArticlesRepository) DeleteArticle(id string) *responses.InternalResponse {
