@@ -93,8 +93,8 @@ func (s *ArticlesService) ExportArticlesToExcel() ([]byte, *responses.InternalRe
 	return s.Repository.ExportArticlesToExcel()
 }
 
-func (s *ArticlesService) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
-	return s.Repository.GenerateImportTemplate()
+func (s *ArticlesService) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.GenerateImportTemplate(language)
 }
 
 func (s *ArticlesService) DeleteArticle(id string) *responses.InternalResponse {

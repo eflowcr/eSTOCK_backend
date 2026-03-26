@@ -18,6 +18,6 @@ type ArticlesRepository interface {
 	GetSerialsBySKU(sku string) ([]database.Serial, error)
 	ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse)
 	ExportArticlesToExcel() ([]byte, *responses.InternalResponse)
-	GenerateImportTemplate() ([]byte, *responses.InternalResponse)
+	GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse)
 	DeleteArticle(id string) *responses.InternalResponse
 }

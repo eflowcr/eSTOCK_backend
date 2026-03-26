@@ -555,7 +555,7 @@ func pgTimestampToPtrTime(t pgtype.Timestamp) *time.Time {
 }
 
 
-func (r *ArticlesRepositorySQLC) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
 	articles, errResp := r.GetAllArticles()
 	if errResp != nil {
 		return nil, errResp
@@ -564,5 +564,5 @@ func (r *ArticlesRepositorySQLC) GenerateImportTemplate() ([]byte, *responses.In
 	for _, a := range articles {
 		presentations = append(presentations, a.Presentation)
 	}
-	return buildImportTemplate(presentations)
+	return buildImportTemplate(presentations, language)
 }

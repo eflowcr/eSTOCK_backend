@@ -109,7 +109,7 @@ func (m *mockArticlesRepo) ExportArticlesToExcel() ([]byte, *responses.InternalR
 	return nil, nil
 }
 
-func (m *mockArticlesRepo) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+func (m *mockArticlesRepo) GenerateImportTemplate(_ string) ([]byte, *responses.InternalResponse) {
 	return nil, nil
 }
 

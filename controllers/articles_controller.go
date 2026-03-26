@@ -6,20 +6,23 @@ import (
 
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
 )
 
 type ArticlesController struct {
-	Service    services.ArticlesService
-	AuditService *services.AuditService
+	Service       services.ArticlesService
+	AuditService  *services.AuditService
+	UserPrefsRepo ports.UserPreferencesRepository
 }
 
-func NewArticlesController(service services.ArticlesService, auditSvc *services.AuditService) *ArticlesController {
+func NewArticlesController(service services.ArticlesService, auditSvc *services.AuditService, userPrefsRepo ports.UserPreferencesRepository) *ArticlesController {
 	return &ArticlesController{
-		Service:      service,
-		AuditService: auditSvc,
+		Service:       service,
+		AuditService:  auditSvc,
+		UserPrefsRepo: userPrefsRepo,
 	}
 }
 
@@ -193,7 +196,15 @@ func (c *ArticlesController) ExportArticlesToExcel(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) DownloadImportTemplate(ctx *gin.Context) {
-	fileBytes, response := c.Service.GenerateImportTemplate()
+	lang := "es"
+	uid := ctx.GetString(tools.ContextKeyUserID)
+	if uid != "" && c.UserPrefsRepo != nil {
+		if prefs, err := c.UserPrefsRepo.GetOrCreateUserPreferences(ctx.Request.Context(), uid); err == nil && prefs != nil && prefs.Language != "" {
+			lang = prefs.Language
+		}
+	}
+
+	fileBytes, response := c.Service.GenerateImportTemplate(lang)
 	if response != nil {
 		writeErrorResponse(ctx, "DownloadImportTemplate", "download_articles_import_template", response)
 		return

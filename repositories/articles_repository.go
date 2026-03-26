@@ -346,31 +346,39 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 	return buf.Bytes(), nil
 }
 
-func (r *ArticlesRepository) GenerateImportTemplate() ([]byte, *responses.InternalResponse) {
+func (r *ArticlesRepository) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
 	var presentations []string
 	r.DB.Table("articles").Distinct("presentation").Pluck("presentation", &presentations)
-	return buildImportTemplate(presentations)
+	return buildImportTemplate(presentations, language)
 }
 
-func buildImportTemplate(presentations []string) ([]byte, *responses.InternalResponse) {
+func buildImportTemplate(presentations []string, language string) ([]byte, *responses.InternalResponse) {
+	l := getLang(language)
+	dataSheet := l["sheet_data"]
+
 	f := excelize.NewFile()
-	sheet := "Sheet1"
-	f.SetSheetName("Sheet1", sheet)
+	f.SetSheetName("Sheet1", dataSheet)
 
-	headers := []string{
-		"SKU", "Nombre", "Descripción", "Precio", "Presentación",
-		"Rastrear por lote", "Rastrear por serie", "Rastrear por expiración",
-		"Cantidad Máxima", "Cantidad Mínima", "Estrategia de Rotación",
-	}
-	for i, h := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 6)
-		f.SetCellValue(sheet, cell, h)
-	}
-
-	if err := applyArticleTemplateValidations(f, sheet, presentations); err != nil {
+	if err := applyArticleTemplateHeader(f, dataSheet, language); err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Error al generar la plantilla de importación",
+			Message: "Error al generar el encabezado de la plantilla",
+			Handled: false,
+		}
+	}
+
+	if err := applyArticleTemplateColumnHeaders(f, dataSheet, language); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al generar los encabezados de columna",
+			Handled: false,
+		}
+	}
+
+	if err := applyArticleTemplateValidations(f, dataSheet, presentations, language); err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al aplicar validaciones a la plantilla",
 			Handled: false,
 		}
 	}

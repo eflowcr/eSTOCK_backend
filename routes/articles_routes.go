@@ -18,7 +18,8 @@ var _ ports.ArticlesRepository = (*repositories.ArticlesRepositorySQLC)(nil)
 
 func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, auditSvc *services.AuditService, rolesRepo ports.RolesRepository) {
 	_, articlesService := wire.NewArticles(db, pool)
-	articlesController := controllers.NewArticlesController(*articlesService, auditSvc)
+	userPrefsRepo := wire.NewUserPreferences(pool)
+	articlesController := controllers.NewArticlesController(*articlesService, auditSvc, userPrefsRepo)
 
 	route := router.Group("/articles")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
