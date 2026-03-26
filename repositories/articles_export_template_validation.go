@@ -271,21 +271,20 @@ func applyArticleTemplateHeader(f *excelize.File, dataSheet string, language str
 		}
 	}
 
-	// Embed logo — logo is 1081×249px, scale to fit A1:D4 area (~4 cols × 4 rows)
+	// Embed logo — original 1081×249px, scale down to fit A1:D4
 	if len(assets.LogoEPRAC) > 0 {
 		if err := f.AddPictureFromBytes(dataSheet, "A1", &excelize.Picture{
 			Extension:  ".png",
 			File:       assets.LogoEPRAC,
 			InsertType: excelize.PictureInsertTypePlaceOverCells,
 			Format: &excelize.GraphicOptions{
-				OffsetX:         8,
-				OffsetY:         8,
-				ScaleX:          0.38,
-				ScaleY:          0.38,
+				OffsetX:         10,
+				OffsetY:         18,
+				ScaleX:          0.20,
+				ScaleY:          0.20,
 				LockAspectRatio: true,
 			},
 		}); err != nil {
-			// non-fatal: template still works without logo
 			_ = err
 		}
 	}
