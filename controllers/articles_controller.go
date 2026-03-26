@@ -187,6 +187,26 @@ func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 	}, false, "")
 }
 
+func (c *ArticlesController) ValidateImportRows(ctx *gin.Context) {
+	var rows []requests.ArticleImportRow
+	if err := ctx.ShouldBindJSON(&rows); err != nil {
+		tools.ResponseBadRequest(ctx, "ValidateImportRows", "JSON inválido", "validate_import_rows")
+		return
+	}
+	if len(rows) == 0 {
+		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_import_rows")
+		return
+	}
+	results, resp := c.Service.ValidateImportRows(rows)
+	if resp != nil {
+		writeErrorResponse(ctx, "ValidateImportRows", "validate_import_rows", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "ValidateImportRows", "Validación completada", "validate_import_rows", gin.H{
+		"results": results,
+	}, false, "")
+}
+
 func (c *ArticlesController) ImportArticlesFromJSON(ctx *gin.Context) {
 	var rows []requests.ArticleImportRow
 	if err := ctx.ShouldBindJSON(&rows); err != nil {

@@ -117,6 +117,10 @@ func (m *mockArticlesRepo) GenerateImportTemplate(_ string) ([]byte, *responses.
 	return nil, nil
 }
 
+func (m *mockArticlesRepo) ValidateImportRows(_ []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	return nil, nil
+}
+
 func (m *mockArticlesRepo) DeleteArticle(id string) *responses.InternalResponse {
 	if m.deleteErr != nil {
 		return m.deleteErr

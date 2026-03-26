@@ -557,6 +557,85 @@ func pgTimestampToPtrTime(t pgtype.Timestamp) *time.Time {
 }
 
 
+func (r *ArticlesRepositorySQLC) ValidateImportRows(rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	results := make([]responses.ArticleValidationResult, 0, len(rows))
+	seenSKUs := make(map[string]bool)
+
+	// Load all articles once for in-memory similarity check
+	allArticles, errResp := r.GetAllArticles()
+	if errResp != nil {
+		return nil, errResp
+	}
+
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		name := strings.TrimSpace(row.Name)
+		result := responses.ArticleValidationResult{RowIndex: i, Row: row}
+
+		// Field validation
+		if sku == "" || name == "" || strings.TrimSpace(row.Presentation) == "" {
+			result.Status = responses.ArticleStatusError
+			result.FieldErrors = map[string]string{}
+			if sku == "" { result.FieldErrors["sku"] = "SKU requerido" }
+			if name == "" { result.FieldErrors["name"] = "Nombre requerido" }
+			if strings.TrimSpace(row.Presentation) == "" { result.FieldErrors["presentation"] = "Presentación requerida" }
+			results = append(results, result)
+			continue
+		}
+
+		// Duplicate within batch
+		skuKey := strings.ToLower(sku)
+		if seenSKUs[skuKey] {
+			result.Status = responses.ArticleStatusDuplicate
+			results = append(results, result)
+			continue
+		}
+		seenSKUs[skuKey] = true
+
+		// Exact SKU match
+		ctx := context.Background()
+		existing, err := r.queries.GetArticleBySku(ctx, sku)
+		if err == nil {
+			isActive := false
+			if existing.IsActive.Valid { isActive = existing.IsActive.Bool }
+			result.Status = responses.ArticleStatusExists
+			result.ExistingArticle = &responses.ArticleValidationMatch{
+				ID: existing.ID, SKU: existing.Sku, Name: existing.Name,
+				Presentation: existing.Presentation, IsActive: isActive,
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// In-memory similarity check
+		keyword := strings.ToLower(name)
+		if len(keyword) > 20 { keyword = keyword[:20] }
+		var matches []responses.ArticleValidationMatch
+		for _, a := range allArticles {
+			if strings.ToLower(a.SKU) == strings.ToLower(sku) { continue }
+			if strings.Contains(strings.ToLower(a.Name), keyword) {
+				isActive := false
+				if a.IsActive != nil { isActive = *a.IsActive }
+				matches = append(matches, responses.ArticleValidationMatch{
+					ID: a.ID, SKU: a.SKU, Name: a.Name,
+					Presentation: a.Presentation, IsActive: isActive,
+				})
+				if len(matches) == 3 { break }
+			}
+		}
+		if len(matches) > 0 {
+			result.Status = responses.ArticleStatusSimilar
+			result.SimilarArticles = matches
+			results = append(results, result)
+			continue
+		}
+
+		result.Status = responses.ArticleStatusNew
+		results = append(results, result)
+	}
+	return results, nil
+}
+
 func (r *ArticlesRepositorySQLC) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
 	articles, errResp := r.GetAllArticles()
 	if errResp != nil {

@@ -40,6 +40,7 @@ func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 		route.GET("/sku/:sku", read, articlesController.GetBySku)
 		route.POST("/", create, articlesController.CreateArticle)
 		route.PUT("/:id", update, articlesController.UpdateArticle)
+		route.POST("/import/validate", create, articlesController.ValidateImportRows)
 		route.POST("/import", create, articlesController.ImportArticlesFromExcel)
 		route.POST("/import/json", create, articlesController.ImportArticlesFromJSON)
 		route.GET("/export", read, articlesController.ExportArticlesToExcel)

@@ -97,6 +97,10 @@ func (s *ArticlesService) ExportArticlesToExcel() ([]byte, *responses.InternalRe
 	return s.Repository.ExportArticlesToExcel()
 }
 
+func (s *ArticlesService) ValidateImportRows(rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	return s.Repository.ValidateImportRows(rows)
+}
+
 func (s *ArticlesService) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
 	return s.Repository.GenerateImportTemplate(language)
 }

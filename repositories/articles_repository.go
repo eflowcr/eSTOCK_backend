@@ -317,6 +317,97 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 }
 
 // ImportArticlesFromJSON imports articles from a pre-validated JSON payload (used by the frontend preview flow).
+func (r *ArticlesRepository) ValidateImportRows(rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	results := make([]responses.ArticleValidationResult, 0, len(rows))
+	seenSKUs := make(map[string]bool)
+
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		name := strings.TrimSpace(row.Name)
+		result := responses.ArticleValidationResult{
+			RowIndex: i,
+			Row:      row,
+		}
+
+		// Field validation
+		if sku == "" || name == "" || strings.TrimSpace(row.Presentation) == "" {
+			result.Status = responses.ArticleStatusError
+			result.FieldErrors = map[string]string{}
+			if sku == "" {
+				result.FieldErrors["sku"] = "SKU requerido"
+			}
+			if name == "" {
+				result.FieldErrors["name"] = "Nombre requerido"
+			}
+			if strings.TrimSpace(row.Presentation) == "" {
+				result.FieldErrors["presentation"] = "Presentación requerida"
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Duplicate within batch
+		skuKey := strings.ToLower(sku)
+		if seenSKUs[skuKey] {
+			result.Status = responses.ArticleStatusDuplicate
+			results = append(results, result)
+			continue
+		}
+		seenSKUs[skuKey] = true
+
+		// Exact SKU match in DB
+		existing, _ := r.GetBySku(sku)
+		if existing != nil {
+			isActive := false
+			if existing.IsActive != nil {
+				isActive = *existing.IsActive
+			}
+			result.Status = responses.ArticleStatusExists
+			result.ExistingArticle = &responses.ArticleValidationMatch{
+				ID:           existing.ID,
+				SKU:          existing.SKU,
+				Name:         existing.Name,
+				Presentation: existing.Presentation,
+				IsActive:     isActive,
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Similar name check (LIKE search)
+		keyword := name
+		if len(keyword) > 20 {
+			keyword = keyword[:20]
+		}
+		var similar []database.Article
+		r.DB.Where("LOWER(name) LIKE LOWER(?) AND sku != ?", "%"+keyword+"%", sku).Limit(3).Find(&similar)
+		if len(similar) > 0 {
+			result.Status = responses.ArticleStatusSimilar
+			result.SimilarArticles = make([]responses.ArticleValidationMatch, 0, len(similar))
+			for _, s := range similar {
+				isActive := false
+				if s.IsActive != nil {
+					isActive = *s.IsActive
+				}
+				result.SimilarArticles = append(result.SimilarArticles, responses.ArticleValidationMatch{
+					ID:           s.ID,
+					SKU:          s.SKU,
+					Name:         s.Name,
+					Presentation: s.Presentation,
+					IsActive:     isActive,
+				})
+			}
+			results = append(results, result)
+			continue
+		}
+
+		result.Status = responses.ArticleStatusNew
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
 func (r *ArticlesRepository) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
 	imported := []string{}
 	skipped := []string{}
