@@ -179,14 +179,19 @@ func applyArticleTemplateValidations(f *excelize.File, dataSheet string, present
 func applyArticleTemplateHeader(f *excelize.File, dataSheet string, language string) error {
 	l := getLang(language)
 
-	const headerBg = "1E3A5F"   // ePRAC dark blue
-	const headerFg = "FFFFFF"   // white text
-	const subFg = "B0C4DE"     // light steel blue for subtitle
+	// White background so the full-color ePRAC logo renders correctly.
+	const headerBg = "FFFFFF" // white
+	const titleFg = "0B1F3A"  // ePRAC dark navy (matches logo text)
+	const subFg = "6B7280"    // muted grey for subtitle
+	const accentBg = "EEF2FF" // very light blue tint for logo area
 
 	headerStyle, err := f.NewStyle(&excelize.Style{
 		Fill: excelize.Fill{Type: "pattern", Color: []string{headerBg}, Pattern: 1},
-		Font: &excelize.Font{Bold: true, Size: 20, Color: headerFg, Family: "Calibri"},
+		Font: &excelize.Font{Bold: true, Size: 20, Color: titleFg, Family: "Calibri"},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
+		Border: []excelize.Border{
+			{Type: "bottom", Color: "3E66EA", Style: 2},
+		},
 	})
 	if err != nil {
 		return err
@@ -194,27 +199,33 @@ func applyArticleTemplateHeader(f *excelize.File, dataSheet string, language str
 
 	subStyle, err := f.NewStyle(&excelize.Style{
 		Fill: excelize.Fill{Type: "pattern", Color: []string{headerBg}, Pattern: 1},
-		Font: &excelize.Font{Size: 11, Color: subFg, Family: "Calibri"},
+		Font: &excelize.Font{Size: 10, Color: subFg, Italic: true, Family: "Calibri"},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
 	if err != nil {
 		return err
 	}
 
-	// Logo area background (A1:D5)
+	// Logo area — light blue tint so it's visually separated from title
 	logoStyle, err := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Color: []string{headerBg}, Pattern: 1},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{accentBg}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
 	if err != nil {
 		return err
 	}
 
-	// Fill all header cells with the dark blue background first
+	// Fill logo columns (A-D) with accent tint, title columns (E-K) with white
 	for row := 1; row <= 5; row++ {
-		for col := 1; col <= 11; col++ {
+		for col := 1; col <= 4; col++ {
 			cell, _ := excelize.CoordinatesToCellName(col, row)
 			if err := f.SetCellStyle(dataSheet, cell, cell, logoStyle); err != nil {
+				return err
+			}
+		}
+		for col := 5; col <= 11; col++ {
+			cell, _ := excelize.CoordinatesToCellName(col, row)
+			if err := f.SetCellStyle(dataSheet, cell, cell, headerStyle); err != nil {
 				return err
 			}
 		}
@@ -281,11 +292,11 @@ func applyArticleTemplateColumnHeaders(f *excelize.File, dataSheet string, langu
 	l := getLang(language)
 
 	colStyle, err := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"D6E4F0"}, Pattern: 1},
-		Font: &excelize.Font{Bold: true, Size: 11, Color: "1E3A5F", Family: "Calibri"},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"3E66EA"}, Pattern: 1},
+		Font: &excelize.Font{Bold: true, Size: 11, Color: "FFFFFF", Family: "Calibri"},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 		Border: []excelize.Border{
-			{Type: "bottom", Color: "1E3A5F", Style: 2},
+			{Type: "bottom", Color: "0B1F3A", Style: 2},
 		},
 	})
 	if err != nil {
