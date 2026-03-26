@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"fmt"
+	_ "image/png" // register PNG decoder for excelize.AddPictureFromBytes
 	"strings"
 
 	"github.com/eflowcr/eSTOCK_backend/assets"
@@ -262,26 +263,31 @@ func applyArticleTemplateHeader(f *excelize.File, dataSheet string, language str
 		return err
 	}
 
-	// Set row heights for the header block
-	for row := 1; row <= 5; row++ {
-		if err := f.SetRowHeight(dataSheet, row, 22); err != nil {
+	// Row heights: rows 1-4 taller for logo, row 5 smaller
+	rowHeights := map[int]float64{1: 35, 2: 35, 3: 35, 4: 25, 5: 20}
+	for row, h := range rowHeights {
+		if err := f.SetRowHeight(dataSheet, row, h); err != nil {
 			return err
 		}
 	}
 
-	// Embed logo
+	// Embed logo — logo is 1081×249px, scale to fit A1:D4 area (~4 cols × 4 rows)
 	if len(assets.LogoEPRAC) > 0 {
-		_ = f.AddPictureFromBytes(dataSheet, "A1", &excelize.Picture{
-			Extension: ".png",
-			File:      assets.LogoEPRAC,
+		if err := f.AddPictureFromBytes(dataSheet, "A1", &excelize.Picture{
+			Extension:  ".png",
+			File:       assets.LogoEPRAC,
+			InsertType: excelize.PictureInsertTypePlaceOverCells,
 			Format: &excelize.GraphicOptions{
-				OffsetX:       5,
-				OffsetY:       5,
-				ScaleX:        0.45,
-				ScaleY:        0.45,
-				Positioning:   "oneCell",
+				OffsetX:         8,
+				OffsetY:         8,
+				ScaleX:          0.38,
+				ScaleY:          0.38,
+				LockAspectRatio: true,
 			},
-		})
+		}); err != nil {
+			// non-fatal: template still works without logo
+			_ = err
+		}
 	}
 
 	return nil
@@ -309,7 +315,16 @@ func applyArticleTemplateColumnHeaders(f *excelize.File, dataSheet string, langu
 		l["col_max"], l["col_min"], l["col_rotation"],
 	}
 
-	if err := f.SetRowHeight(dataSheet, 6, 18); err != nil {
+	// Column widths so headers are fully visible
+	colWidths := []float64{12, 20, 28, 13, 16, 18, 18, 18, 16, 16, 20}
+	colNames := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"}
+	for i, w := range colWidths {
+		if err := f.SetColWidth(dataSheet, colNames[i], colNames[i], w); err != nil {
+			return err
+		}
+	}
+
+	if err := f.SetRowHeight(dataSheet, 6, 20); err != nil {
 		return err
 	}
 
