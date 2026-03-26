@@ -216,15 +216,15 @@ func applyArticleTemplateHeader(f *excelize.File, dataSheet string, language str
 		return err
 	}
 
-	// Fill logo columns (A-D) with accent tint, title columns (E-K) with white
-	for row := 1; row <= 5; row++ {
-		for col := 1; col <= 4; col++ {
+	// Fill logo columns (A-E) with accent tint, title columns (F-K) with white
+	for row := 1; row <= 4; row++ {
+		for col := 1; col <= 5; col++ {
 			cell, _ := excelize.CoordinatesToCellName(col, row)
 			if err := f.SetCellStyle(dataSheet, cell, cell, logoStyle); err != nil {
 				return err
 			}
 		}
-		for col := 5; col <= 11; col++ {
+		for col := 6; col <= 11; col++ {
 			cell, _ := excelize.CoordinatesToCellName(col, row)
 			if err := f.SetCellStyle(dataSheet, cell, cell, headerStyle); err != nil {
 				return err
@@ -232,57 +232,54 @@ func applyArticleTemplateHeader(f *excelize.File, dataSheet string, language str
 		}
 	}
 
-	// Merge A1:D4 → logo area
-	if err := f.MergeCell(dataSheet, "A1", "D4"); err != nil {
+	// Merge A1:E4 → logo area (5 cols × 4 rows)
+	if err := f.MergeCell(dataSheet, "A1", "E4"); err != nil {
 		return err
 	}
-	// Merge A5:D5 → empty bottom of logo area
-	if err := f.MergeCell(dataSheet, "A5", "D5"); err != nil {
+	// Merge F1:K2 → title
+	if err := f.MergeCell(dataSheet, "F1", "K2"); err != nil {
 		return err
 	}
-	// Merge E1:K3 → title
-	if err := f.MergeCell(dataSheet, "E1", "K3"); err != nil {
-		return err
-	}
-	// Merge E4:K5 → subtitle
-	if err := f.MergeCell(dataSheet, "E4", "K5"); err != nil {
+	// Merge F3:K4 → subtitle
+	if err := f.MergeCell(dataSheet, "F3", "K4"); err != nil {
 		return err
 	}
 
-	if err := f.SetCellStyle(dataSheet, "E1", "K3", headerStyle); err != nil {
+	if err := f.SetCellStyle(dataSheet, "F1", "K2", headerStyle); err != nil {
 		return err
 	}
-	if err := f.SetCellStyle(dataSheet, "E4", "K5", subStyle); err != nil {
-		return err
-	}
-
-	if err := f.SetCellValue(dataSheet, "E1", l["title"]); err != nil {
-		return err
-	}
-	if err := f.SetCellValue(dataSheet, "E4", l["subtitle"]); err != nil {
+	if err := f.SetCellStyle(dataSheet, "F3", "K4", subStyle); err != nil {
 		return err
 	}
 
-	// Row heights: rows 1-4 taller for logo, row 5 smaller
-	rowHeights := map[int]float64{1: 35, 2: 35, 3: 35, 4: 25, 5: 20}
+	if err := f.SetCellValue(dataSheet, "F1", l["title"]); err != nil {
+		return err
+	}
+	if err := f.SetCellValue(dataSheet, "F3", l["subtitle"]); err != nil {
+		return err
+	}
+
+	// Compact row heights — header band stays tight
+	rowHeights := map[int]float64{1: 24, 2: 24, 3: 14, 4: 14}
 	for row, h := range rowHeights {
 		if err := f.SetRowHeight(dataSheet, row, h); err != nil {
 			return err
 		}
 	}
 
-	// Embed logo — original 1081×249px, scale down to fit A1:D4
+	// Logo target: 200pt × 44pt. Original logo is 1081×249px at 96dpi.
+	// 1pt = 96/72 px → 200pt = 266.7px → scaleX = 266.7/1081 ≈ 0.247
+	//                   44pt  = 58.7px  → scaleY = 58.7/249  ≈ 0.236
 	if len(assets.LogoEPRAC) > 0 {
 		if err := f.AddPictureFromBytes(dataSheet, "A1", &excelize.Picture{
 			Extension:  ".png",
 			File:       assets.LogoEPRAC,
 			InsertType: excelize.PictureInsertTypePlaceOverCells,
 			Format: &excelize.GraphicOptions{
-				OffsetX:         10,
-				OffsetY:         18,
-				ScaleX:          0.20,
-				ScaleY:          0.20,
-				LockAspectRatio: true,
+				OffsetX: 8,
+				OffsetY: 6,
+				ScaleX:  0.247,
+				ScaleY:  0.236,
 			},
 		}); err != nil {
 			_ = err
