@@ -48,3 +48,7 @@ func (s *ReceivingTasksService) CompleteFullTask(id string, location, userId str
 func (s *ReceivingTasksService) CompleteReceivingLine(id string, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
 	return s.Repository.CompleteReceivingLine(id, location, userId, item)
 }
+
+func (s *ReceivingTasksService) GenerateImportTemplate(language string) ([]byte, error) {
+	return s.Repository.GenerateImportTemplate(language)
+}

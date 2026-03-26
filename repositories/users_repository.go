@@ -402,3 +402,54 @@ func resolveRoleIDByName(db *gorm.DB, roleIDOrName string) string {
 	}
 	return r.ID
 }
+
+func (u *UsersRepository) GenerateImportTemplate(language string) ([]byte, error) {
+	isEs := language != "en"
+	title := "Importar Usuarios"; subtitle := "Plantilla de importación — eSTOCK"
+	instrTitle := "📋 Instrucciones"; instrContent := "1. Complete desde la fila 9  •  2. Email, Nombre, Apellido, Contraseña y Rol son obligatorios (*)  •  3. El Rol debe ser uno de la lista desplegable"
+	if !isEs {
+		title = "Import Users"; subtitle = "User import template — eSTOCK"
+		instrTitle = "📋 Instructions"; instrContent = "1. Fill in data from row 9  •  2. Email, First Name, Last Name, Password and Role are required (*)  •  3. Role must be one from the dropdown list"
+	}
+
+	// Fetch role names from DB
+	var roleNames []string
+	u.DB.Table("roles").Pluck("name", &roleNames)
+	if len(roleNames) == 0 {
+		roleNames = []string{"Admin", "Operator", "Viewer"}
+	}
+
+	cfg := ModuleTemplateConfig{
+		DataSheetName: func() string { if isEs { return "Usuarios" }; return "Users" }(),
+		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
+		Title: title, Subtitle: subtitle, InstrTitle: instrTitle, InstrContent: instrContent,
+		Columns: func() []ColumnDef {
+			if isEs {
+				return []ColumnDef{
+					{Header: "Email *", Required: true, Width: 28},
+					{Header: "Nombre *", Required: true, Width: 20},
+					{Header: "Apellido *", Required: true, Width: 20},
+					{Header: "Contraseña *", Required: true, Width: 18},
+					{Header: "Rol *", Required: true, Width: 16},
+				}
+			}
+			return []ColumnDef{
+				{Header: "Email *", Required: true, Width: 28},
+				{Header: "First Name *", Required: true, Width: 20},
+				{Header: "Last Name *", Required: true, Width: 20},
+				{Header: "Password *", Required: true, Width: 18},
+				{Header: "Role *", Required: true, Width: 16},
+			}
+		}(),
+		ExampleRow: []string{"user@company.com", "Ana", "García", "Passw0rd!", roleNames[0]},
+		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
+			f.NewSheet(optSheet)
+			for i, v := range roleNames { cell, _ := excelize.CoordinatesToCellName(1, i+1); f.SetCellValue(optSheet, cell, v) }
+			f.SetSheetVisible(optSheet, false)
+			roleRef := "'" + optSheet + "'!$A$1:$A$" + fmt.Sprintf("%d", len(roleNames))
+			errRole := func() string { if isEs { return "Rol inválido" }; return "Invalid role" }()
+			return addDropListValidation(f, dataSheet, "E9:E2000", roleRef, errRole, errRole)
+		},
+	}
+	return BuildModuleImportTemplate(cfg)
+}

@@ -48,3 +48,7 @@ func (s *PickingTaskService) CompletePickingTask(id string, location, userId str
 func (s *PickingTaskService) CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
 	return s.Repository.CompletePickingLine(id, location, userId, item)
 }
+
+func (s *PickingTaskService) GenerateImportTemplate(language string) ([]byte, error) {
+	return s.Repository.GenerateImportTemplate(language)
+}

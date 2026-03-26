@@ -133,6 +133,18 @@ func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context
 	tools.ResponseOK(ctx, "ImportReceivingTaskFromExcel", "Tareas de recepción importadas con éxito", "import_receiving_task_from_excel", nil, false, "")
 }
 
+func (c *ReceivingTasksController) DownloadImportTemplate(ctx *gin.Context) {
+	lang := ctx.DefaultQuery("lang", "es")
+	data, err := c.Service.GenerateImportTemplate(lang)
+	if err != nil {
+		tools.ResponseBadRequest(ctx, "DownloadImportTemplate", "Error al generar la plantilla", "download_import_template")
+		return
+	}
+	ctx.Header("Content-Description", "File Transfer")
+	ctx.Header("Content-Disposition", `attachment; filename="ImportReceivingTasks.xlsx"`)
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}
+
 func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) {
 	fileBytes, response := c.Service.ExportReceivingTaskToExcel()
 	if response != nil {

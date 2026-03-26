@@ -238,109 +238,111 @@ func (r *ArticlesRepositorySQLC) DeleteArticle(id string) *responses.InternalRes
 	return nil
 }
 
-func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
-	imported := []string{}
-	errorsList := []*responses.InternalResponse{}
+func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
+	imported, skipped, errs := []string{}, []string{}, []*responses.InternalResponse{}
 
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al abrir el archivo de Excel",
-			Handled: false,
-		})
-		return imported, errorsList
+		return imported, skipped, append(errs, &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo", Handled: false})
 	}
-
-	rows, err := f.GetRows("Sheet1")
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		return imported, skipped, append(errs, &responses.InternalResponse{Message: "Sin hojas de datos", Handled: true})
+	}
+	rows, err := f.GetRows(sheets[0])
 	if err != nil {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al leer las filas de Excel",
-			Handled: false,
-		})
-		return imported, errorsList
+		return imported, skipped, append(errs, &responses.InternalResponse{Error: err, Message: "Error al leer filas", Handled: false})
 	}
 
 	for i, row := range rows {
-		if i < 6 {
+		if i < 8 || len(row) < 10 {
 			continue
 		}
-		if len(row) < 10 {
-			continue
-		}
-
 		sku := strings.TrimSpace(row[0])
 		name := strings.TrimSpace(row[1])
-		description := strings.TrimSpace(row[2])
-		priceStr := strings.TrimSpace(row[3])
-		presentation := strings.TrimSpace(row[4])
-		trackByLot := strings.TrimSpace(row[5]) == "Si"
-		trackBySerial := strings.TrimSpace(row[6]) == "Si"
-		trackExpiration := strings.TrimSpace(row[7]) == "Si"
-		maxQtyStr := strings.TrimSpace(row[8])
-		minQtyStr := strings.TrimSpace(row[9])
-		rotationStrategy := "fifo"
-		if len(row) > 10 {
-			rs := strings.TrimSpace(strings.ToLower(row[10]))
-			if rs == "fefo" {
-				rotationStrategy = "fefo"
-			}
-		}
-
-		if sku == "" || name == "" || presentation == "" {
+		if sku == "" || name == "" {
 			continue
 		}
+		if strings.EqualFold(sku, "ART-001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: ejemplo omitido", i+1))
+			continue
+		}
+		presentation := strings.TrimSpace(row[4])
+		if presentation == "" {
+			errs = append(errs, &responses.InternalResponse{Message: fmt.Sprintf("Fila %d: presentación requerida", i+1), Handled: true})
+			continue
+		}
+		rowReq := requests.ArticleImportRow{
+			SKU: sku, Name: name, Description: strings.TrimSpace(row[2]),
+			UnitPrice: strings.TrimSpace(row[3]), Presentation: presentation,
+			TrackByLot: strings.TrimSpace(row[5]), TrackBySerial: strings.TrimSpace(row[6]),
+			TrackExpiration: strings.TrimSpace(row[7]), MaxQuantity: strings.TrimSpace(row[8]),
+			MinQuantity: strings.TrimSpace(row[9]),
+		}
+		if len(row) > 10 {
+			rowReq.RotationStrategy = strings.TrimSpace(row[10])
+		}
+		imp, sk, rowErrs := r.ImportArticlesFromJSON([]requests.ArticleImportRow{rowReq})
+		imported = append(imported, imp...)
+		skipped = append(skipped, sk...)
+		errs = append(errs, rowErrs...)
+	}
+	return imported, skipped, errs
+}
 
+func (r *ArticlesRepositorySQLC) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	imported, skipped, errs := []string{}, []string{}, []*responses.InternalResponse{}
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		name := strings.TrimSpace(row.Name)
+		if sku == "" || name == "" {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: SKU y nombre requeridos", i+1))
+			continue
+		}
+		if strings.EqualFold(sku, "ART-001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: ejemplo omitido", i+1))
+			continue
+		}
+		presentation := strings.TrimSpace(row.Presentation)
+		if presentation == "" {
+			errs = append(errs, &responses.InternalResponse{Message: fmt.Sprintf("Fila %d: presentación requerida", i+1), Handled: true})
+			continue
+		}
+		rs := strings.ToLower(strings.TrimSpace(row.RotationStrategy))
+		if rs != "fifo" && rs != "fefo" {
+			rs = ""
+		}
 		var unitPrice *float64
-		if priceStr != "" {
-			if p, err := strconv.ParseFloat(priceStr, 64); err == nil {
-				unitPrice = &p
-			}
+		if p, e := strconv.ParseFloat(strings.TrimSpace(row.UnitPrice), 64); e == nil {
+			unitPrice = &p
 		}
 		var minQty, maxQty *int
-		if minQtyStr != "" {
-			if q, err := strconv.Atoi(minQtyStr); err == nil {
-				minQty = &q
-			}
+		if q, e := strconv.Atoi(strings.TrimSpace(row.MinQuantity)); e == nil {
+			minQty = &q
 		}
-		if maxQtyStr != "" {
-			if q, err := strconv.Atoi(maxQtyStr); err == nil {
-				maxQty = &q
-			}
+		if q, e := strconv.Atoi(strings.TrimSpace(row.MaxQuantity)); e == nil {
+			maxQty = &q
 		}
+		desc := strings.TrimSpace(row.Description)
 		var descPtr *string
-		if description != "" {
-			descPtr = &description
+		if desc != "" {
+			descPtr = &desc
 		}
-
 		article := &requests.Article{
-			SKU:              sku,
-			Name:             name,
-			Description:      descPtr,
-			UnitPrice:        unitPrice,
-			Presentation:     presentation,
-			TrackByLot:       trackByLot,
-			TrackBySerial:    trackBySerial,
-			TrackExpiration:  trackExpiration,
-			RotationStrategy: rotationStrategy,
-			MinQuantity:      minQty,
-			MaxQuantity:      maxQty,
-			ImageURL:         nil,
+			SKU: sku, Name: name, Description: descPtr,
+			UnitPrice: unitPrice, Presentation: presentation,
+			TrackByLot: parseBoolCell(row.TrackByLot), TrackBySerial: parseBoolCell(row.TrackBySerial),
+			TrackExpiration: parseBoolCell(row.TrackExpiration), RotationStrategy: rs,
+			MinQuantity: minQty, MaxQuantity: maxQty,
 		}
-
 		resp := r.CreateArticle(article)
 		if resp != nil {
-			errorsList = append(errorsList, &responses.InternalResponse{
-				Error:   resp.Error,
-				Message: fmt.Sprintf("Row %d: %s", i+1, resp.Message),
-				Handled: resp.Handled,
-			})
+			errs = append(errs, &responses.InternalResponse{Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled})
 			continue
 		}
 		imported = append(imported, sku)
 	}
-	return imported, errorsList
+	return imported, skipped, errs
 }
 
 func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {

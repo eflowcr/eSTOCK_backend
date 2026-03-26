@@ -44,3 +44,7 @@ func (s *LocationsService) ImportLocationsFromExcel(fileBytes []byte) ([]string,
 func (s *LocationsService) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportLocationsToExcel()
 }
+
+func (s *LocationsService) GenerateImportTemplate(language string) ([]byte, error) {
+	return s.Repository.GenerateImportTemplate(language)
+}

@@ -27,6 +27,7 @@ func RegisterPickingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config con
 		route.PATCH("/:id/start", pickingTasksController.StartPickingTask)
 		route.PATCH("/:id/cancel", pickingTasksController.CancelPickingTask)
 		route.PATCH("/:id/complete", pickingTasksController.CompletePickingTask)
+		route.GET("/import/template", pickingTasksController.DownloadImportTemplate)
 		route.POST("/import", pickingTasksController.ImportPickingTaskFromExcel)
 		route.GET("/export", pickingTasksController.ExportPickingTasksToExcel)
 		route.PATCH("/complete-full-task/:id/:location", pickingTasksController.CompletePickingTask)

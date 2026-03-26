@@ -37,6 +37,7 @@ func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 		route.POST("/", create, locationController.CreateLocation)
 		route.PUT("/:id", update, locationController.UpdateLocation)
 		route.DELETE("/:id", delete, locationController.DeleteLocation)
+		route.GET("/import/template", read, locationController.DownloadImportTemplate)
 		route.POST("/import", create, locationController.ImportLocationsFromExcel)
 		route.GET("/export", read, locationController.ExportLocationsToExcel)
 	}

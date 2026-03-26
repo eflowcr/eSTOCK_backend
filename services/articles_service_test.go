@@ -101,8 +101,12 @@ func (m *mockArticlesRepo) GetSerialsBySKU(sku string) ([]database.Serial, error
 	return nil, nil
 }
 
-func (m *mockArticlesRepo) ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
-	return nil, nil
+func (m *mockArticlesRepo) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
+}
+
+func (m *mockArticlesRepo) ImportArticlesFromJSON(_ []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
 }
 
 func (m *mockArticlesRepo) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {

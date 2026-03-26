@@ -133,6 +133,18 @@ func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
 	}, false, "")
 }
 
+func (c *UserController) DownloadImportTemplate(ctx *gin.Context) {
+	lang := ctx.DefaultQuery("lang", "es")
+	data, err := c.Service.GenerateImportTemplate(lang)
+	if err != nil {
+		tools.ResponseBadRequest(ctx, "DownloadImportTemplate", "Error al generar la plantilla", "download_import_template")
+		return
+	}
+	ctx.Header("Content-Description", "File Transfer")
+	ctx.Header("Content-Disposition", `attachment; filename="ImportUsers.xlsx"`)
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}
+
 func (c *UserController) ExportUsersToExcel(ctx *gin.Context) {
 	excel, response := c.Service.ExportUsersToExcel()
 	if response != nil {

@@ -170,16 +170,42 @@ func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	importedArticles, errorResponses := c.Service.ImportArticlesFromExcel(fileBytes)
-	if len(importedArticles) == 0 && len(errorResponses) > 0 {
+	importedArticles, skippedArticles, errorResponses := c.Service.ImportArticlesFromExcel(fileBytes)
+	if len(importedArticles) == 0 && len(skippedArticles) == 0 && len(errorResponses) > 0 {
 		resp := errorResponses[0]
 		writeErrorResponse(ctx, "ImportArticlesFromExcel", "import_articles_from_excel", resp)
 		return
 	}
 
 	tools.ResponseOK(ctx, "ImportArticlesFromExcel", "Artículos importados con éxito", "import_articles_from_excel", gin.H{
-		"imported_articles": importedArticles,
-		"errors":            errorResponses,
+		"successful": len(importedArticles),
+		"skipped":    len(skippedArticles),
+		"failed":     len(errorResponses),
+		"imported":   importedArticles,
+		"skipped_rows": skippedArticles,
+		"errors":     errorResponses,
+	}, false, "")
+}
+
+func (c *ArticlesController) ImportArticlesFromJSON(ctx *gin.Context) {
+	var rows []requests.ArticleImportRow
+	if err := ctx.ShouldBindJSON(&rows); err != nil {
+		tools.ResponseBadRequest(ctx, "ImportArticlesFromJSON", "JSON inválido", "import_articles_from_json")
+		return
+	}
+	if len(rows) == 0 {
+		tools.ResponseBadRequest(ctx, "ImportArticlesFromJSON", "No se proporcionaron filas para importar", "import_articles_from_json")
+		return
+	}
+
+	imported, skipped, errorResponses := c.Service.ImportArticlesFromJSON(rows)
+	tools.ResponseOK(ctx, "ImportArticlesFromJSON", "Importación completada", "import_articles_from_json", gin.H{
+		"successful":   len(imported),
+		"skipped":      len(skipped),
+		"failed":       len(errorResponses),
+		"imported":     imported,
+		"skipped_rows": skipped,
+		"errors":       errorResponses,
 	}, false, "")
 }
 

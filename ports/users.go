@@ -16,4 +16,5 @@ type UsersRepository interface {
 	ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse)
 	ExportUsersToExcel() ([]byte, *responses.InternalResponse)
 	UpdateUserPassword(id string, newPassword string) *responses.InternalResponse
+	GenerateImportTemplate(language string) ([]byte, error)
 }

@@ -1134,3 +1134,76 @@ func (r *InventoryRepository) DeleteInventorySerial(id string) *responses.Intern
 
 	return nil
 }
+
+func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, error) {
+	l2 := getLang(language)
+	isEs := language != "en"
+	title := "Importar Inventario"; subtitle := "Plantilla de importación — eSTOCK"
+	instrTitle := "📋 Instrucciones"; instrContent := "1. Complete desde la fila 9  •  2. SKU, Nombre, Ubicación y Cantidad son obligatorios (*)  •  3. Use Si/No para campos de rastreo  •  4. Lotes y seriales: separe con comas"
+	if !isEs {
+		title = "Import Inventory"; subtitle = "Inventory import template — eSTOCK"
+		instrTitle = "📋 Instructions"; instrContent = "1. Fill in data from row 9  •  2. SKU, Name, Location and Quantity are required (*)  •  3. Use Yes/No for tracking fields  •  4. Lots and serials: separate with commas"
+	}
+	yes, no := l2["yes"], l2["no"]
+
+	// Get unique presentations from articles for the dropdown
+	var presentations []string
+	r.DB.Table("articles").Distinct("presentation").Pluck("presentation", &presentations)
+	if len(presentations) == 0 {
+		presentations = []string{"unidad", "caja", "pallet", "paquete"}
+	}
+
+	cfg := ModuleTemplateConfig{
+		DataSheetName: func() string { if isEs { return "Inventario" }; return "Inventory" }(),
+		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
+		Title: title, Subtitle: subtitle, InstrTitle: instrTitle, InstrContent: instrContent,
+		Columns: func() []ColumnDef {
+			if isEs {
+				return []ColumnDef{
+					{Header: "SKU *", Required: true, Width: 14},
+					{Header: "Nombre *", Required: true, Width: 28},
+					{Header: "Descripción", Required: false, Width: 28},
+					{Header: "Ubicación *", Required: true, Width: 18},
+					{Header: "Cantidad *", Required: true, Width: 12},
+					{Header: "Precio unitario", Required: false, Width: 14},
+					{Header: "Rastrear por lote", Required: false, Width: 16},
+					{Header: "Rastrear por serie", Required: false, Width: 16},
+					{Header: "Rastrear expiración", Required: false, Width: 18},
+					{Header: "Cantidad Mínima", Required: false, Width: 14},
+					{Header: "Cantidad Máxima", Required: false, Width: 14},
+				}
+			}
+			return []ColumnDef{
+				{Header: "SKU *", Required: true, Width: 14},
+				{Header: "Name *", Required: true, Width: 28},
+				{Header: "Description", Required: false, Width: 28},
+				{Header: "Location *", Required: true, Width: 18},
+				{Header: "Quantity *", Required: true, Width: 12},
+				{Header: "Unit Price", Required: false, Width: 14},
+				{Header: "Track by Lot", Required: false, Width: 16},
+				{Header: "Track by Serial", Required: false, Width: 16},
+				{Header: "Track Expiration", Required: false, Width: 18},
+				{Header: "Min Quantity", Required: false, Width: 14},
+				{Header: "Max Quantity", Required: false, Width: 14},
+			}
+		}(),
+		ExampleRow: []string{"SKU-0001", func() string { if isEs { return "Producto Ejemplo" }; return "Example Product" }(), "", "LOC-001", "100", "9.99", yes, no, no, "5", "500"},
+		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
+			f.NewSheet(optSheet)
+			// Col A: presentations; Col B: yes/no
+			for i, v := range presentations { cell, _ := excelize.CoordinatesToCellName(1, i+1); f.SetCellValue(optSheet, cell, v) }
+			f.SetCellValue(optSheet, "B1", yes); f.SetCellValue(optSheet, "B2", no)
+			f.SetSheetVisible(optSheet, false)
+			presRef := "'" + optSheet + "'!$A$1:$A$" + fmt.Sprintf("%d", len(presentations))
+			yesNoRef := "'" + optSheet + "'!$B$1:$B$2"
+			errPres := func() string { if isEs { return "Presentación inválida" }; return "Invalid presentation" }()
+			errBool := func() string { if isEs { return "Valor inválido" }; return "Invalid value" }()
+			errNum := func() string { if isEs { return "Cantidad inválida" }; return "Invalid quantity" }()
+			// No presentation column in inventory template; apply yes/no to cols G,H,I
+			if err := addDropListValidation(f, dataSheet, "G9:I2000", yesNoRef, errBool, errBool); err != nil { return err }
+			_ = presRef; _ = errPres
+			return addNumericMinValidation(f, dataSheet, "E9:E2000", excelize.DataValidationTypeDecimal, errNum, errNum)
+		},
+	}
+	return BuildModuleImportTemplate(cfg)
+}

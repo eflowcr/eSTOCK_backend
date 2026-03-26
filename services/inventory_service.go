@@ -139,3 +139,7 @@ func sortPickSuggestions(list []dto.PickSuggestion, strategy string) {
 		return list[i].Quantity < list[j].Quantity
 	})
 }
+
+func (s *InventoryService) GenerateImportTemplate(language string) ([]byte, error) {
+	return s.Repository.GenerateImportTemplate(language)
+}

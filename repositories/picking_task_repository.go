@@ -1116,3 +1116,58 @@ func (r *PickingTaskRepository) CompletePickingLine(id string, location, userId 
 
 	return nil
 }
+
+func (r *PickingTaskRepository) GenerateImportTemplate(language string) ([]byte, error) {
+	isEs := language != "en"
+	l2 := getLang(language)
+	_, _ = l2["yes"], l2["no"]
+	title := "Importar Tareas de Picking"; subtitle := "Plantilla de importación — eSTOCK"
+	instrTitle := "📋 Instrucciones"; instrContent := "1. Complete desde la fila 9  •  2. SKU, Cantidad Solicitada, Ubicación y Asignado A son obligatorios (*)  •  3. Lotes y seriales: separe con comas"
+	if !isEs {
+		title = "Import Picking Tasks"; subtitle = "Picking task import template — eSTOCK"
+		instrTitle = "📋 Instructions"; instrContent = "1. Fill in data from row 9  •  2. SKU, Requested Quantity, Location and Assigned To are required (*)  •  3. Lots and serials: separate with commas"
+	}
+	prios := []string{"normal", "low", "high"}
+
+	cfg := ModuleTemplateConfig{
+		DataSheetName: func() string { if isEs { return "Picking" }; return "PickingTasks" }(),
+		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
+		Title: title, Subtitle: subtitle, InstrTitle: instrTitle, InstrContent: instrContent,
+		Columns: func() []ColumnDef {
+			if isEs {
+				return []ColumnDef{
+					{Header: "SKU *", Required: true, Width: 14},
+					{Header: "Cantidad Solicitada *", Required: true, Width: 20},
+					{Header: "Ubicación *", Required: true, Width: 18},
+					{Header: "Números de Lote", Required: false, Width: 22},
+					{Header: "Números de Serie", Required: false, Width: 22},
+					{Header: "Número de Orden", Required: false, Width: 18},
+					{Header: "Asignado A *", Required: true, Width: 24},
+					{Header: "Prioridad", Required: false, Width: 14},
+					{Header: "Notas", Required: false, Width: 28},
+				}
+			}
+			return []ColumnDef{
+				{Header: "SKU *", Required: true, Width: 14},
+				{Header: "Requested Quantity *", Required: true, Width: 20},
+				{Header: "Location *", Required: true, Width: 18},
+				{Header: "Lot Numbers", Required: false, Width: 22},
+				{Header: "Serial Numbers", Required: false, Width: 22},
+				{Header: "Order Number", Required: false, Width: 18},
+				{Header: "Assigned To *", Required: true, Width: 24},
+				{Header: "Priority", Required: false, Width: 14},
+				{Header: "Notes", Required: false, Width: 28},
+			}
+		}(),
+		ExampleRow: []string{"SKU-0001", "25", "LOC-001", "", "", "ORD-001", "operator@company.com", "normal", ""},
+		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
+			f.NewSheet(optSheet)
+			for i, v := range prios { cell, _ := excelize.CoordinatesToCellName(1, i+1); f.SetCellValue(optSheet, cell, v) }
+			f.SetSheetVisible(optSheet, false)
+			prioRef := "'" + optSheet + "'!$A$1:$A$3"
+			errPrio := func() string { if isEs { return "Prioridad inválida" }; return "Invalid priority" }()
+			return addDropListValidation(f, dataSheet, "H9:H2000", prioRef, errPrio, errPrio)
+		},
+	}
+	return BuildModuleImportTemplate(cfg)
+}

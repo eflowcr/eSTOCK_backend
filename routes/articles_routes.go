@@ -41,6 +41,7 @@ func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 		route.POST("/", create, articlesController.CreateArticle)
 		route.PUT("/:id", update, articlesController.UpdateArticle)
 		route.POST("/import", create, articlesController.ImportArticlesFromExcel)
+		route.POST("/import/json", create, articlesController.ImportArticlesFromJSON)
 		route.GET("/export", read, articlesController.ExportArticlesToExcel)
 		route.DELETE("/:id", delete, articlesController.DeleteArticle)
 	}

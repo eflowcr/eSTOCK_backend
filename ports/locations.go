@@ -15,4 +15,5 @@ type LocationsRepository interface {
 	DeleteLocation(id string) *responses.InternalResponse
 	ImportLocationsFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse)
 	ExportLocationsToExcel() ([]byte, *responses.InternalResponse)
+	GenerateImportTemplate(language string) ([]byte, error)
 }

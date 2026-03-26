@@ -85,8 +85,12 @@ func (s *ArticlesService) UpdateArticle(id string, data *requests.Article) (*dat
 	return updated, errResp, warnings
 }
 
-func (s *ArticlesService) ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (s *ArticlesService) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
 	return s.Repository.ImportArticlesFromExcel(fileBytes)
+}
+
+func (s *ArticlesService) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	return s.Repository.ImportArticlesFromJSON(rows)
 }
 
 func (s *ArticlesService) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {

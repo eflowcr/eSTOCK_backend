@@ -176,6 +176,18 @@ func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 	}, false, "")
 }
 
+func (c *InventoryController) DownloadImportTemplate(ctx *gin.Context) {
+	lang := ctx.DefaultQuery("lang", "es")
+	data, err := c.Service.GenerateImportTemplate(lang)
+	if err != nil {
+		tools.ResponseBadRequest(ctx, "DownloadImportTemplate", "Error al generar la plantilla", "download_import_template")
+		return
+	}
+	ctx.Header("Content-Description", "File Transfer")
+	ctx.Header("Content-Disposition", `attachment; filename="ImportInventory.xlsx"`)
+	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}
+
 func (c *InventoryController) ExportInventoryToExcel(ctx *gin.Context) {
 	fileBytes, response := c.Service.ExportInventoryToExcel()
 	if response != nil {

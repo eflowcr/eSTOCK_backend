@@ -16,4 +16,5 @@ type PickingTaskRepository interface {
 	ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse)
 	CompletePickingTask(id string, location, userId string) *responses.InternalResponse
 	CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse
+	GenerateImportTemplate(language string) ([]byte, error)
 }

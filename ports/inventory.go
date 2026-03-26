@@ -23,4 +23,5 @@ type InventoryRepository interface {
 	DeleteInventoryLot(id string) *responses.InternalResponse
 	CreateInventorySerial(id string, input *requests.CreateInventorySerial) *responses.InternalResponse
 	DeleteInventorySerial(id string) *responses.InternalResponse
+	GenerateImportTemplate(language string) ([]byte, error)
 }

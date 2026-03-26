@@ -180,3 +180,7 @@ func locationRowToDatabase(id, locationCode string, description, zone pgtype.Tex
 		UpdatedAt:    pgTimestampToTime(updatedAt),
 	}
 }
+
+func (r *LocationsRepositorySQLC) GenerateImportTemplate(language string) ([]byte, error) {
+	return r.gorm.GenerateImportTemplate(language)
+}

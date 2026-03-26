@@ -48,3 +48,7 @@ func (s *UserService) ExportUsersToExcel() ([]byte, *responses.InternalResponse)
 func (s *UserService) UpdateUserPassword(id string, newPassword string) *responses.InternalResponse {
 	return s.Repository.UpdateUserPassword(id, newPassword)
 }
+
+func (s *UserService) GenerateImportTemplate(language string) ([]byte, error) {
+	return s.Repository.GenerateImportTemplate(language)
+}

@@ -175,8 +175,9 @@ func (r *ArticlesRepository) GetSerialsBySKU(sku string) ([]database.Serial, err
 	return serials, err
 }
 
-func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
 	imported := []string{}
+	skipped := []string{}
 	errorsList := []*responses.InternalResponse{}
 
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
@@ -186,30 +187,53 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 			Message: "Error al abrir el archivo de Excel",
 			Handled: false,
 		})
-		return imported, errorsList
+		return imported, skipped, errorsList
 	}
 
-	rows, err := f.GetRows("Sheet1")
+	// Use first sheet regardless of language-based name ("Artículos", "Articles", "Sheet1")
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		errorsList = append(errorsList, &responses.InternalResponse{
+			Message: "El archivo no contiene hojas de datos",
+			Handled: true,
+		})
+		return imported, skipped, errorsList
+	}
+	sheet := sheets[0]
+
+	rows, err := f.GetRows(sheet)
 	if err != nil {
 		errorsList = append(errorsList, &responses.InternalResponse{
 			Error:   err,
 			Message: "Error al leer las filas de Excel",
 			Handled: false,
 		})
-		return imported, errorsList
+		return imported, skipped, errorsList
 	}
 
 	for i, row := range rows {
-		if i < 6 {
+		// Skip header, instructions, column-header row, and example row (rows 1-8, index 0-7)
+		if i < 8 {
 			continue
 		}
-
 		if len(row) < 10 {
 			continue
 		}
 
 		sku := strings.TrimSpace(row[0])
 		name := strings.TrimSpace(row[1])
+
+		// Skip rows where required fields are empty
+		if sku == "" || name == "" {
+			continue
+		}
+
+		// Detect and skip example row gracefully
+		if strings.EqualFold(sku, "ART-001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
+			continue
+		}
+
 		description := strings.TrimSpace(row[2])
 		priceStr := strings.TrimSpace(row[3])
 		presentation := strings.TrimSpace(row[4])
@@ -219,16 +243,20 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		maxQtyStr := strings.TrimSpace(row[8])
 		minQtyStr := strings.TrimSpace(row[9])
 
+		if presentation == "" {
+			errorsList = append(errorsList, &responses.InternalResponse{
+				Message: fmt.Sprintf("Fila %d: presentación requerida", i+1),
+				Handled: true,
+			})
+			continue
+		}
+
 		rotationStrategy := ""
 		if len(row) > 10 {
 			rs := strings.ToLower(strings.TrimSpace(row[10]))
 			if rs == "fifo" || rs == "fefo" {
 				rotationStrategy = rs
 			}
-		}
-
-		if sku == "" || name == "" || presentation == "" {
-			continue
 		}
 
 		var unitPrice *float64
@@ -276,7 +304,7 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		if resp != nil {
 			errorsList = append(errorsList, &responses.InternalResponse{
 				Error:   resp.Error,
-				Message: fmt.Sprintf("Row %d: %s", i+1, resp.Message),
+				Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message),
 				Handled: resp.Handled,
 			})
 			continue
@@ -285,7 +313,89 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		imported = append(imported, sku)
 	}
 
-	return imported, errorsList
+	return imported, skipped, errorsList
+}
+
+// ImportArticlesFromJSON imports articles from a pre-validated JSON payload (used by the frontend preview flow).
+func (r *ArticlesRepository) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	imported := []string{}
+	skipped := []string{}
+	errorsList := []*responses.InternalResponse{}
+
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		name := strings.TrimSpace(row.Name)
+
+		if sku == "" || name == "" {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: SKU y nombre son requeridos", i+1))
+			continue
+		}
+		if strings.EqualFold(sku, "ART-001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
+			continue
+		}
+
+		presentation := strings.TrimSpace(row.Presentation)
+		if presentation == "" {
+			errorsList = append(errorsList, &responses.InternalResponse{
+				Message: fmt.Sprintf("Fila %d: presentación requerida", i+1),
+				Handled: true,
+			})
+			continue
+		}
+
+		rotationStrategy := ""
+		rs := strings.ToLower(strings.TrimSpace(row.RotationStrategy))
+		if rs == "fifo" || rs == "fefo" {
+			rotationStrategy = rs
+		}
+
+		var unitPrice *float64
+		if p, err := strconv.ParseFloat(strings.TrimSpace(row.UnitPrice), 64); err == nil {
+			unitPrice = &p
+		}
+		var minQty *int
+		if q, err := strconv.Atoi(strings.TrimSpace(row.MinQuantity)); err == nil {
+			minQty = &q
+		}
+		var maxQty *int
+		if q, err := strconv.Atoi(strings.TrimSpace(row.MaxQuantity)); err == nil {
+			maxQty = &q
+		}
+
+		desc := strings.TrimSpace(row.Description)
+		var descPtr *string
+		if desc != "" {
+			descPtr = &desc
+		}
+
+		article := &requests.Article{
+			SKU:              sku,
+			Name:             name,
+			Description:      descPtr,
+			UnitPrice:        unitPrice,
+			Presentation:     presentation,
+			TrackByLot:       parseBoolCell(row.TrackByLot),
+			TrackBySerial:    parseBoolCell(row.TrackBySerial),
+			TrackExpiration:  parseBoolCell(row.TrackExpiration),
+			RotationStrategy: rotationStrategy,
+			MinQuantity:      minQty,
+			MaxQuantity:      maxQty,
+		}
+
+		resp := r.CreateArticle(article)
+		if resp != nil {
+			errorsList = append(errorsList, &responses.InternalResponse{
+				Error:   resp.Error,
+				Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message),
+				Handled: resp.Handled,
+			})
+			continue
+		}
+		imported = append(imported, sku)
+	}
+
+	return imported, skipped, errorsList
 }
 
 func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {

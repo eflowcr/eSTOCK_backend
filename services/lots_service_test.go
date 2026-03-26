@@ -89,8 +89,12 @@ func (m *mockArticlesRepoForLots) GetLotsBySKU(sku string) ([]database.Lot, erro
 func (m *mockArticlesRepoForLots) GetSerialsBySKU(sku string) ([]database.Serial, error) {
 	return nil, nil
 }
-func (m *mockArticlesRepoForLots) ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
-	return nil, nil
+func (m *mockArticlesRepoForLots) ImportArticlesFromExcel(_ []byte) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
+}
+
+func (m *mockArticlesRepoForLots) ImportArticlesFromJSON(_ []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
 }
 func (m *mockArticlesRepoForLots) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
 	return nil, nil

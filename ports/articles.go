@@ -16,7 +16,8 @@ type ArticlesRepository interface {
 	UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse)
 	GetLotsBySKU(sku string) ([]database.Lot, error)
 	GetSerialsBySKU(sku string) ([]database.Serial, error)
-	ImportArticlesFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse)
+	ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse)
+	ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse)
 	ExportArticlesToExcel() ([]byte, *responses.InternalResponse)
 	GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse)
 	DeleteArticle(id string) *responses.InternalResponse

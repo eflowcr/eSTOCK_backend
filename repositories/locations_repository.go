@@ -301,3 +301,47 @@ func getOrEmpty[T any](ptr *T) interface{} {
 	}
 	return fmt.Sprintf("%v", *ptr)
 }
+
+func (l *LocationsRepository) GenerateImportTemplate(language string) ([]byte, error) {
+	isEs := language != "en"
+	title, subtitle, instrTitle, instrContent := "Importar Ubicaciones", "Plantilla de importación — eSTOCK", "📋 Instrucciones", "1. Complete desde la fila 9  •  2. El campo Tipo acepta solo valores de la lista desplegable  •  3. ID y Descripción son obligatorios (*)"
+	if !isEs {
+		title, subtitle, instrTitle, instrContent = "Import Locations", "Location import template — eSTOCK", "📋 Instructions", "1. Fill in data from row 9 onwards  •  2. Type field accepts only values from the dropdown list  •  3. ID and Description are required (*)"
+	}
+	typeOpts := []string{"PALLET", "SHELF", "BIN", "FLOOR", "BLOCK"}
+	cfg := ModuleTemplateConfig{
+		DataSheetName: func() string { if isEs { return "Ubicaciones" }; return "Locations" }(),
+		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
+		Title: title, Subtitle: subtitle, InstrTitle: instrTitle, InstrContent: instrContent,
+		Columns: func() []ColumnDef {
+			if isEs {
+				return []ColumnDef{
+					{Header: "ID *", Required: true, Width: 14},
+					{Header: "Descripción *", Required: true, Width: 30},
+					{Header: "Zona", Required: false, Width: 20},
+					{Header: "Tipo", Required: false, Width: 14},
+				}
+			}
+			return []ColumnDef{
+				{Header: "ID *", Required: true, Width: 14},
+				{Header: "Description *", Required: true, Width: 30},
+				{Header: "Zone", Required: false, Width: 20},
+				{Header: "Type", Required: false, Width: 14},
+			}
+		}(),
+		ExampleRow: []string{"LOC-001", func() string { if isEs { return "Rack Principal Zona A" }; return "Main Rack Zone A" }(), "Zone A", "SHELF"},
+		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
+			f.NewSheet(optSheet)
+			for i, v := range typeOpts {
+				cell, _ := excelize.CoordinatesToCellName(1, i+1)
+				f.SetCellValue(optSheet, cell, v)
+			}
+			f.SetSheetVisible(optSheet, false)
+			return SharedDropListValidation(f, dataSheet, optSheet,
+				"D9:D2000", "$A$1:$A$5",
+				func() string { if isEs { return "Tipo inválido" }; return "Invalid type" }(),
+				func() string { if isEs { return "Seleccione un tipo de la lista" }; return "Select a type from the list" }())
+		},
+	}
+	return BuildModuleImportTemplate(cfg)
+}
