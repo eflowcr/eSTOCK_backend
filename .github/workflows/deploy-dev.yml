@@ -9,7 +9,27 @@ env:
   IMAGE_NAME: estock-backend
 
 jobs:
+  test:
+    name: Unit Tests — Articles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run article unit tests
+        run: |
+          go test ./services/... ./repositories/... \
+            -run "TestArticles|TestParseBool|TestUnique|TestBuildImport|TestGetLang|TestLotsService" \
+            -count=1 -v 2>&1
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

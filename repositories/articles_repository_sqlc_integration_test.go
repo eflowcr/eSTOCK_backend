@@ -138,7 +138,7 @@ func TestArticlesRepositorySQLC_GetByID_NotFound(t *testing.T) {
 	runMigrations(t, connStr)
 	repo := newTestRepo(t, connStr)
 
-	art, resp := repo.GetArticleByID(99999)
+	art, resp := repo.GetArticleByID("99999")
 	require.Nil(t, art)
 	require.NotNil(t, resp)
 	assert.True(t, resp.Handled)
@@ -238,7 +238,7 @@ func TestArticlesRepositorySQLC_Update_NotFound(t *testing.T) {
 		Name:         "X",
 		Presentation: "unit",
 	}
-	art, resp := repo.UpdateArticle(99999, data)
+	art, resp := repo.UpdateArticle("99999", data)
 	require.Nil(t, art)
 	require.NotNil(t, resp)
 	assert.Equal(t, responses.StatusNotFound, resp.StatusCode)
