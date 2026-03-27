@@ -419,8 +419,8 @@ func (l *LocationsRepository) GenerateImportTemplate(language string) ([]byte, e
 		InstrContent: ifStr(isEs,
 			"1. Complete desde la fila 9  •  2. El campo Tipo acepta solo valores de la lista desplegable  •  3. ID y Descripción son obligatorios (*)",
 			"1. Fill in data from row 9 onwards  •  2. Type field accepts only values from the dropdown  •  3. ID and Description are required (*)"),
-		LogoOffsetX: 55,
-		LogoOffsetY: 8,
+		LogoOffsetX: 156,
+		LogoOffsetY: 10,
 		Columns: []ColumnDef{
 			{Header: "ID *", Required: true, Width: 16},
 			{Header: ifStr(isEs, "Descripción *", "Description *"), Required: true, Width: 32},
