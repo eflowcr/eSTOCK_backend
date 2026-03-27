@@ -419,8 +419,8 @@ func (l *LocationsRepository) GenerateImportTemplate(language string) ([]byte, e
 		InstrContent: ifStr(isEs,
 			"1. Complete desde la fila 9  •  2. El campo Tipo acepta solo valores de la lista desplegable  •  3. ID y Descripción son obligatorios (*)",
 			"1. Fill in data from row 9 onwards  •  2. Type field accepts only values from the dropdown  •  3. ID and Description are required (*)"),
-		LogoOffsetX: 158,
-		LogoOffsetY: 12,
+		LogoOffsetX: 55,
+		LogoOffsetY: 8,
 		Columns: []ColumnDef{
 			{Header: "ID *", Required: true, Width: 16},
 			{Header: ifStr(isEs, "Descripción *", "Description *"), Required: true, Width: 32},
@@ -434,6 +434,17 @@ func (l *LocationsRepository) GenerateImportTemplate(language string) ([]byte, e
 			"SHELF",
 		},
 		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
+			// ── Logo area: re-merge A1:D2 as one region + light blue background ──
+			f.UnmergeCell(dataSheet, "A1", "D1")
+			f.UnmergeCell(dataSheet, "A2", "D2")
+			f.MergeCell(dataSheet, "A1", "D2")
+			logoAreaStyle, _ := f.NewStyle(&excelize.Style{
+				Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"EEF2FF"}},
+				Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+			})
+			f.SetCellStyle(dataSheet, "A1", "D2", logoAreaStyle)
+
+			// ── Dropdown options sheet ──────────────────────────────────────────
 			f.NewSheet(optSheet)
 			for i, v := range typeOpts {
 				cell, _ := excelize.CoordinatesToCellName(1, i+1)
