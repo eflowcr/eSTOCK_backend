@@ -1298,11 +1298,11 @@ func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, e
 	cfg := ModuleTemplateConfig{
 		DataSheetName: func() string { if isEs { return "Inventario" }; return "Inventory" }(),
 		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
-		LogoOffsetX:   614,
-		LogoOffsetY:   10,
+		LogoOffsetX:   14,
+		LogoOffsetY:   20,
 		LogoScaleX:    0.108,
 		LogoScaleY:    0.246,
-		LogoAnchor:    "A1",
+		LogoAnchor:    "E2",
 		Title: title, Subtitle: subtitle, InstrTitle: instrTitle, InstrContent: instrContent,
 		Columns: func() []ColumnDef {
 			if isEs {
