@@ -22,6 +22,9 @@ type ModuleTemplateConfig struct {
 	DataSheetName string
 	LogoOffsetX   int
 	LogoOffsetY   int
+	LogoScaleX    float64 // 0 = default 0.247
+	LogoScaleY    float64 // 0 = default 0.236
+	LogoAnchor    string  // "" = default "A1"
 	OptSheetName  string
 	Title         string // e.g. "Importar Ubicaciones"
 	Subtitle      string // e.g. "Plantilla de importación — eSTOCK"
@@ -75,16 +78,28 @@ func BuildModuleImportTemplate(cfg ModuleTemplateConfig) ([]byte, error) {
 	f.MergeCell(sheet, "A2", fmt.Sprintf("%s2", lastCol))
 
 	if len(assets.LogoEPRAC) > 0 {
-		_ = f.AddPictureFromBytes(sheet, "A2", &excelize.Picture{
+		anchor := cfg.LogoAnchor
+		if anchor == "" {
+			anchor = "A1"
+		}
+		scaleX := cfg.LogoScaleX
+		if scaleX == 0 {
+			scaleX = 0.108
+		}
+		scaleY := cfg.LogoScaleY
+		if scaleY == 0 {
+			scaleY = 0.246
+		}
+		_ = f.AddPictureFromBytes(sheet, anchor, &excelize.Picture{
 			Extension:  ".png",
 			File:       assets.LogoEPRAC,
 			InsertType: excelize.PictureInsertTypePlaceOverCells,
 			Format: &excelize.GraphicOptions{
 				OffsetX:         cfg.LogoOffsetX,
 				OffsetY:         cfg.LogoOffsetY,
-				ScaleX:          0.247,
-				ScaleY:          0.236,
-				LockAspectRatio: true,
+				ScaleX:          scaleX,
+				ScaleY:          scaleY,
+				LockAspectRatio: false,
 			},
 		})
 	}
