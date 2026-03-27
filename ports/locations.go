@@ -13,7 +13,9 @@ type LocationsRepository interface {
 	CreateLocation(loc *requests.Location) *responses.InternalResponse
 	UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse
 	DeleteLocation(id string) *responses.InternalResponse
-	ImportLocationsFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse)
+	ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse)
+	ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse)
+	ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse)
 	ExportLocationsToExcel() ([]byte, *responses.InternalResponse)
 	GenerateImportTemplate(language string) ([]byte, error)
 }

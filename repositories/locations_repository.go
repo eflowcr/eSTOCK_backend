@@ -178,79 +178,183 @@ func (r *LocationsRepository) DeleteLocation(id string) *responses.InternalRespo
 	return nil
 }
 
-func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
 	imported := []string{}
-	errorsList := []*responses.InternalResponse{}
+	skipped := []string{}
 
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al abrir el archivo de Excel",
-			Handled: false,
-		})
-		return imported, errorsList
+		return imported, skipped, &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo", Handled: false}
 	}
 
-	rows, err := f.GetRows("Sheet1")
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		return imported, skipped, &responses.InternalResponse{Message: "Sin hojas de datos", Handled: true}
+	}
+
+	rows, err := f.GetRows(sheets[0])
 	if err != nil {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al leer las filas del archivo de Excel",
-			Handled: false,
-		})
-		return imported, errorsList
+		return imported, skipped, &responses.InternalResponse{Error: err, Message: "Error al leer filas", Handled: false}
 	}
 
 	for i, row := range rows {
-		if i < 6 { // Saltar encabezado
+		if i < 8 { // Skip header, instructions, col headers, example (rows 1-8)
 			continue
 		}
-
 		if len(row) < 4 {
 			continue
 		}
 
 		locationCode := strings.TrimSpace(row[0])
-		description := strings.TrimSpace(row[1])
-		zone := strings.TrimSpace(row[2])
 		locType := strings.TrimSpace(row[3])
 
 		if locationCode == "" || locType == "" {
 			continue
 		}
 
-		descPtr := &description
-		if description == "" {
-			descPtr = nil
-		}
-
-		zonePtr := &zone
-		if zone == "" {
-			zonePtr = nil
-		}
-
-		loc := &requests.Location{
-			LocationCode: locationCode,
-			Description:  descPtr,
-			Zone:         zonePtr,
-			Type:         locType,
-		}
-
-		resp := r.CreateLocation(loc)
-		if resp != nil {
-			errorsList = append(errorsList, &responses.InternalResponse{
-				Error:   resp.Error,
-				Message: fmt.Sprintf("Row %d: %s", i+1, resp.Message),
-				Handled: resp.Handled,
-			})
+		// Skip example row
+		if strings.EqualFold(locationCode, "LOC-001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
 			continue
 		}
 
-		imported = append(imported, locationCode)
+		rowReq := requests.LocationImportRow{
+			LocationCode: locationCode,
+			Description:  strings.TrimSpace(row[1]),
+			Zone:         strings.TrimSpace(row[2]),
+			Type:         locType,
+		}
+
+		imp, sk, errResp := r.ImportLocationsFromJSON([]requests.LocationImportRow{rowReq})
+		imported = append(imported, imp...)
+		skipped = append(skipped, sk...)
+		if errResp != nil {
+			return imported, skipped, errResp
+		}
 	}
 
-	return imported, errorsList
+	return imported, skipped, nil
+}
+
+func (r *LocationsRepository) ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+	imported := []string{}
+	skipped := []string{}
+
+	for i, row := range rows {
+		code := strings.TrimSpace(row.LocationCode)
+		locType := strings.TrimSpace(row.Type)
+
+		if code == "" || locType == "" {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: código y tipo son requeridos", i+1))
+			continue
+		}
+		if strings.EqualFold(code, "LOC-001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
+			continue
+		}
+
+		desc := strings.TrimSpace(row.Description)
+		zone := strings.TrimSpace(row.Zone)
+		var descPtr, zonePtr *string
+		if desc != "" {
+			descPtr = &desc
+		}
+		if zone != "" {
+			zonePtr = &zone
+		}
+
+		loc := &requests.Location{LocationCode: code, Description: descPtr, Zone: zonePtr, Type: locType}
+		resp := r.CreateLocation(loc)
+		if resp != nil {
+			return imported, skipped, &responses.InternalResponse{
+				Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled,
+			}
+		}
+		imported = append(imported, code)
+	}
+
+	return imported, skipped, nil
+}
+
+func (r *LocationsRepository) ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+	results := make([]responses.LocationValidationResult, 0, len(rows))
+	seenCodes := make(map[string]bool)
+
+	for i, row := range rows {
+		code := strings.TrimSpace(row.LocationCode)
+		locType := strings.TrimSpace(row.Type)
+		result := responses.LocationValidationResult{RowIndex: i, Row: row}
+
+		// Field validation
+		if code == "" || locType == "" {
+			result.Status = responses.LocationStatusError
+			result.FieldErrors = map[string]string{}
+			if code == "" {
+				result.FieldErrors["location_code"] = "Código requerido"
+			}
+			if locType == "" {
+				result.FieldErrors["type"] = "Tipo requerido"
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Duplicate within batch
+		if seenCodes[strings.ToLower(code)] {
+			result.Status = responses.LocationStatusDuplicate
+			results = append(results, result)
+			continue
+		}
+		seenCodes[strings.ToLower(code)] = true
+
+		// Exact code match in DB
+		var existing database.Location
+		if err := r.DB.Where("location_code = ?", code).First(&existing).Error; err == nil {
+			result.Status = responses.LocationStatusExists
+			result.ExistingLocation = &responses.LocationValidationMatch{
+				ID:           existing.ID,
+				LocationCode: existing.LocationCode,
+				Type:         existing.Type,
+				IsActive:     existing.IsActive,
+			}
+			if existing.Description != nil {
+				result.ExistingLocation.Description = *existing.Description
+			}
+			if existing.Zone != nil {
+				result.ExistingLocation.Zone = *existing.Zone
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Similar description check
+		desc := strings.TrimSpace(row.Description)
+		if desc != "" {
+			keyword := desc
+			if len(keyword) > 20 {
+				keyword = keyword[:20]
+			}
+			var similar []database.Location
+			r.DB.Where("LOWER(description) LIKE LOWER(?) AND location_code != ?", "%"+keyword+"%", code).Limit(3).Find(&similar)
+			if len(similar) > 0 {
+				result.Status = responses.LocationStatusSimilar
+				for _, s := range similar {
+					m := responses.LocationValidationMatch{ID: s.ID, LocationCode: s.LocationCode, Type: s.Type, IsActive: s.IsActive}
+					if s.Description != nil {
+						m.Description = *s.Description
+					}
+					result.SimilarLocations = append(result.SimilarLocations, m)
+				}
+				results = append(results, result)
+				continue
+			}
+		}
+
+		result.Status = responses.LocationStatusNew
+		results = append(results, result)
+	}
+
+	return results, nil
 }
 
 func (l *LocationsRepository) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {

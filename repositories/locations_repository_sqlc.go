@@ -159,8 +159,16 @@ func (r *LocationsRepositorySQLC) DeleteLocation(id string) *responses.InternalR
 	return nil
 }
 
-func (r *LocationsRepositorySQLC) ImportLocationsFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (r *LocationsRepositorySQLC) ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
 	return r.gorm.ImportLocationsFromExcel(fileBytes)
+}
+
+func (r *LocationsRepositorySQLC) ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+	return r.gorm.ImportLocationsFromJSON(rows)
+}
+
+func (r *LocationsRepositorySQLC) ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+	return r.gorm.ValidateImportRows(rows)
 }
 
 func (r *LocationsRepositorySQLC) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {

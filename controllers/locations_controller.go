@@ -133,17 +133,62 @@ func (c *LocationsController) ImportLocationsFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	importedLocations, errorResponses := c.Service.ImportLocationsFromExcel(fileBytes)
-
-	if len(importedLocations) == 0 && len(errorResponses) > 0 {
-		resp := errorResponses[0]
-		writeErrorResponse(ctx, "ImportLocationsFromExcel", "import_locations_from_excel", resp)
+	imported, skipped, errResp := c.Service.ImportLocationsFromExcel(fileBytes)
+	if errResp != nil && len(imported) == 0 {
+		writeErrorResponse(ctx, "ImportLocationsFromExcel", "import_locations_from_excel", errResp)
 		return
 	}
 
 	tools.ResponseOK(ctx, "ImportLocationsFromExcel", "Ubicaciones importadas con éxito", "import_locations_from_excel", gin.H{
-		"imported_locations": importedLocations,
-		"errors":             errorResponses,
+		"successful":   len(imported),
+		"skipped":      len(skipped),
+		"failed":       0,
+		"imported":     imported,
+		"skipped_rows": skipped,
+	}, false, "")
+}
+
+func (c *LocationsController) ValidateImportRows(ctx *gin.Context) {
+	var rows []requests.LocationImportRow
+	if err := ctx.ShouldBindJSON(&rows); err != nil {
+		tools.ResponseBadRequest(ctx, "ValidateImportRows", "JSON inválido", "validate_location_import_rows")
+		return
+	}
+	if len(rows) == 0 {
+		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_location_import_rows")
+		return
+	}
+	results, resp := c.Service.ValidateImportRows(rows)
+	if resp != nil {
+		writeErrorResponse(ctx, "ValidateImportRows", "validate_location_import_rows", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "ValidateImportRows", "Validación completada", "validate_location_import_rows", gin.H{
+		"results": results,
+	}, false, "")
+}
+
+func (c *LocationsController) ImportLocationsFromJSON(ctx *gin.Context) {
+	var rows []requests.LocationImportRow
+	if err := ctx.ShouldBindJSON(&rows); err != nil {
+		tools.ResponseBadRequest(ctx, "ImportLocationsFromJSON", "JSON inválido", "import_locations_from_json")
+		return
+	}
+	if len(rows) == 0 {
+		tools.ResponseBadRequest(ctx, "ImportLocationsFromJSON", "No se proporcionaron filas", "import_locations_from_json")
+		return
+	}
+	imported, skipped, errResp := c.Service.ImportLocationsFromJSON(rows)
+	if errResp != nil {
+		writeErrorResponse(ctx, "ImportLocationsFromJSON", "import_locations_from_json", errResp)
+		return
+	}
+	tools.ResponseOK(ctx, "ImportLocationsFromJSON", "Importación completada", "import_locations_from_json", gin.H{
+		"successful":   len(imported),
+		"skipped":      len(skipped),
+		"failed":       0,
+		"imported":     imported,
+		"skipped_rows": skipped,
 	}, false, "")
 }
 

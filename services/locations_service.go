@@ -37,8 +37,16 @@ func (s *LocationsService) DeleteLocation(id string) *responses.InternalResponse
 	return s.Repository.DeleteLocation(id)
 }
 
-func (s *LocationsService) ImportLocationsFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (s *LocationsService) ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
 	return s.Repository.ImportLocationsFromExcel(fileBytes)
+}
+
+func (s *LocationsService) ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+	return s.Repository.ImportLocationsFromJSON(rows)
+}
+
+func (s *LocationsService) ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+	return s.Repository.ValidateImportRows(rows)
 }
 
 func (s *LocationsService) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {
