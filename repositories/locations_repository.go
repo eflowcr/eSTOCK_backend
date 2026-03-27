@@ -94,7 +94,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 		UpdatedAt:    tools.GetCurrentTime(),
 	}
 
-	err = r.DB.Create(location).Error
+	err = r.DB.Omit("id").Create(location).Error
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
