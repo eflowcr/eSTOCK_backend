@@ -46,8 +46,16 @@ func (s *InventoryService) Trend(sku string) (*dto.ConsumptionTrend, *responses.
 	return s.Repository.Trend(sku)
 }
 
-func (s *InventoryService) ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (s *InventoryService) ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
 	return s.Repository.ImportInventoryFromExcel(userId, fileBytes)
+}
+
+func (s *InventoryService) ImportInventoryFromJSON(userId string, rows []requests.InventoryImportRow) ([]string, []string, *responses.InternalResponse) {
+	return s.Repository.ImportInventoryFromJSON(userId, rows)
+}
+
+func (s *InventoryService) ValidateImportRows(rows []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
+	return s.Repository.ValidateImportRows(rows)
 }
 
 func (s *InventoryService) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {

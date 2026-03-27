@@ -15,7 +15,9 @@ type InventoryRepository interface {
 	UpdateInventory(item *requests.UpdateInventory) *responses.InternalResponse
 	DeleteInventory(sku, location string) *responses.InternalResponse
 	Trend(sku string) (*dto.ConsumptionTrend, *responses.InternalResponse)
-	ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []*responses.InternalResponse)
+	ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []string, *responses.InternalResponse)
+	ImportInventoryFromJSON(userId string, rows []requests.InventoryImportRow) ([]string, []string, *responses.InternalResponse)
+	ValidateImportRows(rows []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse)
 	ExportInventoryToExcel() ([]byte, *responses.InternalResponse)
 	GetInventoryLots(inventoryID string) ([]responses.InventoryLot, *responses.InternalResponse)
 	GetInventorySerials(inventoryID string) ([]responses.InventorySerialWithSerial, *responses.InternalResponse)

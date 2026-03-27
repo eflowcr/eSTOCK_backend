@@ -162,17 +162,65 @@ func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	imported, errorResponses := c.Service.ImportInventoryFromExcel(userId, fileBytes)
-
-	if len(imported) == 0 && len(errorResponses) > 0 {
-		resp := errorResponses[0]
-		writeErrorResponse(ctx, "ImportInventoryFromExcel", "import_inventory_from_excel", resp)
+	imported, skipped, errResp := c.Service.ImportInventoryFromExcel(userId, fileBytes)
+	if errResp != nil && len(imported) == 0 {
+		writeErrorResponse(ctx, "ImportInventoryFromExcel", "import_inventory_from_excel", errResp)
 		return
 	}
 
 	tools.ResponseOK(ctx, "ImportInventoryFromExcel", "Inventario importado con éxito", "import_inventory_from_excel", gin.H{
-		"imported_items": imported,
-		"errors":         errorResponses,
+		"successful":   len(imported),
+		"skipped":      len(skipped),
+		"failed":       0,
+		"imported":     imported,
+		"skipped_rows": skipped,
+	}, false, "")
+}
+
+func (c *InventoryController) ValidateImportRows(ctx *gin.Context) {
+	var rows []requests.InventoryImportRow
+	if err := ctx.ShouldBindJSON(&rows); err != nil {
+		tools.ResponseBadRequest(ctx, "ValidateImportRows", "JSON inválido", "validate_inventory_import_rows")
+		return
+	}
+	if len(rows) == 0 {
+		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_inventory_import_rows")
+		return
+	}
+	results, resp := c.Service.ValidateImportRows(rows)
+	if resp != nil {
+		writeErrorResponse(ctx, "ValidateImportRows", "validate_inventory_import_rows", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "ValidateImportRows", "Validación completada", "validate_inventory_import_rows", gin.H{
+		"results": results,
+	}, false, "")
+}
+
+func (c *InventoryController) ImportInventoryFromJSON(ctx *gin.Context) {
+	token := ctx.Request.Header.Get("Authorization")
+	userId, _ := tools.GetUserId(c.JWTSecret, token)
+
+	var rows []requests.InventoryImportRow
+	if err := ctx.ShouldBindJSON(&rows); err != nil {
+		tools.ResponseBadRequest(ctx, "ImportInventoryFromJSON", "JSON inválido", "import_inventory_from_json")
+		return
+	}
+	if len(rows) == 0 {
+		tools.ResponseBadRequest(ctx, "ImportInventoryFromJSON", "No se proporcionaron filas", "import_inventory_from_json")
+		return
+	}
+	imported, skipped, errResp := c.Service.ImportInventoryFromJSON(userId, rows)
+	if errResp != nil {
+		writeErrorResponse(ctx, "ImportInventoryFromJSON", "import_inventory_from_json", errResp)
+		return
+	}
+	tools.ResponseOK(ctx, "ImportInventoryFromJSON", "Importación completada", "import_inventory_from_json", gin.H{
+		"successful":   len(imported),
+		"skipped":      len(skipped),
+		"failed":       0,
+		"imported":     imported,
+		"skipped_rows": skipped,
 	}, false, "")
 }
 

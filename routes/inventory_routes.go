@@ -22,6 +22,8 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/import/template", inventoryController.DownloadImportTemplate)
+		route.POST("/import/validate", inventoryController.ValidateImportRows)
+		route.POST("/import/json", inventoryController.ImportInventoryFromJSON)
 		route.POST("/import", inventoryController.ImportInventoryFromExcel)
 		route.GET("/export", inventoryController.ExportInventoryToExcel)
 

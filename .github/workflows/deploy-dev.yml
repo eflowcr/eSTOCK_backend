@@ -10,7 +10,7 @@ env:
 
 jobs:
   test:
-    name: Unit Tests — Articles & Locations
+    name: Unit Tests — Articles, Locations & Inventory
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,7 +25,7 @@ jobs:
       - name: Run unit tests
         run: |
           go test ./services/... ./repositories/... \
-            -run "TestArticles|TestParseBool|TestUnique|TestBuildImport|TestGetLang|TestLotsService|TestLocations|TestIfStr" \
+            -run "TestArticles|TestParseBool|TestUnique|TestBuildImport|TestGetLang|TestLotsService|TestLocations|TestIfStr|TestInventory" \
             -count=1 -v 2>&1
 
   build-and-push:

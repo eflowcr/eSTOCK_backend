@@ -786,30 +786,27 @@ func (r *InventoryRepository) Trend(sku string) (*dto.ConsumptionTrend, *respons
 	}, nil
 }
 
-func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
 	imported := []string{}
-	errorsList := []*responses.InternalResponse{}
+	skipped := []string{}
 
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
-		return imported, []*responses.InternalResponse{{
-			Error:   err,
-			Message: "Error al abrir archivo Excel",
-			Handled: false,
-		}}
+		return imported, skipped, &responses.InternalResponse{Error: err, Message: "Error al abrir archivo Excel", Handled: false}
 	}
 
-	rows, err := f.GetRows("Sheet1")
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		return imported, skipped, &responses.InternalResponse{Message: "Sin hojas de datos", Handled: true}
+	}
+
+	rows, err := f.GetRows(sheets[0])
 	if err != nil {
-		return imported, []*responses.InternalResponse{{
-			Error:   err,
-			Message: "Error al leer filas de la hoja de Excel",
-			Handled: false,
-		}}
+		return imported, skipped, &responses.InternalResponse{Error: err, Message: "Error al leer filas", Handled: false}
 	}
 
 	for i, row := range rows {
-		if i < 7 || len(row) < 10 {
+		if i < 8 || len(row) < 10 { // Skip rows 1-8 (header/instructions/example)
 			continue
 		}
 
@@ -823,6 +820,12 @@ func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes 
 		trackBySerial := strings.EqualFold(strings.TrimSpace(row[7]), "Si")
 
 		if sku == "" || location == "" || quantityStr == "" {
+			continue
+		}
+
+		// Skip example row
+		if strings.EqualFold(sku, "SKU-0001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
 			continue
 		}
 
@@ -912,18 +915,157 @@ func (r *InventoryRepository) ImportInventoryFromExcel(userId string, fileBytes 
 		// Crear el inventario
 		resp := r.CreateInventory(userId, item)
 		if resp != nil {
-			errorsList = append(errorsList, &responses.InternalResponse{
+			return imported, skipped, &responses.InternalResponse{
 				Error:   resp.Error,
-				Message: fmt.Sprintf("Row %d: %s", i+1, resp.Message),
+				Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message),
 				Handled: resp.Handled,
-			})
-			continue
+			}
 		}
 
 		imported = append(imported, sku)
 	}
 
-	return imported, errorsList
+	return imported, skipped, nil
+}
+
+func (r *InventoryRepository) ImportInventoryFromJSON(userId string, rows []requests.InventoryImportRow) ([]string, []string, *responses.InternalResponse) {
+	imported := []string{}
+	skipped := []string{}
+
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		location := strings.TrimSpace(row.Location)
+		quantityStr := strings.TrimSpace(row.Quantity)
+
+		if sku == "" || location == "" || quantityStr == "" {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: SKU, ubicación y cantidad son requeridos", i+1))
+			continue
+		}
+		if strings.EqualFold(sku, "SKU-0001") {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
+			continue
+		}
+
+		qty, err := strconv.ParseFloat(quantityStr, 64)
+		if err != nil || qty < 0 {
+			skipped = append(skipped, fmt.Sprintf("Fila %d: cantidad inválida", i+1))
+			continue
+		}
+
+		var unitPrice *float64
+		if row.UnitPrice != "" {
+			if p, e := strconv.ParseFloat(strings.TrimSpace(row.UnitPrice), 64); e == nil {
+				unitPrice = &p
+			}
+		}
+
+		desc := strings.TrimSpace(row.Description)
+		var descPtr *string
+		if desc != "" {
+			descPtr = &desc
+		}
+
+		item := &requests.CreateInventory{
+			SKU:         sku,
+			Name:        strings.TrimSpace(row.Name),
+			Description: descPtr,
+			Location:    location,
+			Quantity:    qty,
+			UnitPrice:   unitPrice,
+		}
+
+		resp := r.CreateInventory(userId, item)
+		if resp != nil {
+			return imported, skipped, &responses.InternalResponse{
+				Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled,
+			}
+		}
+		imported = append(imported, sku)
+	}
+	return imported, skipped, nil
+}
+
+func (r *InventoryRepository) ValidateImportRows(rows []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
+	results := make([]responses.InventoryValidationResult, 0, len(rows))
+	seenKeys := make(map[string]bool)
+
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		location := strings.TrimSpace(row.Location)
+		qty := strings.TrimSpace(row.Quantity)
+		result := responses.InventoryValidationResult{RowIndex: i, Row: row}
+
+		// Field validation
+		if sku == "" || location == "" || qty == "" {
+			result.Status = responses.InventoryStatusError
+			result.FieldErrors = map[string]string{}
+			if sku == "" {
+				result.FieldErrors["sku"] = "SKU requerido"
+			}
+			if location == "" {
+				result.FieldErrors["location"] = "Ubicación requerida"
+			}
+			if qty == "" {
+				result.FieldErrors["quantity"] = "Cantidad requerida"
+			}
+			results = append(results, result)
+			continue
+		}
+		if _, err := strconv.ParseFloat(qty, 64); err != nil {
+			result.Status = responses.InventoryStatusError
+			result.FieldErrors = map[string]string{"quantity": "Cantidad debe ser un número"}
+			results = append(results, result)
+			continue
+		}
+
+		// Duplicate within batch
+		key := strings.ToLower(sku + "|" + location)
+		if seenKeys[key] {
+			result.Status = responses.InventoryStatusDuplicate
+			results = append(results, result)
+			continue
+		}
+		seenKeys[key] = true
+
+		// Exact SKU+location match in DB
+		existing, _ := r.GetInventoryBySkuAndLocation(sku, location)
+		if existing != nil {
+			result.Status = responses.InventoryStatusExists
+			result.ExistingInventory = &responses.InventoryValidationMatch{
+				ID:       existing.ID,
+				SKU:      existing.SKU,
+				Name:     existing.Name,
+				Location: existing.Location,
+				Quantity: existing.Quantity,
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Same SKU at different location (similar)
+		all, _ := r.GetAllInventory()
+		var similar []responses.InventoryValidationMatch
+		for _, inv := range all {
+			if strings.EqualFold(inv.SKU, sku) && !strings.EqualFold(inv.Location, location) {
+				similar = append(similar, responses.InventoryValidationMatch{
+					ID: inv.ID, SKU: inv.SKU, Name: inv.Name, Location: inv.Location, Quantity: inv.Quantity,
+				})
+				if len(similar) == 3 {
+					break
+				}
+			}
+		}
+		if len(similar) > 0 {
+			result.Status = responses.InventoryStatusSimilar
+			result.SimilarInventory = similar
+			results = append(results, result)
+			continue
+		}
+
+		result.Status = responses.InventoryStatusNew
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
