@@ -20,6 +20,8 @@ type ColumnDef struct {
 // professional-looking import template that mirrors the design.
 type ModuleTemplateConfig struct {
 	DataSheetName string
+	LogoOffsetX   int
+	LogoOffsetY   int
 	OptSheetName  string
 	Title         string // e.g. "Importar Ubicaciones"
 	Subtitle      string // e.g. "Plantilla de importación — eSTOCK"
@@ -78,8 +80,8 @@ func BuildModuleImportTemplate(cfg ModuleTemplateConfig) ([]byte, error) {
 			File:       assets.LogoEPRAC,
 			InsertType: excelize.PictureInsertTypePlaceOverCells,
 			Format: &excelize.GraphicOptions{
-				OffsetX:         5,
-				OffsetY:         2,
+				OffsetX:         cfg.LogoOffsetX,
+				OffsetY:         cfg.LogoOffsetY,
 				ScaleX:          0.247,
 				ScaleY:          0.236,
 				LockAspectRatio: true,
@@ -118,8 +120,8 @@ func BuildModuleImportTemplate(cfg ModuleTemplateConfig) ([]byte, error) {
 	f.SetCellValue(sheet, "A6", cfg.InstrTitle)
 
 	instrBadgeStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Size: 10, Bold: true, Color: colWhite},
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{colInstrBg}},
+		Font:      &excelize.Font{Size: 10, Bold: true, Color: colWhite},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{colInstrBg}},
 		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center", Indent: 1},
 		Border: []excelize.Border{
 			{Type: "top", Color: colInstrBg, Style: 1},
@@ -135,8 +137,8 @@ func BuildModuleImportTemplate(cfg ModuleTemplateConfig) ([]byte, error) {
 	f.SetCellValue(sheet, "A7", cfg.InstrContent)
 
 	instrBodyStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Size: 9, Color: colInstrBodyText},
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{colInstrBodyBg}},
+		Font:      &excelize.Font{Size: 9, Color: colInstrBodyText},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{colInstrBodyBg}},
 		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center", WrapText: true, Indent: 1},
 		Border: []excelize.Border{
 			{Type: "bottom", Color: colBorderLight, Style: 1},
@@ -150,8 +152,8 @@ func BuildModuleImportTemplate(cfg ModuleTemplateConfig) ([]byte, error) {
 	f.SetRowHeight(sheet, 8, 28)
 
 	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Size: 11, Bold: true, Color: colHeaderText},
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{colHeaderBg}},
+		Font:      &excelize.Font{Size: 11, Bold: true, Color: colHeaderText},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{colHeaderBg}},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "top", Color: colHeaderBg, Style: 1},
@@ -171,7 +173,7 @@ func BuildModuleImportTemplate(cfg ModuleTemplateConfig) ([]byte, error) {
 	f.SetRowHeight(sheet, 9, 22)
 
 	exampleStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Size: 10, Italic: true, Color: colExampleText},
+		Font:      &excelize.Font{Size: 10, Italic: true, Color: colExampleText},
 		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center", Indent: 1},
 		Border:    []excelize.Border{{Type: "bottom", Color: colBorderLight, Style: 1}},
 	})
@@ -261,8 +263,8 @@ func SharedNumericValidation(f *excelize.File, dataSheet, colRange string, vType
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func ptrStr(s string) *string  { return &s }
-func ptrBool(b bool) *bool     { return &b }
+func ptrStr(s string) *string { return &s }
+func ptrBool(b bool) *bool    { return &b }
 func ifStr(cond bool, a, b string) string {
 	if cond {
 		return a
