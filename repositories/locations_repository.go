@@ -419,8 +419,8 @@ func (l *LocationsRepository) GenerateImportTemplate(language string) ([]byte, e
 		InstrContent: ifStr(isEs,
 			"1. Complete desde la fila 9  •  2. El campo Tipo acepta solo valores de la lista desplegable  •  3. ID y Descripción son obligatorios (*)",
 			"1. Fill in data from row 9 onwards  •  2. Type field accepts only values from the dropdown  •  3. ID and Description are required (*)"),
-		LogoOffsetX: 156,
-		LogoOffsetY: 10,
+		LogoOffsetX: 96,
+		LogoOffsetY: 18,
 		Columns: []ColumnDef{
 			{Header: "ID *", Required: true, Width: 16},
 			{Header: ifStr(isEs, "Descripción *", "Description *"), Required: true, Width: 32},
@@ -434,6 +434,9 @@ func (l *LocationsRepository) GenerateImportTemplate(language string) ([]byte, e
 			"SHELF",
 		},
 		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
+			// ── Shrink column E so it doesn't visually bleed ──
+			f.SetColWidth(dataSheet, "E", "E", 0.5)
+
 			// ── Logo area: re-merge A1:D2 as one region + light blue background ──
 			f.UnmergeCell(dataSheet, "A1", "D1")
 			f.UnmergeCell(dataSheet, "A2", "D2")
