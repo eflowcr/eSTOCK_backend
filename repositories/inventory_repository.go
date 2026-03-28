@@ -1299,7 +1299,7 @@ func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, e
 		DataSheetName: func() string { if isEs { return "Inventario" }; return "Inventory" }(),
 		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
 		LogoOffsetX:   0,
-		LogoOffsetY:   5,
+		LogoOffsetY:   2,
 		LogoScaleX:    0.108,
 		LogoScaleY:    0.246,
 		LogoAnchor:    "E1",
@@ -1346,9 +1346,9 @@ func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, e
 			errPres := func() string { if isEs { return "Presentación inválida" }; return "Invalid presentation" }()
 			errBool := func() string { if isEs { return "Valor inválido" }; return "Invalid value" }()
 			errNum := func() string { if isEs { return "Cantidad inválida" }; return "Invalid quantity" }()
-			// Give the logo area more vertical space so it doesn't overlap the title
-			f.SetRowHeight(dataSheet, 1, 5)
-			f.SetRowHeight(dataSheet, 2, 80)
+			// Compact logo area: minimal spacer row, tighter logo row
+			f.SetRowHeight(dataSheet, 1, 2)
+			f.SetRowHeight(dataSheet, 2, 60)
 
 			// Yes/No dropdown (cols G-I) and numeric validation (col E)
 			if err := addDropListValidation(f, dataSheet, "G9:I2000", yesNoRef, errBool, errBool); err != nil { return err }
