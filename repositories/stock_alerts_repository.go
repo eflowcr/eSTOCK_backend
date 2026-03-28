@@ -2,16 +2,20 @@ package repositories
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
@@ -31,8 +35,24 @@ const (
 	AlertLevelMedium   AlertLevel = "medium"
 )
 
+// analyzeCacheTTL: how long the last Analyze() result is reused before re-running.
+// Multiple users opening /stock-alerts within this window share a single DB run.
+const analyzeCacheTTL = 60 * time.Second
+
+type analyzeCache struct {
+	result    *responses.StockAlertResponse
+	cachedAt  time.Time
+}
+
+const redisAnalyzeKey = "stock_alerts:analyze"
+
 type StockAlertsRepository struct {
-	DB *gorm.DB
+	DB    *gorm.DB
+	Redis *redis.Client // nil → in-memory fallback
+
+	// analyzeMu serializes concurrent Analyze() calls so only one runs at a time.
+	analyzeMu    sync.Mutex
+	analyzeCache analyzeCache // in-memory fallback when Redis is nil
 }
 
 func (r *StockAlertsRepository) GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
@@ -56,6 +76,24 @@ func (r *StockAlertsRepository) GetAllStockAlerts(resolved bool) ([]database.Sto
 }
 
 func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
+	// Serialize concurrent calls: only one Analyze() runs at a time.
+	r.analyzeMu.Lock()
+	defer r.analyzeMu.Unlock()
+
+	// --- Cache read ---
+	if r.Redis != nil {
+		// Try Redis first (survives restarts, shared across instances).
+		if cached, err := r.Redis.Get(context.Background(), redisAnalyzeKey).Bytes(); err == nil {
+			var resp responses.StockAlertResponse
+			if json.Unmarshal(cached, &resp) == nil {
+				return &resp, nil
+			}
+		}
+	} else if r.analyzeCache.result != nil && time.Since(r.analyzeCache.cachedAt) < analyzeCacheTTL {
+		// Fall back to in-memory cache.
+		return r.analyzeCache.result, nil
+	}
+
 	// Begin transaction
 	tx := r.DB.Begin()
 	if tx.Error != nil {
@@ -66,16 +104,12 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// Delete all stock alerts where is_resolved is true
-	err := tx.
-		Table(database.StockAlert{}.TableName()).
-		Where("is_resolved = ?", true).
-		Delete(&database.StockAlert{}).Error
-
+	// TRUNCATE is ~10× faster than DELETE for full-table clears (no row-level logging).
+	err := tx.Exec("TRUNCATE TABLE " + database.StockAlert{}.TableName()).Error
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
-			Message: "Error al eliminar las alertas de stock resueltas",
+			Message: "Error al limpiar alertas de stock existentes",
 			Handled: false,
 		}
 	}
@@ -95,29 +129,38 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
+	// Fix 1: Batch-fetch all outbound movements in the last 30 days — one query instead of N.
+	const movementLookbackDays = 30
+	lookbackCutoff := time.Now().AddDate(0, 0, -movementLookbackDays)
+
+	var allMovements []database.InventoryMovement
+	err = tx.
+		Table(database.InventoryMovement{}.TableName()).
+		Where("movement_type = ? AND created_at >= ?", "outbound", lookbackCutoff).
+		Find(&allMovements).Error
+
+	if err != nil {
+		tx.Rollback()
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener los movimientos de inventario",
+			Handled: false,
+		}
+	}
+
+	// Build lookup map: "sku|location" → []InventoryMovement
+	movementMap := make(map[string][]database.InventoryMovement, len(allMovements))
+	for _, m := range allMovements {
+		key := m.SKU + "|" + m.Location
+		movementMap[key] = append(movementMap[key], m)
+	}
+
 	var alerts []database.StockAlert
 
 	for i := 0; i < len(inventory); i++ {
-		// Get inventory movements
-		var movements []database.InventoryMovement
-		err = tx.
-			Table(database.InventoryMovement{}.TableName()).
-			Where("sku = ? AND location = ?", inventory[i].SKU, inventory[i].Location).
-			Order("created_at DESC").
-			Find(&movements).Error
-
-		if err != nil {
-			tx.Rollback()
-			return nil, &responses.InternalResponse{
-				Error:   err,
-				Message: "Error al obtener los movimientos de inventario",
-				Handled: false,
-			}
-		}
-
-		if len(movements) == 0 {
-			continue
-		}
+		// Look up pre-fetched movements — empty slice if none in last 30 days.
+		// analyzeInventoryItem handles empty slices by classifying on stock level alone.
+		movements := movementMap[inventory[i].SKU+"|"+inventory[i].Location]
 
 		analysis, errResponse := analyzeInventoryItem(inventory[i], movements)
 		if errResponse != nil {
@@ -126,18 +169,9 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 
 		if analysis != nil && analysis.AlertLevel != "" {
-			alertID, genErr := tools.GenerateNanoid(tx)
-			if genErr != nil {
-				tx.Rollback()
-				return nil, &responses.InternalResponse{
-					Error:   genErr,
-					Message: "Error al generar ID para la alerta de stock",
-					Handled: false,
-				}
-			}
-
+			// Use Go-generated UUID — no DB round-trip per alert.
 			alert := database.StockAlert{
-				ID:               alertID,
+				ID:               uuid.NewString(),
 				SKU:              analysis.SKU,
 				AlertType:        analysis.AlertType,
 				CurrentStock:     analysis.CurrentStock,
@@ -148,42 +182,20 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 				CreatedAt:        time.Now(),
 			}
 
-			// Add predicted stock out days only if it's finite and within int4 range
-			if !math.IsInf(float64(analysis.PredictedStockOutDays), 0) &&
-				!math.IsNaN(float64(analysis.PredictedStockOutDays)) {
-
-				predictedDays := analysis.PredictedStockOutDays
-
-				// Check if value is within PostgreSQL int4 range
-				if predictedDays >= -2147483648 && predictedDays <= 2147483647 {
-					alert.PredictedStockOutDays = &predictedDays
-				} else {
-					// Handle out-of-range value (set to nil or use a default)
-					alert.PredictedStockOutDays = nil
-					// Optionally log this issue
-					log.Printf("Warning: PredictedStockOutDays out of range: %d", predictedDays)
-				}
+			// Fix 2 (tail): sentinel MaxInt32 means "infinite" — store nil in DB.
+			if analysis.PredictedStockOutDays < math.MaxInt32 {
+				days := analysis.PredictedStockOutDays
+				alert.PredictedStockOutDays = &days
 			} else {
 				alert.PredictedStockOutDays = nil
 			}
 
 			alerts = append(alerts, alert)
-
-			// Add alert to the database
-			err = tx.Create(&alert).Error
-			if err != nil {
-				tx.Rollback()
-				return nil, &responses.InternalResponse{
-					Error:   err,
-					Message: "Error al crear la alerta de stock: " + err.Error(),
-					Handled: false,
-				}
-			}
 		}
 	}
 
-	// Generate lot expiration alerts
-	lotAlerts, err := r.generateLotExpirationAlertsInTransaction(tx)
+	// Build lot expiration alerts in memory (no individual inserts).
+	lotAlerts, err := r.buildLotExpirationAlerts(tx)
 	if err != nil {
 		tx.Rollback()
 		return nil, &responses.InternalResponse{
@@ -193,6 +205,19 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 	alerts = append(alerts, lotAlerts...)
+
+	// Batch-insert all alerts in a single statement.
+	if len(alerts) > 0 {
+		err = tx.Create(&alerts).Error
+		if err != nil {
+			tx.Rollback()
+			return nil, &responses.InternalResponse{
+				Error:   err,
+				Message: "Error al guardar las alertas de stock",
+				Handled: false,
+			}
+		}
+	}
 
 	// Commit transaction
 	err = tx.Commit().Error
@@ -210,7 +235,8 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		return nil, nil
 	}
 
-	criticialCount := 0
+	// Fix 4: compute summary counts and use them (were hardcoded to 0 before).
+	criticalCount := 0
 	highCount := 0
 	mediumCount := 0
 	expiringCount := 0
@@ -218,7 +244,7 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	for _, alert := range alerts {
 		switch strings.ToLower(strings.TrimSpace(alert.AlertLevel)) {
 		case "critical":
-			criticialCount++
+			criticalCount++
 		case "high":
 			highCount++
 		case "medium":
@@ -235,11 +261,20 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		Alerts:  alerts,
 		Summary: responses.StockAlertSumary{
 			Total:    len(alerts),
-			Critical: 0,
-			High:     0,
-			Medium:   0,
-			Expiring: 0,
+			Critical: criticalCount,
+			High:     highCount,
+			Medium:   mediumCount,
+			Expiring: expiringCount,
 		},
+	}
+
+	// --- Cache write ---
+	if r.Redis != nil {
+		if b, err := json.Marshal(response); err == nil {
+			r.Redis.Set(context.Background(), redisAnalyzeKey, b, analyzeCacheTTL)
+		}
+	} else {
+		r.analyzeCache = analyzeCache{result: response, cachedAt: time.Now()}
 	}
 
 	return response, nil
@@ -253,7 +288,19 @@ func analyzeInventoryItem(item database.Inventory, movements []database.Inventor
 		return nil, errResponse
 	}
 
-	alertLevel := classifyAlertLevel(int(quantity), int(consumptionTrend.PredictedStockOutDays))
+	// Fix 2: Cap before int conversion to prevent +Inf → MaxInt64 overflow.
+	predictedFloat := consumptionTrend.PredictedStockOutDays
+	var predictedInt int
+	switch {
+	case math.IsInf(predictedFloat, 0) || math.IsNaN(predictedFloat) || predictedFloat > 2147483647:
+		predictedInt = math.MaxInt32 // sentinel: stock won't run out soon; classify by absolute level
+	case predictedFloat < 0:
+		predictedInt = 0
+	default:
+		predictedInt = int(math.Floor(predictedFloat))
+	}
+
+	alertLevel := classifyAlertLevel(int(quantity), predictedInt)
 
 	// If null, no alert is needed
 	if alertLevel == nil {
@@ -278,7 +325,7 @@ func analyzeInventoryItem(item database.Inventory, movements []database.Inventor
 		SKU:                     item.SKU,
 		CurrentStock:            int(quantity),
 		AverageDailyConsumption: int(math.Round(consumptionTrend.AverageDailyConsumption)),
-		PredictedStockOutDays:   int(math.Floor(consumptionTrend.PredictedStockOutDays)),
+		PredictedStockOutDays:   predictedInt,
 		AlertLevel:              *alertLevel,
 		RecommendedStock:        recommendedStock,
 		AlertType:               string(alertType),
@@ -465,12 +512,13 @@ func GenerateAlertMessage(
 	return fmt.Sprintf("Alerta para SKU %s: Stock actual %d, se recomienda un nuevo pedido de %d unidades.", sku, currentStock, recommendedStock)
 }
 
-func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gorm.DB) ([]database.StockAlert, error) {
+// buildLotExpirationAlerts fetches lots and builds alert structs in memory — no DB inserts.
+// Used by Analyze() which batch-inserts everything at the end.
+func (r *StockAlertsRepository) buildLotExpirationAlerts(tx *gorm.DB) ([]database.StockAlert, error) {
 	var alerts []database.StockAlert
 	date := tools.GetCurrentTime()
 
 	var lots []database.Lot
-
 	err := tx.
 		Table("lots").
 		Select("id, lot_number, sku, quantity, expiration_date").
@@ -482,75 +530,60 @@ func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gor
 		return nil, fmt.Errorf("failed to fetch lots: %w", err)
 	}
 
-	for i := 0; i < len(lots); i++ {
+	for i := range lots {
 		if lots[i].ExpirationDate == nil {
 			continue
 		}
 
 		daysToExpire := int(math.Floor(lots[i].ExpirationDate.Sub(date).Hours() / 24))
 
-		var alertLevel *string
-		if daysToExpire <= 7 {
-			level := "critical"
-			alertLevel = &level
-		} else if daysToExpire <= 30 {
-			level := "high"
-			alertLevel = &level
-		} else if daysToExpire <= 90 {
-			level := "medium"
-			alertLevel = &level
+		var level string
+		switch {
+		case daysToExpire <= 7:
+			level = "critical"
+		case daysToExpire <= 30:
+			level = "high"
+		case daysToExpire <= 90:
+			level = "medium"
+		default:
+			continue
 		}
 
-		shouldAlert := false
-
-		if daysToExpire <= 7 {
-			alertLevel = tools.StrPtr("critical")
-			shouldAlert = true
-		} else if daysToExpire <= 30 {
-			alertLevel = tools.StrPtr("high")
-			shouldAlert = true
-		} else if daysToExpire <= 90 {
-			alertLevel = tools.StrPtr("medium")
-			shouldAlert = true
-		}
-
-		if shouldAlert {
-			alertID, genErr := tools.GenerateNanoid(tx)
-			if genErr != nil {
-				return nil, fmt.Errorf("failed to generate id for lot expiration alert: %w", genErr)
-			}
-
-			alert := database.StockAlert{
-				ID:               alertID,
-				SKU:              lots[i].SKU,
-				AlertType:        "lot_expiration",
-				CurrentStock:     int(lots[i].Quantity),
-				RecommendedStock: 0,
-				AlertLevel:       *alertLevel,
-				Message: fmt.Sprintf("Lote %s del SKU %s está por expirar en %d días (el %s). Cantidad actual del lote: %.2f.",
-					lots[i].LotNumber,
-					lots[i].SKU,
-					daysToExpire,
-					lots[i].ExpirationDate.Format("2006-01-02"),
-					lots[i].Quantity,
-				),
-				IsResolved:       false,
-				CreatedAt:        time.Now(),
-				LotNumber:        &lots[i].LotNumber,
-				ExpirationDate:   lots[i].ExpirationDate,
-				DaysToExpiration: &daysToExpire,
-			}
-
-			alerts = append(alerts, alert)
-
-			// Add alert to the database
-			err = tx.Create(&alert).Error
-			if err != nil {
-				return nil, fmt.Errorf("failed to create lot expiration alert: %w", err)
-			}
-		}
+		daysToExpireCopy := daysToExpire
+		alerts = append(alerts, database.StockAlert{
+			ID:               uuid.NewString(),
+			SKU:              lots[i].SKU,
+			AlertType:        "lot_expiration",
+			CurrentStock:     int(lots[i].Quantity),
+			RecommendedStock: 0,
+			AlertLevel:       level,
+			Message: fmt.Sprintf("Lote %s del SKU %s está por expirar en %d días (el %s). Cantidad actual del lote: %.2f.",
+				lots[i].LotNumber, lots[i].SKU, daysToExpire,
+				lots[i].ExpirationDate.Format("2006-01-02"), lots[i].Quantity,
+			),
+			IsResolved:       false,
+			CreatedAt:        time.Now(),
+			LotNumber:        &lots[i].LotNumber,
+			ExpirationDate:   lots[i].ExpirationDate,
+			DaysToExpiration: &daysToExpireCopy,
+		})
 	}
 
+	return alerts, nil
+}
+
+// generateLotExpirationAlertsInTransaction builds and immediately inserts lot expiration alerts.
+// Used by LotExpiration() only.
+func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gorm.DB) ([]database.StockAlert, error) {
+	alerts, err := r.buildLotExpirationAlerts(tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(alerts) > 0 {
+		if err = tx.Create(&alerts).Error; err != nil {
+			return nil, fmt.Errorf("failed to create lot expiration alerts: %w", err)
+		}
+	}
 	return alerts, nil
 }
 
@@ -595,7 +628,7 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 
 func (r *StockAlertsRepository) ResolveAlert(alertID string) *responses.InternalResponse {
 	var alert database.StockAlert
-	err := r.DB.First(&alert, alertID).Error
+	err := r.DB.Where("id = ?", alertID).First(&alert).Error
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,

@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_inventory_sku;
+DROP INDEX IF EXISTS idx_stock_alerts_is_resolved;
+DROP INDEX IF EXISTS idx_stock_alerts_sku;
+DROP INDEX IF EXISTS idx_inventory_movements_type_created;
+DROP INDEX IF EXISTS idx_lots_sku;
+DROP INDEX IF EXISTS idx_lots_expiration_date;
+DROP INDEX IF EXISTS idx_receiving_tasks_status;
+DROP INDEX IF EXISTS idx_picking_tasks_status;
+DROP INDEX IF EXISTS idx_receiving_tasks_created_at;
+DROP INDEX IF EXISTS idx_picking_tasks_created_at;

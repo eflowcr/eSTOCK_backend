@@ -7,10 +7,11 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	goredis "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, redisClient *goredis.Client) {
 	RegisterHealthRoutes(r, db)
 
 	api := r.Group("/api")
@@ -33,7 +34,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterReceivingTasksRoutes(api, db, config)
 	RegisterPickingTasksRoutes(api, db, config)
 	RegisterAdjustmentsRoutes(api, db, pool, config, auditSvc)
-	RegisterStockAlertsRoutes(api, db, config)
+	RegisterStockAlertsRoutes(api, db, config, redisClient)
 	RegisterInventoryMovementsRoutes(api, db, config)
 	RegisterGamificationRoutes(api, db, config)
 	RegisterPresentationsRoutes(api, db, pool, config)

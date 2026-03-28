@@ -32,6 +32,9 @@ type Config struct {
 	// Migrations (env: MIGRATION_URL; default "file://db/migrations"). Used when running migrations at startup or via CLI.
 	MigrationURL string
 
+	// Redis (env: REDIS_URL — e.g. "redis://localhost:6379"). Optional: if unset, in-memory cache is used.
+	RedisURL string
+
 	// Optional (env: ENVIRONMENT — e.g. "release", "debug", "development", "test")
 	Environment string
 	Version     string
@@ -59,6 +62,7 @@ func LoadConfig() (Config, error) {
 		DBType:        os.Getenv("DB_TYPE"),
 		ServerAddress: os.Getenv("SERVER_ADDRESS"),
 		MigrationURL:  os.Getenv("MIGRATION_URL"),
+		RedisURL:      os.Getenv("REDIS_URL"),
 		Environment:   os.Getenv("ENVIRONMENT"),
 		Version:       os.Getenv("Version"),
 	}

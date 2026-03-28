@@ -48,13 +48,18 @@ func main() {
 		defer pool.Close()
 	}
 
+	redisClient := tools.InitRedis(config)
+	if redisClient != nil {
+		defer redisClient.Close()
+	}
+
 	r := gin.New()
 	r.SetTrustedProxies(nil) // avoid "trust all proxies" warning; set explicitly if behind a reverse proxy
 	r.Use(gin.Recovery())
 	r.Use(tools.CORSMiddleware())
 	r.Use(tools.RequestLogMiddleware())
 
-	routes.RegisterRoutes(r, db, pool, config)
+	routes.RegisterRoutes(r, db, pool, config, redisClient)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/api/docs/openapi.json")))
 

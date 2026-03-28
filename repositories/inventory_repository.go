@@ -35,63 +35,112 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			Handled: false,
 		}
 	}
+	if len(items) == 0 {
+		return nil, nil
+	}
 
-	var enhanced []*dto.EnhancedInventory
+	// --- Batch query 1: all articles for the SKUs in this inventory snapshot ---
+	skus := make([]string, 0, len(items))
+	for _, it := range items {
+		skus = append(skus, it.SKU)
+	}
 
-	for _, item := range items {
-		// Obtener información del artículo
-		var article database.Article
-		err := r.DB.Where("sku = ?", item.SKU).First(&article).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	var articleRows []database.Article
+	if err = r.DB.Where("sku IN ?", skus).Find(&articleRows).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener artículos del inventario",
+			Handled: false,
+		}
+	}
+	articleMap := make(map[string]database.Article, len(articleRows))
+	for _, a := range articleRows {
+		articleMap[a.SKU] = a
+	}
+
+	// --- Batch query 2: lots for inventory IDs that track by lot ---
+	var lotInvIDs []string
+	for _, it := range items {
+		if a, ok := articleMap[it.SKU]; ok && a.TrackByLot {
+			lotInvIDs = append(lotInvIDs, it.ID)
+		}
+	}
+
+	type lotWithInvID struct {
+		database.Lot
+		InventoryID string `gorm:"column:inventory_id"`
+	}
+	lotMap := make(map[string][]database.Lot)
+	if len(lotInvIDs) > 0 {
+		var lotRows []lotWithInvID
+		err = r.DB.Table(database.Lot{}.TableName()).
+			Select("lots.*, inventory_lots.inventory_id").
+			Joins("JOIN inventory_lots ON lots.id = inventory_lots.lot_id").
+			Where("inventory_lots.inventory_id IN ?", lotInvIDs).
+			Find(&lotRows).Error
+		if err != nil {
 			return nil, &responses.InternalResponse{
 				Error:   err,
-				Message: "Error al obtener artículo para el elemento de inventario",
+				Message: "Error al obtener lotes del inventario",
 				Handled: false,
 			}
 		}
+		for _, row := range lotRows {
+			lotMap[row.InventoryID] = append(lotMap[row.InventoryID], row.Lot)
+		}
+	}
 
-		// Obtener lotes si aplica
-		var lots []database.Lot
-		if article.TrackByLot {
-			// Get lots associated with the inventory item
-			err = r.DB.
-				Table(database.Lot{}.TableName()).
-				Joins("JOIN inventory_lots ON lots.id = inventory_lots.lot_id").
-				Where("inventory_lots.inventory_id = ?", item.ID).
-				Find(&lots).Error
+	// --- Batch query 3: serials for inventory IDs that track by serial ---
+	var serialInvIDs []string
+	for _, it := range items {
+		if a, ok := articleMap[it.SKU]; ok && a.TrackBySerial {
+			serialInvIDs = append(serialInvIDs, it.ID)
+		}
+	}
 
-			if err != nil {
-				return nil, &responses.InternalResponse{
-					Error:   err,
-					Message: "Error al obtener lotes para el elemento de inventario",
-					Handled: false,
-				}
+	type serialWithInvID struct {
+		database.Serial
+		InventoryID string `gorm:"column:inventory_id"`
+	}
+	serialMap := make(map[string][]database.Serial)
+	if len(serialInvIDs) > 0 {
+		var serialRows []serialWithInvID
+		err = r.DB.Table(database.Serial{}.TableName()).
+			Select("serials.*, inventory_serials.inventory_id").
+			Joins("JOIN inventory_serials ON serials.id = inventory_serials.serial_id").
+			Where("inventory_serials.inventory_id IN ?", serialInvIDs).
+			Find(&serialRows).Error
+		if err != nil {
+			return nil, &responses.InternalResponse{
+				Error:   err,
+				Message: "Error al obtener seriales del inventario",
+				Handled: false,
 			}
 		}
-
-		// Obtener seriales si aplica
-		var serials []database.Serial
-		if article.TrackBySerial {
-			// Get serials associated with the inventory item
-			err = r.DB.
-				Table(database.Serial{}.TableName()).
-				Joins("JOIN inventory_serials ON serials.id = inventory_serials.serial_id").
-				Where("inventory_serials.inventory_id = ?", item.ID).
-				Find(&serials).Error
-
-			if err != nil {
-				return nil, &responses.InternalResponse{
-					Error:   err,
-					Message: "Error al obtener seriales para el elemento de inventario",
-					Handled: false,
-				}
-			}
+		for _, row := range serialRows {
+			serialMap[row.InventoryID] = append(serialMap[row.InventoryID], row.Serial)
 		}
+	}
 
-		// Image URL
+	// --- Assemble enhanced inventory using in-memory maps (zero additional DB calls) ---
+	enhanced := make([]*dto.EnhancedInventory, 0, len(items))
+	for _, item := range items {
+		article := articleMap[item.SKU]
+
+		desc := ""
+		if article.Description != nil {
+			desc = *article.Description
+		}
 		imageURL := ""
 		if article.ImageURL != nil {
 			imageURL = *article.ImageURL
+		}
+		minQty, maxQty := 0, 0
+		if article.MinQuantity != nil {
+			minQty = *article.MinQuantity
+		}
+		if article.MaxQuantity != nil {
+			maxQty = *article.MaxQuantity
 		}
 
 		enhanced = append(enhanced, &dto.EnhancedInventory{
@@ -104,16 +153,16 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			CreatedAt:       item.CreatedAt,
 			UpdatedAt:       item.UpdatedAt,
 			Name:            article.Name,
-			Description:     *article.Description,
+			Description:     desc,
 			Presentation:    article.Presentation,
 			TrackByLot:      article.TrackByLot,
 			TrackBySerial:   article.TrackBySerial,
 			TrackExpiration: article.TrackExpiration,
 			ImageURL:        imageURL,
-			MinQuantity:     *article.MinQuantity,
-			MaxQuantity:     *article.MaxQuantity,
-			Lots:            lots,
-			Serials:         serials,
+			MinQuantity:     minQty,
+			MaxQuantity:     maxQty,
+			Lots:            lotMap[item.ID],
+			Serials:         serialMap[item.ID],
 		})
 	}
 

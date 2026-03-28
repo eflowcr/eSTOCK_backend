@@ -12,6 +12,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -165,8 +166,8 @@ func NewSerials(db *gorm.DB, pool *pgxpool.Pool) (ports.SerialsRepository, *serv
 	return r, services.NewSerialsService(r)
 }
 
-func NewStockAlerts(db *gorm.DB) (ports.StockAlertsRepository, *services.StockAlertsService) {
-	r := &repositories.StockAlertsRepository{DB: db}
+func NewStockAlerts(db *gorm.DB, redisClient *redis.Client) (ports.StockAlertsRepository, *services.StockAlertsService) {
+	r := &repositories.StockAlertsRepository{DB: db, Redis: redisClient}
 	return r, services.NewStockAlertsService(r)
 }
 
