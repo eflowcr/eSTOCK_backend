@@ -21,7 +21,11 @@ func NewGamificationController(service services.GamificationService, jwtSecret s
 
 func (c *GamificationController) GamificationStats(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	stats, errResp := c.Service.GamificationStats(userId)
 
@@ -40,7 +44,11 @@ func (c *GamificationController) GamificationStats(ctx *gin.Context) {
 
 func (c *GamificationController) Badges(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	badges, errResp := c.Service.Badges(userId)
 
@@ -75,7 +83,11 @@ func (c *GamificationController) GetAllBadges(ctx *gin.Context) {
 
 func (c *GamificationController) CompleteTasks(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	var task requests.CompleteTasks
 	if err := ctx.ShouldBindJSON(&task); err != nil {

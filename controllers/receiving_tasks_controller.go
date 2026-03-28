@@ -69,7 +69,11 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 	response := c.Service.CreateReceivingTask(userId, &request)
 
 	if response != nil {
@@ -103,7 +107,11 @@ func (c *ReceivingTasksController) UpdateReceivingTask(ctx *gin.Context) {
 
 func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
@@ -165,7 +173,11 @@ func (c *ReceivingTasksController) CompleteFullTask(ctx *gin.Context) {
 
 	location := ctx.Param("location")
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	response := c.Service.CompleteFullTask(id, location, userId)
 	if response != nil {
@@ -185,7 +197,11 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 	location := ctx.Param("location")
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	var item requests.ReceivingTaskItemRequest
 	if err := ctx.ShouldBindJSON(&item); err != nil {

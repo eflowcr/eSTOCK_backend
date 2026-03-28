@@ -70,7 +70,11 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	response := c.Service.CreatePickingTask(userId, &request)
 	if response != nil {
@@ -105,7 +109,11 @@ func (c *PickingTasksController) UpdatePickingTask(ctx *gin.Context) {
 
 func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
@@ -199,7 +207,11 @@ func (c *PickingTasksController) CompletePickingTask(ctx *gin.Context) {
 	location := ctx.Param("location")
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	response := c.Service.CompletePickingTask(id, location, userId)
 	if response != nil {
@@ -229,7 +241,11 @@ func (c *PickingTasksController) CompletePickingLine(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	response := c.Service.CompletePickingLine(id, location, userId, item)
 

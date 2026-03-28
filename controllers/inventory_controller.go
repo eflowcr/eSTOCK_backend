@@ -73,7 +73,11 @@ func (c *InventoryController) GetPickSuggestions(ctx *gin.Context) {
 
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	var request requests.CreateInventory
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -141,7 +145,11 @@ func (c *InventoryController) Trend(ctx *gin.Context) {
 
 func (c *InventoryController) ImportInventoryFromExcel(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
@@ -199,7 +207,11 @@ func (c *InventoryController) ValidateImportRows(ctx *gin.Context) {
 
 func (c *InventoryController) ImportInventoryFromJSON(ctx *gin.Context) {
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	var rows []requests.InventoryImportRow
 	if err := ctx.ShouldBindJSON(&rows); err != nil {

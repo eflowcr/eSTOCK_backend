@@ -21,5 +21,9 @@ func RegisterDashboardRoutes(router *gin.RouterGroup, db *gorm.DB, config config
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		route.GET("/stats", dashboardController.GetDashboardStats)
+		route.GET("/inventory-summary", dashboardController.GetInventorySummary)
+		route.GET("/movements-monthly", dashboardController.GetMovementsMonthly)
+		route.GET("/activity", dashboardController.GetRecentActivity)
+
 	}
 }

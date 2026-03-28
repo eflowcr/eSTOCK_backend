@@ -92,7 +92,11 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 	}
 
 	token := ctx.Request.Header.Get("Authorization")
-	userId, _ := tools.GetUserId(c.JWTSecret, token)
+	userId, userIdErr := tools.GetUserId(c.JWTSecret, token)
+	if userIdErr != nil {
+		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
+		return
+	}
 
 	created, response := c.Service.CreateAdjustment(userId, adjustment)
 	if response != nil {
