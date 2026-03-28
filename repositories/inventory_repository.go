@@ -1346,7 +1346,11 @@ func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, e
 			errPres := func() string { if isEs { return "Presentación inválida" }; return "Invalid presentation" }()
 			errBool := func() string { if isEs { return "Valor inválido" }; return "Invalid value" }()
 			errNum := func() string { if isEs { return "Cantidad inválida" }; return "Invalid quantity" }()
-			// No presentation column in inventory template; apply yes/no to cols G,H,I
+			// Give the logo area more vertical space so it doesn't overlap the title
+			f.SetRowHeight(dataSheet, 1, 5)
+			f.SetRowHeight(dataSheet, 2, 80)
+
+			// Yes/No dropdown (cols G-I) and numeric validation (col E)
 			if err := addDropListValidation(f, dataSheet, "G9:I2000", yesNoRef, errBool, errBool); err != nil { return err }
 			_ = presRef; _ = errPres
 			return addNumericMinValidation(f, dataSheet, "E9:E2000", excelize.DataValidationTypeDecimal, errNum, errNum)
