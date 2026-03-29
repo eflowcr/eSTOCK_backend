@@ -2,3 +2,29 @@
 .env
 app.env
 cmd/.env
+
+# Compiled binaries
+eSTOCK_backend
+/bin/
+
+# Test coverage
+coverage.out
+coverage.html
+*.coverprofile
+
+# Vendor (if not committed)
+# vendor/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Air live-reload
+tmp/
+
+# Log files
+*.log
