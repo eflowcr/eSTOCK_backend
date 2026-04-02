@@ -1,9 +1,13 @@
-name: Build & Deploy Backend (Dev)
+name: Build & Deploy Backend (Prod)
 
 on:
   push:
-    branches: [dev]
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to deploy (e.g. v1.2.0)"
+        required: true
 
 env:
   REGISTRY: ghcr.io
@@ -33,6 +37,15 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Resolve version tag
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -47,8 +60,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -57,12 +70,12 @@ jobs:
           curl -sf -X POST \
             -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"image_tag\":\"dev-${{ github.sha }}\"}" \
+            -d "{\"image_tag\":\"${{ steps.ver.outputs.tag }}\"}" \
             "https://vps-manager-api.31.97.145.251.nip.io/api/v1/stacks/update" \
-            && echo "✅ Client stacks update triggered" \
-            || echo "⚠️  No active client stacks (or update skipped)"
+            && echo "✅ Production deploy triggered: ${{ steps.ver.outputs.tag }}" \
+            || echo "⚠️  Deploy trigger failed or no active stacks"
 
       - name: Verify
         run: |
-          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev pushed"
-          echo "Branch: ${{ github.ref_name }} | SHA: ${{ github.sha }}"
+          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.tag }} pushed"
+          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest updated"
