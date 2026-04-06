@@ -31,6 +31,6 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB, config configurati
 		protected.GET("/import/template", userController.DownloadImportTemplate)
 		protected.POST("/import", userController.ImportUsersFromExcel)
 		protected.GET("/export", userController.ExportUsersToExcel)
-		protected.PUT("/:id/:password", userController.UpdateUserPassword)
+		protected.PUT("/:id/password", userController.UpdateUserPassword)
 	}
 }
