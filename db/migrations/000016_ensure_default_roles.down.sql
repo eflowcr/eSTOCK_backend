@@ -1,0 +1,1 @@
+-- No-op: we do not remove default roles on rollback to avoid breaking user assignments.
