@@ -159,9 +159,15 @@ func (c *UserController) ExportUsersToExcel(ctx *gin.Context) {
 
 func (c *UserController) UpdateUserPassword(ctx *gin.Context) {
 	id := ctx.Param("id")
-	password := ctx.PostForm("password")
+	var body struct {
+		NewPassword string `json:"newPassword"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
 
-	response := c.Service.UpdateUserPassword(id, password)
+	response := c.Service.UpdateUserPassword(id, body.NewPassword)
 	if response != nil {
 		writeErrorResponse(ctx, "ChangePassword", "change_password", response)
 		return

@@ -57,7 +57,7 @@ jobs:
           curl -sf -X POST \
             -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"image_tag\":\"dev-${{ github.sha }}\"}" \
+            -d "{\"image_tag\":\"dev-${{ github.sha }}\",\"environment\":\"development\"}" \
             "https://vps-manager-api.31.97.145.251.nip.io/api/v1/stacks/update" \
             && echo "✅ Client stacks update triggered" \
             || echo "⚠️  No active client stacks (or update skipped)"

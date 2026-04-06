@@ -70,7 +70,7 @@ jobs:
           curl -sf -X POST \
             -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"image_tag\":\"${{ steps.ver.outputs.tag }}\"}" \
+            -d "{\"image_tag\":\"${{ steps.ver.outputs.tag }}\",\"environment\":\"production\"}" \
             "https://vps-manager-api.31.97.145.251.nip.io/api/v1/stacks/update" \
             && echo "✅ Production deploy triggered: ${{ steps.ver.outputs.tag }}" \
             || echo "⚠️  Deploy trigger failed or no active stacks"
