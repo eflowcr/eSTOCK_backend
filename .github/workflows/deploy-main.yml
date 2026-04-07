@@ -32,7 +32,18 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # Allow buildx to push to self-hosted registry with self-signed cert
+      - name: Create buildkitd config
+        run: |
+          cat > /tmp/buildkitd.toml << 'EOF'
+          [registry."31.97.145.251:5000"]
+            insecure = true
+          EOF
+
       - uses: docker/setup-buildx-action@v3
+        with:
+          config: /tmp/buildkitd.toml
 
       # Login to GHCR
       - name: Login to GHCR
