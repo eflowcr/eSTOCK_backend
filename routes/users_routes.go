@@ -17,9 +17,6 @@ func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB, config configurati
 	_, userService := wire.NewUsers(db, config)
 	userController := controllers.NewUserController(*userService)
 
-	public := router.Group("/users")
-	public.POST("/register", userController.CreateUser)
-
 	protected := router.Group("/users")
 	protected.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{

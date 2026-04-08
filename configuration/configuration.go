@@ -38,6 +38,12 @@ type Config struct {
 	// Optional (env: ENVIRONMENT — e.g. "release", "debug", "development", "test")
 	Environment string
 	Version     string
+
+	// Default admin seeding (env: DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD)
+	// If set, eSTOCK will ensure an Admin user exists at startup with these credentials.
+	// In development mode, falls back to dev@local.test / 12345678 when unset.
+	DefaultAdminEmail    string
+	DefaultAdminPassword string
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -63,8 +69,10 @@ func LoadConfig() (Config, error) {
 		ServerAddress: os.Getenv("SERVER_ADDRESS"),
 		MigrationURL:  os.Getenv("MIGRATION_URL"),
 		RedisURL:      os.Getenv("REDIS_URL"),
-		Environment:   os.Getenv("ENVIRONMENT"),
-		Version:       os.Getenv("Version"),
+		Environment:          os.Getenv("ENVIRONMENT"),
+		Version:              os.Getenv("Version"),
+		DefaultAdminEmail:    os.Getenv("DEFAULT_ADMIN_EMAIL"),
+		DefaultAdminPassword: os.Getenv("DEFAULT_ADMIN_PASSWORD"),
 	}
 	if cfg.DBSource == "" {
 		cfg.DBSource = os.Getenv("DATABASE_URL")

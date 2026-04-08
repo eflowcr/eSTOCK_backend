@@ -40,6 +40,8 @@ func main() {
 
 	db := tools.InitDB(config)
 
+	tools.EnsureDefaultAdmin(db, config)
+
 	var pool *pgxpool.Pool
 	if p, err := tools.InitPgxPool(config); err != nil {
 		log.Fatal().Err(err).Msg("pgx pool failed")
