@@ -21,6 +21,28 @@ type PickingTaskRepository struct {
 	DB *gorm.DB
 }
 
+// validPickingTransitions declara las transiciones permitidas de status.
+// Los estados finales (completed, completed_with_differences, cancelled, abandoned)
+// no aparecen como claves porque no tienen transición saliente.
+var validPickingTransitions = map[string]map[string]bool{
+	"open":        {"assigned": true, "in_progress": true, "cancelled": true, "abandoned": true},
+	"assigned":    {"open": true, "in_progress": true, "cancelled": true, "abandoned": true},
+	"in_progress": {"completed": true, "completed_with_differences": true, "cancelled": true, "abandoned": true},
+}
+
+// isValidPickingTransition retorna true si el cambio de status es permitido.
+// No-op (mismo → mismo) siempre es true.
+// Desde estados finales no hay transición saliente → false.
+func isValidPickingTransition(current, next string) bool {
+	if current == next {
+		return true
+	}
+	if allowed, ok := validPickingTransitions[current]; ok {
+		return allowed[next]
+	}
+	return false
+}
+
 func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	var tasks []responses.PickingTaskView
 
