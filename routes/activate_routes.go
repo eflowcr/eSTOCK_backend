@@ -24,7 +24,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	if pool != nil {
 		_, auditSvc = wire.NewAuditLog(pool)
 	}
-	RegisterAuthenticationRoutes(api, db, config, rolesRepo)
+	RegisterAuthenticationRoutes(api, db, config, rolesRepo, auditSvc)
 	RegisterEncryptionRoutes(api, config)
 	RegisterUserRoutes(api, db, config)
 	RegisterPreferencesRoutes(api, pool, config)
