@@ -150,11 +150,24 @@ func (s *StockTransfersService) ExecuteTransfer(transferID, userID string) (*dat
 			qty := line.Quantity
 
 			var fromInv database.Inventory
-			if err := tx.Where("sku = ? AND location = ?", sku, fromCode).First(&fromInv).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return fmt.Errorf("insufficient stock: SKU %s not found at source location %s", sku, fromCode)
-				}
+			// Lock the inventory row to prevent race conditions during concurrent transfers
+			// or simultaneous picking operations (B3e A5).
+			if err := tx.Raw(
+				`SELECT id, sku, location, quantity, reserved_qty FROM inventory WHERE sku = ? AND location = ? FOR UPDATE`,
+				sku, fromCode,
+			).Scan(&fromInv).Error; err != nil {
 				return fmt.Errorf("find inventory %s at %s: %w", sku, fromCode, err)
+			}
+			if fromInv.ID == "" {
+				return fmt.Errorf("insufficient stock: SKU %s not found at source location %s", sku, fromCode)
+			}
+			// B3e (A5): check available (non-reserved) stock.
+			available := fromInv.Quantity - fromInv.ReservedQty
+			if qty > available {
+				return fmt.Errorf(
+					"no puede transferir %.2f de %s en %s — hay %.2f reservadas en pickings activos (disponible: %.2f)",
+					qty, sku, fromCode, fromInv.ReservedQty, available,
+				)
 			}
 			if fromInv.Quantity < qty {
 				return fmt.Errorf("insufficient stock: SKU %s at %s has %.3f, need %.3f", sku, fromCode, fromInv.Quantity, qty)

@@ -168,8 +168,13 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 	return r, services.NewLotsService(r, articlesRepo)
 }
 
-func NewPickingTask(db *gorm.DB) (ports.PickingTaskRepository, *services.PickingTaskService) {
+// NewPickingTask builds PickingTaskRepository (with optional AuditService) and PickingTaskService.
+// When pool is non-nil, audit logging is enabled; otherwise AuditService is nil (graceful no-op).
+func NewPickingTask(db *gorm.DB, auditSvc ...*services.AuditService) (ports.PickingTaskRepository, *services.PickingTaskService) {
 	r := &repositories.PickingTaskRepository{DB: db}
+	if len(auditSvc) > 0 {
+		r.AuditService = auditSvc[0]
+	}
 	return r, services.NewPickingTaskService(r)
 }
 
