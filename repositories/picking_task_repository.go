@@ -470,12 +470,12 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 		lots := splitCSV(lotsStr)
 		serials := splitCSV(serialsStr)
 
+		// TODO B3: Location → Allocations, LotNumbers/SerialNumbers need new types (LotEntry/Serial).
+		// Excel import will be re-wired in B3. Variables consumed to silence unused-var errors.
+		_, _, _ = location, lots, serials
 		items = append(items, database.PickingTaskItem{
 			SKU:              strings.TrimSpace(sku),
-			ExpectedQuantity: qty,
-			Location:         strings.TrimSpace(location),
-			LotNumbers:       lots,
-			SerialNumbers:    serials,
+			ExpectedQuantity: float64(qty),
 		})
 	}
 	if len(items) == 0 {
