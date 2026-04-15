@@ -11,6 +11,7 @@ type Inventory struct {
 	Description  *string   `gorm:"column:description" json:"description"`
 	Location     string    `gorm:"column:location;index:sku_location_idx" json:"location"`
 	Quantity     float64   `gorm:"column:quantity" json:"quantity"`
+	ReservedQty  float64   `gorm:"column:reserved_qty" json:"reserved_qty"`
 	Status       string    `gorm:"column:status" json:"status"`
 	Presentation string    `gorm:"column:presentation" json:"presentation"`
 	UnitPrice    *float64  `gorm:"column:unit_price" json:"unit_price"`

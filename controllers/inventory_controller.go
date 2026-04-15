@@ -2,8 +2,8 @@ package controllers
 
 import (
 	"io"
+	"strconv"
 
-	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -55,20 +55,22 @@ func (c *InventoryController) GetInventoryBySkuAndLocation(ctx *gin.Context) {
 }
 
 func (c *InventoryController) GetPickSuggestions(ctx *gin.Context) {
-	sku := ctx.Param("sku")
-	if sku == "" {
-		tools.ResponseBadRequest(ctx, "GetPickSuggestions", "SKU es requerido", "get_pick_suggestions")
+	sku, ok := tools.ParseRequiredParam(ctx, "sku", "GetPickSuggestions", "get_pick_suggestions", "SKU es requerido")
+	if !ok {
 		return
 	}
-	list, response := c.Service.GetPickSuggestionsBySKU(sku)
-	if response != nil {
-		writeErrorResponse(ctx, "GetPickSuggestions", "get_pick_suggestions", response)
+	qty := 0.0
+	if qtyStr := ctx.Query("qty"); qtyStr != "" {
+		if parsed, err := strconv.ParseFloat(qtyStr, 64); err == nil {
+			qty = parsed
+		}
+	}
+	resp, errResp := c.Service.GetPickSuggestionsBySKU(sku, qty)
+	if errResp != nil {
+		writeErrorResponse(ctx, "GetPickSuggestions", "get_pick_suggestions", errResp)
 		return
 	}
-	if list == nil {
-		list = []dto.PickSuggestion{}
-	}
-	tools.ResponseOK(ctx, "GetPickSuggestions", "Sugerencias de picking obtenidas", "get_pick_suggestions", list, false, "")
+	tools.ResponseOK(ctx, "GetPickSuggestions", "Sugerencias de picking obtenidas", "get_pick_suggestions", resp, false, "")
 }
 
 func (c *InventoryController) CreateInventory(ctx *gin.Context) {
