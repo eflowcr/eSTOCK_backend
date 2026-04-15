@@ -22,6 +22,27 @@ type ReceivingTasksRepository struct {
 	DB *gorm.DB
 }
 
+// validReceivingTransitions declara las transiciones permitidas de status.
+// Receiving no tiene 'abandoned' (el cron no limpia recepciones — la mercancía física manda).
+// Los estados finales (completed, completed_with_differences, cancelled) no tienen transición saliente.
+var validReceivingTransitions = map[string]map[string]bool{
+	"open":        {"in_progress": true, "cancelled": true},
+	"in_progress": {"completed": true, "completed_with_differences": true, "cancelled": true},
+}
+
+// isValidReceivingTransition retorna true si el cambio de status es permitido.
+// No-op (mismo → mismo) siempre es true.
+// Desde estados finales no hay transición saliente → false.
+func isValidReceivingTransition(current, next string) bool {
+	if current == next {
+		return true
+	}
+	if allowed, ok := validReceivingTransitions[current]; ok {
+		return allowed[next]
+	}
+	return false
+}
+
 func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
 	var tasks []responses.ReceivingTasksView
 
