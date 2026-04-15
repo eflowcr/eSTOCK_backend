@@ -495,12 +495,13 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		lots := splitCSV(lotsStr)
 		serials := splitCSV(serialsStr)
 
+		// TODO B3: LotNumbers/SerialNumbers need new types (LotEntry/Serial).
+		// Excel import lots/serials will be re-wired in B3. Variables consumed to silence unused-var errors.
+		_, _ = lots, serials
 		items = append(items, database.ReceivingTaskItem{
 			SKU:              strings.TrimSpace(sku),
-			ExpectedQuantity: expQty,
+			ExpectedQuantity: float64(expQty),
 			Location:         strings.TrimSpace(location),
-			LotNumbers:       lots,
-			SerialNumbers:    serials,
 		})
 	}
 	if len(items) == 0 {
@@ -1045,143 +1046,45 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 		}
 
 		if article.TrackByLot && item.LotNumbers != nil {
-			for j := 0; j < len(item.LotNumbers); j++ {
-				lotNum := item.LotNumbers[j]
-
-				var lotCount int64
-				err := tx.Model(&database.Lot{}).
-					Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).
-					Count(&lotCount).Error
-				if err != nil {
-					return errors.New("failed to check existing lot")
+			// B2a: upsert each lot with ON CONFLICT — consolidates quantity when the same
+			// SKU+lot_number arrives in multiple receiving lines (UNIQUE INDEX covers non-archived).
+			for _, lotNum := range item.LotNumbers {
+				var expirationDate *time.Time
+				if lotNum.ExpirationDate != nil && *lotNum.ExpirationDate != "" {
+					exp, err := time.Parse("2006-01-02", *lotNum.ExpirationDate)
+					if err == nil {
+						expirationDate = &exp
+					}
 				}
 
-				lotId := ""
+				lotID, err := tools.GenerateNanoid(tx)
+				if err != nil {
+					return fmt.Errorf("generate nanoid for lot: %w", err)
+				}
 
-				if lotCount == 0 {
-					var expirationDate *time.Time
-					if lotNum.ExpirationDate != nil {
-						parsed, _ := time.Parse("2006-01-02", *lotNum.ExpirationDate)
-						expirationDate = &parsed
-					}
+				if err := tx.Exec(`
+					INSERT INTO lots (id, sku, lot_number, quantity, expiration_date, status, created_at, updated_at)
+					VALUES (?, ?, ?, ?, ?, 'active', NOW(), NOW())
+					ON CONFLICT (sku, lot_number) WHERE (status IS NULL OR status != 'archived')
+					DO UPDATE SET
+						quantity   = lots.quantity + EXCLUDED.quantity,
+						updated_at = NOW()
+				`, lotID, item.SKU, lotNum.LotNumber, lotNum.Quantity, expirationDate).Error; err != nil {
+					return fmt.Errorf("upsert lote %s: %w", lotNum.LotNumber, err)
+				}
 
-					lot := &database.Lot{
-						LotNumber:      lotNum.LotNumber,
-						SKU:            item.SKU,
-						Quantity:       lotNum.Quantity,
-						ExpirationDate: expirationDate,
-						Status:         tools.StrPtr("available"),
-						CreatedAt:      tools.GetCurrentTime(),
-						UpdatedAt:      tools.GetCurrentTime(),
-					}
-
-					if err := tx.Create(lot).Error; err != nil {
-						return errors.New("failed to create lot")
-					}
-
-					lotId = lot.ID
-
-					// Add the new lot to items
-					for i := 0; i < len(items); i++ {
-						if items[i].SKU == item.SKU {
-							items[i].LotNumbers = append(items[i].LotNumbers, requests.CreateLotRequest{
-								LotNumber:        lot.LotNumber,
-								Quantity:         lot.Quantity,
-								ExpirationDate:   lotNum.ExpirationDate,
-								Status:           tools.StrPtr("completed"),
-								ReceivedQuantity: &lot.Quantity,
-							})
-							break
-						}
-					}
-
-				} else {
-					var lot database.Lot
-					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
-						return errors.New("failed to retrieve existing lot")
-					}
-
-					if lot.Quantity != item.LotNumbers[j].Quantity {
-						// Update items lot number position status to partial for this SKU
-						for i := 0; i < len(items); i++ {
-							if items[i].SKU == item.SKU {
-								for k := 0; k < len(items[i].LotNumbers); k++ {
-									if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
-										items[i].LotNumbers[k].Status = tools.StrPtr("partial")
-										items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
-										break
-									}
-								}
-								items[i].Status = tools.StrPtr("partial")
-								break
-							}
-						}
-
-						updatedItems, err := json.Marshal(items)
-
-						if err != nil {
-							return fmt.Errorf("marshal updated items: %w", err)
-						}
-
-						task.Items = updatedItems
-
-						clean := map[string]interface{}{
-							"items":      updatedItems,
-							"updated_at": tools.GetCurrentTime(),
-						}
-
-						if err := tx.Model(&task).Updates(clean).Error; err != nil {
-							*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
-							return nil
-						}
-					} else {
-						for i := 0; i < len(items); i++ {
-							if items[i].SKU == item.SKU {
-								for k := 0; k < len(items[i].LotNumbers); k++ {
-									if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
-										items[i].LotNumbers[k].Status = tools.StrPtr("completed")
-										items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
-										break
-									}
-								}
-								items[i].Status = tools.StrPtr("completed")
-								break
-							}
-						}
-
-						updatedItems, err := json.Marshal(items)
-
-						if err != nil {
-							return fmt.Errorf("marshal updated items: %w", err)
-						}
-
-						task.Items = updatedItems
-
-						clean := map[string]interface{}{
-							"items":      updatedItems,
-							"updated_at": tools.GetCurrentTime(),
-						}
-
-						if err := tx.Model(&task).Updates(clean).Error; err != nil {
-							*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
-							return nil
-						}
-
-						// Update lot status to available
-						lot.Status = tools.StrPtr("available")
-						lot.UpdatedAt = tools.GetCurrentTime()
-
-						if err := tx.Save(&lot).Error; err != nil {
-							return errors.New("failed to update lot status")
-						}
-					}
-
-					lotId = lot.ID
+				// Retrieve actual lot ID — may be a pre-existing row if conflict occurred.
+				var upsertedLot database.Lot
+				if err := tx.Where(
+					"lot_number = ? AND sku = ? AND (status IS NULL OR status != 'archived')",
+					lotNum.LotNumber, item.SKU,
+				).First(&upsertedLot).Error; err != nil {
+					return fmt.Errorf("retrieve lot after upsert %s: %w", lotNum.LotNumber, err)
 				}
 
 				inventoryLot := &database.InventoryLot{
 					InventoryID: inventory.ID,
-					LotID:       lotId,
+					LotID:       upsertedLot.ID,
 					Quantity:    lotNum.Quantity,
 					Location:    item.Location,
 				}
