@@ -11,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -61,14 +62,50 @@ func NewAdjustments(db *gorm.DB, pool *pgxpool.Pool) (ports.AdjustmentsRepositor
 }
 
 func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.AuthenticationRepository, *services.AuthenticationService) {
-	r := &repositories.AuthenticationRepository{DB: db, JWTSecret: config.JWTSecret}
+	r := &repositories.AuthenticationRepository{
+		DB:          db,
+		JWTSecret:   config.JWTSecret,
+		Config:      config,
+		EmailSender: emailSenderForConfig(config),
+	}
 	return r, services.NewAuthenticationService(r, nil)
 }
 
 // NewAuthenticationWithRoles builds the auth service with roles repo so login response includes permissions.
 func NewAuthenticationWithRoles(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository) (ports.AuthenticationRepository, *services.AuthenticationService) {
-	r := &repositories.AuthenticationRepository{DB: db, JWTSecret: config.JWTSecret}
+	r := &repositories.AuthenticationRepository{
+		DB:          db,
+		JWTSecret:   config.JWTSecret,
+		Config:      config,
+		EmailSender: emailSenderForConfig(config),
+	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
+}
+
+// NewAuthenticationWithAudit builds the auth service with roles repo and audit service.
+func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository, auditSvc *services.AuditService) (ports.AuthenticationRepository, *services.AuthenticationService) {
+	r := &repositories.AuthenticationRepository{
+		DB:           db,
+		JWTSecret:    config.JWTSecret,
+		Config:       config,
+		EmailSender:  emailSenderForConfig(config),
+		AuditService: auditSvc,
+	}
+	return r, services.NewAuthenticationService(r, rolesRepo)
+}
+
+// emailSenderForConfig returns the appropriate EmailSender for the current environment.
+// In production with RESEND_API_KEY set, returns ResendEmailSender (stub until S2).
+// Otherwise returns LoggerEmailSender (logs to stdout, no real email sent).
+func emailSenderForConfig(config configuration.Config) tools.EmailSender {
+	if config.Environment == "production" && config.ResendAPIKey != "" {
+		return &tools.ResendEmailSender{
+			APIKey:   config.ResendAPIKey,
+			FromAddr: "noreply@eprac.com",
+			AppName:  "eSTOCK",
+		}
+	}
+	return &tools.LoggerEmailSender{}
 }
 
 func NewDashboard(db *gorm.DB) (ports.DashboardRepository, *services.DashboardService) {

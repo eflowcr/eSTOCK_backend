@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,12 +18,22 @@ import (
 // ─── mock auth repo ───────────────────────────────────────────────────────────
 
 type mockAuthRepo struct {
-	loginResp *responses.LoginResponse
-	loginErr  *responses.InternalResponse
+	loginResp            *responses.LoginResponse
+	loginErr             *responses.InternalResponse
+	requestResetResp     *responses.InternalResponse
+	resetPasswordResp    *responses.InternalResponse
 }
 
 func (m *mockAuthRepo) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
 	return m.loginResp, m.loginErr
+}
+
+func (m *mockAuthRepo) RequestPasswordReset(_ context.Context, _ string) *responses.InternalResponse {
+	return m.requestResetResp
+}
+
+func (m *mockAuthRepo) ResetPassword(_ context.Context, _, _ string) *responses.InternalResponse {
+	return m.resetPasswordResp
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

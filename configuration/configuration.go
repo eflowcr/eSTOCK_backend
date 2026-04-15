@@ -38,6 +38,14 @@ type Config struct {
 	// Optional (env: ENVIRONMENT — e.g. "release", "debug", "development", "test")
 	Environment string
 	Version     string
+
+	// AppURL is the public frontend URL used to build password reset links (env: APP_URL).
+	// Example: "https://estock.eprac.com" or "http://localhost:4200" for dev.
+	AppURL string
+
+	// ResendAPIKey is the API key for the Resend email service (env: RESEND_API_KEY).
+	// Optional: if unset, LoggerEmailSender is used instead (logs to stdout).
+	ResendAPIKey string
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -63,8 +71,10 @@ func LoadConfig() (Config, error) {
 		ServerAddress: os.Getenv("SERVER_ADDRESS"),
 		MigrationURL:  os.Getenv("MIGRATION_URL"),
 		RedisURL:      os.Getenv("REDIS_URL"),
-		Environment:   os.Getenv("ENVIRONMENT"),
-		Version:       os.Getenv("Version"),
+		Environment:  os.Getenv("ENVIRONMENT"),
+		Version:      os.Getenv("Version"),
+		AppURL:       os.Getenv("APP_URL"),
+		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
 	}
 	if cfg.DBSource == "" {
 		cfg.DBSource = os.Getenv("DATABASE_URL")
