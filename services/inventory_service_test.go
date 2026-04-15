@@ -21,7 +21,7 @@ type mockInventoryRepo struct {
 func (m *mockInventoryRepo) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
 	return m.all, nil
 }
-func (m *mockInventoryRepo) GetPickSuggestionsBySKU(_ string) ([]dto.PickSuggestion, *responses.InternalResponse) {
+func (m *mockInventoryRepo) GetPickSuggestionsBySKU(_ string, _ float64) (*dto.PickSuggestionResponse, *responses.InternalResponse) {
 	return nil, nil
 }
 func (m *mockInventoryRepo) GetInventoryBySkuAndLocation(_, _ string) (*dto.EnhancedInventory, *responses.InternalResponse) {

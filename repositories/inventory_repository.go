@@ -148,6 +148,8 @@ func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *resp
 			SKU:             item.SKU,
 			Location:        item.Location,
 			Quantity:        item.Quantity,
+			ReservedQty:     item.ReservedQty,
+			AvailableQty:    item.Quantity - item.ReservedQty,
 			Status:          item.Status,
 			UnitPrice:       item.UnitPrice,
 			CreatedAt:       item.CreatedAt,
@@ -235,6 +237,8 @@ func (r *InventoryRepository) GetInventoryBySkuAndLocation(sku, location string)
 		SKU:             item.SKU,
 		Location:        item.Location,
 		Quantity:        item.Quantity,
+		ReservedQty:     item.ReservedQty,
+		AvailableQty:    item.Quantity - item.ReservedQty,
 		Status:          item.Status,
 		UnitPrice:       item.UnitPrice,
 		CreatedAt:       item.CreatedAt,
@@ -1195,17 +1199,108 @@ func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.Inter
 	return buf.Bytes(), nil
 }
 
-// GetPickSuggestionsBySKU returns all (location, lot, quantity) rows for the given SKU.
-// Caller (service) is responsible for sorting by rotation (FIFO/FEFO) then by quantity ascending.
-func (r *InventoryRepository) GetPickSuggestionsBySKU(sku string) ([]dto.PickSuggestion, *responses.InternalResponse) {
-	var rows []dto.PickSuggestion
-	err := r.DB.
-		Table("inventory_lots").
-		Select("inv.location AS location, lots.id AS lot_id, lots.lot_number AS lot_number, inventory_lots.quantity AS quantity, lots.expiration_date AS expiration_date, lots.created_at AS lot_created_at").
-		Joins("INNER JOIN inventory inv ON inventory_lots.inventory_id = inv.id").
-		Joins("INNER JOIN lots ON inventory_lots.lot_id = lots.id").
-		Where("inv.sku = ? AND inventory_lots.quantity > 0", sku).
-		Scan(&rows).Error
+// pickRow is a raw result row from the pick-suggestions SQL query.
+// Unexported so unit tests in this package can access it for allocatePickRows tests.
+type pickRow struct {
+	Location       string
+	InvQty         float64
+	InvReserved    float64
+	LotNumber      *string
+	ExpirationDate *time.Time
+	LotQtyInLoc    float64
+	InvCreatedAt   time.Time
+}
+
+// allocatePickRows runs the greedy FEFO allocation algorithm over pre-sorted rows.
+// rows must arrive FEFO-ordered (expiration ASC, created_at ASC) from the SQL query.
+// If qty is 0, all available stock is returned without limiting.
+// Extracted as a pure function so it can be unit-tested independently of the DB.
+func allocatePickRows(rows []pickRow, qty float64) *dto.PickSuggestionResponse {
+	takenPerLocation := make(map[string]float64)
+	resp := &dto.PickSuggestionResponse{
+		Requested:   qty,
+		Allocations: []database.LocationAllocation{},
+	}
+	remaining := qty
+
+	for _, r := range rows {
+		locationAvailable := r.InvQty - r.InvReserved - takenPerLocation[r.Location]
+		if locationAvailable <= 0 {
+			continue
+		}
+
+		// upperBound is min(location_available, lot_qty_in_location).
+		// For items without lot tracking, lot_qty_in_loc will be 0 and LotNumber nil.
+		upperBound := locationAvailable
+		if r.LotNumber != nil && r.LotQtyInLoc > 0 {
+			if r.LotQtyInLoc < upperBound {
+				upperBound = r.LotQtyInLoc
+			}
+		} else if r.LotNumber != nil && r.LotQtyInLoc <= 0 {
+			continue // lot known but no stock in this location
+		}
+
+		take := upperBound
+		if qty > 0 && take > remaining {
+			take = remaining
+		}
+		if take <= 0 {
+			continue
+		}
+
+		alloc := database.LocationAllocation{
+			Location: r.Location,
+			Quantity: take,
+		}
+		if r.LotNumber != nil {
+			alloc.LotNumber = r.LotNumber
+		}
+		if r.ExpirationDate != nil {
+			s := r.ExpirationDate.Format("2006-01-02")
+			alloc.ExpirationDate = &s
+		}
+		resp.Allocations = append(resp.Allocations, alloc)
+		resp.TotalFound += take
+		takenPerLocation[r.Location] += take
+
+		if qty > 0 {
+			remaining -= take
+			if remaining <= 0 {
+				break
+			}
+		}
+	}
+
+	resp.Sufficient = qty == 0 || resp.TotalFound >= qty
+	return resp
+}
+
+// GetPickSuggestionsBySKU returns FEFO-ordered pick allocations for a SKU.
+// Uses inventory_lots to resolve which lots are present in each location.
+// If qty is 0, all available allocations are returned (Sufficient = true).
+func (r *InventoryRepository) GetPickSuggestionsBySKU(sku string, qty float64) (*dto.PickSuggestionResponse, *responses.InternalResponse) {
+	var rows []pickRow
+	err := r.DB.Raw(`
+		SELECT
+		    i.location                     AS location,
+		    i.quantity                     AS inv_qty,
+		    i.reserved_qty                 AS inv_reserved,
+		    l.lot_number                   AS lot_number,
+		    l.expiration_date              AS expiration_date,
+		    COALESCE(il.quantity, 0)       AS lot_qty_in_loc,
+		    i.created_at                   AS inv_created_at
+		FROM inventory i
+		LEFT JOIN inventory_lots il ON il.inventory_id = i.id
+		LEFT JOIN lots l
+		       ON l.id = il.lot_id
+		      AND (l.status IS NULL OR l.status != 'archived')
+		WHERE i.sku = ?
+		  AND (i.quantity - i.reserved_qty) > 0
+		ORDER BY
+		    COALESCE(l.expiration_date, '9999-12-31'::date) ASC,
+		    i.created_at ASC
+	`, sku).Scan(&rows).Error
+
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
@@ -1213,7 +1308,8 @@ func (r *InventoryRepository) GetPickSuggestionsBySKU(sku string) ([]dto.PickSug
 			Handled: false,
 		}
 	}
-	return rows, nil
+
+	return allocatePickRows(rows, qty), nil
 }
 
 func (r *InventoryRepository) GetInventoryLots(inventoryID string) ([]responses.InventoryLot, *responses.InternalResponse) {
