@@ -3,6 +3,7 @@ package repositories
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -201,6 +202,14 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 		if newQuantity < 0 {
 			return errors.New("la cantidad de ajuste resulta en un inventario negativo")
+		}
+
+		// B3e (A6): block adjustment if new qty would fall below reserved_qty.
+		if newQuantity < inventory.ReservedQty {
+			return fmt.Errorf(
+				"no puede ajustar a %.2f — hay %.2f uds reservadas en pickings activos. Cancele los pickings antes de ajustar",
+				newQuantity, inventory.ReservedQty,
+			)
 		}
 
 		// Create the adjustment record

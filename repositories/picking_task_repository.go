@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,27 +13,28 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
 type PickingTaskRepository struct {
-	DB *gorm.DB
+	DB           *gorm.DB
+	AuditService *services.AuditService // injected via wire for audit logging
 }
 
-// validPickingTransitions declara las transiciones permitidas de status.
-// Los estados finales (completed, completed_with_differences, cancelled, abandoned)
-// no aparecen como claves porque no tienen transición saliente.
+// validPickingTransitions declares the allowed status transitions.
+// Terminal states (completed, completed_with_differences, cancelled, abandoned)
+// have no outgoing transitions.
 var validPickingTransitions = map[string]map[string]bool{
 	"open":        {"assigned": true, "in_progress": true, "cancelled": true, "abandoned": true},
 	"assigned":    {"open": true, "in_progress": true, "cancelled": true, "abandoned": true},
 	"in_progress": {"completed": true, "completed_with_differences": true, "cancelled": true, "abandoned": true},
 }
 
-// isValidPickingTransition retorna true si el cambio de status es permitido.
-// No-op (mismo → mismo) siempre es true.
-// Desde estados finales no hay transición saliente → false.
+// isValidPickingTransition returns true when the status change is permitted.
+// Same-state (no-op) is always true. Terminal states have no outgoing transitions → false.
 func isValidPickingTransition(current, next string) bool {
 	if current == next {
 		return true
@@ -42,6 +44,182 @@ func isValidPickingTransition(current, next string) bool {
 	}
 	return false
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H2 — parsePickingItemsWithLegacyFallback
+// ─────────────────────────────────────────────────────────────────────────────
+
+// parsePickingItemsWithLegacyFallback accepts both the new format (items with
+// allocations) and the old format (item with a single "location" string but no
+// allocations). Legacy items get a synthetic single-allocation so the rest of
+// the code can treat all items uniformly.
+func parsePickingItemsWithLegacyFallback(raw json.RawMessage) ([]requests.PickingTaskItemRequest, error) {
+	var items []requests.PickingTaskItemRequest
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+
+	// Second pass: check for legacy "location" field (items with no allocations).
+	var legacyPayload []map[string]interface{}
+	if err := json.Unmarshal(raw, &legacyPayload); err != nil {
+		// If this fails the first unmarshal was sufficient.
+		return items, nil
+	}
+
+	for i := range items {
+		if len(items[i].Allocations) == 0 && i < len(legacyPayload) {
+			if location, ok := legacyPayload[i]["location"].(string); ok && location != "" {
+				items[i].Allocations = []database.LocationAllocation{
+					{Location: location, Quantity: items[i].ExpectedQuantity},
+				}
+			}
+		}
+	}
+	return items, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B3 — Shared reservation helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// applyReservations increments reserved_qty for every allocation within tx.
+// Uses a conditional UPDATE so it fails fast (RowsAffected == 0) when there
+// is not enough available stock, without ever leaving inventory in a bad state.
+// The caller must propagate a sentinel error to trigger rollback.
+func (r *PickingTaskRepository) applyReservations(tx *gorm.DB, items []requests.PickingTaskItemRequest) *responses.InternalResponse {
+	for _, item := range items {
+		for _, alloc := range item.Allocations {
+			result := tx.Exec(`
+				UPDATE inventory
+				   SET reserved_qty = reserved_qty + ?,
+				       updated_at   = NOW()
+				 WHERE sku = ? AND location = ?
+				   AND (quantity - reserved_qty) >= ?
+			`, alloc.Quantity, item.SKU, alloc.Location, alloc.Quantity)
+
+			if result.Error != nil {
+				return &responses.InternalResponse{
+					Error:   fmt.Errorf("reservar %s @ %s: %w", item.SKU, alloc.Location, result.Error),
+					Message: "Error al reservar stock",
+					Handled: false,
+				}
+			}
+			if result.RowsAffected == 0 {
+				return &responses.InternalResponse{
+					Message: fmt.Sprintf(
+						"Stock insuficiente para %s en %s. No hay %.2f uds disponibles para reservar.",
+						item.SKU, alloc.Location, alloc.Quantity,
+					),
+					Handled:    true,
+					StatusCode: responses.StatusBadRequest,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// releaseReservations decrements reserved_qty for every allocation within tx.
+// Uses GREATEST(0, ...) so releasing more than what is reserved is safe.
+func (r *PickingTaskRepository) releaseReservations(tx *gorm.DB, items []requests.PickingTaskItemRequest) *responses.InternalResponse {
+	for _, item := range items {
+		for _, alloc := range item.Allocations {
+			if err := tx.Exec(`
+				UPDATE inventory
+				   SET reserved_qty = GREATEST(0, reserved_qty - ?),
+				       updated_at   = NOW()
+				 WHERE sku = ? AND location = ?
+			`, alloc.Quantity, item.SKU, alloc.Location).Error; err != nil {
+				return &responses.InternalResponse{
+					Error:   fmt.Errorf("liberar %s @ %s: %w", item.SKU, alloc.Location, err),
+					Message: "Error al liberar reservas",
+					Handled: false,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateNoExpiredLots checks the DB for any lot referenced in items that is
+// past its expiration date. This queries the DB rather than the request payload
+// so stale expiration dates in old drafts are caught correctly.
+func (r *PickingTaskRepository) validateNoExpiredLots(items []requests.PickingTaskItemRequest) *responses.InternalResponse {
+	today := time.Now().Truncate(24 * time.Hour)
+
+	type key struct{ SKU, Lot string }
+	refs := make(map[key]bool)
+	for _, item := range items {
+		for _, lot := range item.LotNumbers {
+			if lot.LotNumber != "" {
+				refs[key{item.SKU, lot.LotNumber}] = true
+			}
+		}
+		for _, alloc := range item.Allocations {
+			if alloc.LotNumber != nil && *alloc.LotNumber != "" {
+				refs[key{item.SKU, *alloc.LotNumber}] = true
+			}
+		}
+	}
+
+	for k := range refs {
+		var lot database.Lot
+		if err := r.DB.Where("sku = ? AND lot_number = ?", k.SKU, k.Lot).First(&lot).Error; err != nil {
+			continue // lot not in DB — validated elsewhere
+		}
+		if lot.ExpirationDate != nil && lot.ExpirationDate.Before(today) {
+			return &responses.InternalResponse{
+				Message: fmt.Sprintf(
+					"Lote %s (SKU %s) venció el %s. No puede pickearse.",
+					k.Lot, k.SKU, lot.ExpirationDate.Format("2006-01-02"),
+				),
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+		}
+	}
+	return nil
+}
+
+// sanitizePickingUpdatePayload applies the whitelist and key normalisation that
+// UpdatePickingTask used inline. Extracted as a helper so it can be reused.
+func sanitizePickingUpdatePayload(data map[string]interface{}) map[string]interface{} {
+	protected := map[string]bool{
+		"id":         true,
+		"task_id":    true,
+		"created_at": true,
+	}
+	whitelist := map[string]bool{
+		"assigned_to":  true,
+		"priority":     true,
+		"status":       true,
+		"notes":        true,
+		"items":        true,
+		"order_number": true,
+		"updated_at":   true,
+		"completed_at": true,
+	}
+
+	clean := make(map[string]interface{}, len(data)+2)
+	for k, v := range data {
+		key := strings.ToLower(k)
+		key = strings.ReplaceAll(key, "assignedto", "assigned_to")
+		key = strings.ReplaceAll(key, "ordernumber", "order_number")
+		key = strings.ReplaceAll(key, "outboundnumber", "order_number")
+		key = strings.ReplaceAll(key, "completedat", "completed_at")
+		key = strings.ReplaceAll(key, "updatedat", "updated_at")
+
+		if protected[key] || !whitelist[key] {
+			continue
+		}
+		clean[key] = v
+	}
+	return clean
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Read methods
+// ─────────────────────────────────────────────────────────────────────────────
 
 func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	var tasks []responses.PickingTaskView
@@ -102,25 +280,19 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 			pt.completed_at;
 	`
 
-	err := r.DB.Raw(sqlRar).Scan(&tasks).Error
-
-	if err != nil {
+	if err := r.DB.Raw(sqlRar).Scan(&tasks).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
 			Message: "Error al obtener todas las tareas de picking",
 			Handled: false,
 		}
 	}
-
 	return tasks, nil
 }
 
 func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	var task database.PickingTask
-
-	err := r.DB.Table(database.PickingTask{}.TableName()).Where("id = ?", id).First(&task).Error
-
-	if err != nil {
+	if err := r.DB.Table(database.PickingTask{}.TableName()).Where("id = ?", id).First(&task).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, &responses.InternalResponse{
 				Message:    "Tarea de picking no encontrada",
@@ -134,9 +306,12 @@ func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.Picking
 			Handled: false,
 		}
 	}
-
 	return &task, nil
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CreatePickingTask
+// ─────────────────────────────────────────────────────────────────────────────
 
 func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
@@ -147,17 +322,27 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 		return handledResp
 	}
 
-	err := r.DB.Transaction(func(tx *gorm.DB) error {
-		// Check for unique OutboundNumber
-		var count int64
+	// Validate each item's allocations sum
+	for _, it := range items {
+		if err := it.ValidateAllocationSum(); err != nil {
+			*handledResp = responses.InternalResponse{Error: err, Message: err.Error(), Handled: true, StatusCode: responses.StatusBadRequest}
+			return handledResp
+		}
+	}
 
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var count int64
 		if err := tx.Model(&database.PickingTask{}).Where("order_number = ?", task.OutboundNumber).Count(&count).Error; err != nil {
 			*handledResp = responses.InternalResponse{Error: err, Message: "Error al verificar la unicidad del número de salida", Handled: false}
 			return nil
 		}
-
 		if count > 0 {
-			*handledResp = responses.InternalResponse{Error: fmt.Errorf("outbound number %s is already taken", task.OutboundNumber), Message: "El número de salida ya está en uso", Handled: true}
+			*handledResp = responses.InternalResponse{
+				Error:      fmt.Errorf("outbound number %s is already taken", task.OutboundNumber),
+				Message:    "El número de salida ya está en uso",
+				Handled:    true,
+				StatusCode: responses.StatusConflict,
+			}
 			return nil
 		}
 
@@ -165,9 +350,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 		taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
 
 		articleCache := make(map[string]database.Article)
-
 		for i := range items {
-			// Asignar status inicial una sola vez
 			items[i].Status = tools.StrPtr("open")
 			sku := items[i].SKU
 
@@ -187,11 +370,9 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 					items[i].LotNumbers[j].Status = tools.StrPtr("open")
 				}
 			}
-
 			if art.TrackBySerial {
 				for j := range items[i].SerialNumbers {
-					// Esto depende del tipo de Status
-					items[i].SerialNumbers[j].Status = *tools.StrPtr("open")
+					items[i].SerialNumbers[j].Status = "open"
 				}
 			}
 		}
@@ -238,122 +419,418 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 	return nil
 }
 
-func (r *PickingTaskRepository) UpdatePickingTask(id string, data map[string]interface{}) *responses.InternalResponse {
-	var task database.PickingTask
-	if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true}
+// ─────────────────────────────────────────────────────────────────────────────
+// B3a — StartPickingTask: applies lazy reservations
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (r *PickingTaskRepository) StartPickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
+	var handledResp *responses.InternalResponse
+
+	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
+		var task database.PickingTask
+		if err := tx.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				handledResp = &responses.InternalResponse{
+					Message: "Tarea no encontrada", Handled: true, StatusCode: responses.StatusNotFound,
+				}
+				return fmt.Errorf("not found")
+			}
+			return err
 		}
-		return &responses.InternalResponse{Error: err, Message: "Error al obtener la tarea de picking"}
-	}
 
-	protected := map[string]bool{
-		"id":         true,
-		"task_id":    true,
-		"created_at": true,
-	}
-
-	whitelist := map[string]bool{
-		"assigned_to":  true,
-		"priority":     true,
-		"status":       true,
-		"notes":        true,
-		"items":        true,
-		"order_number": true,
-		"updated_at":   true,
-		"completed_at": true,
-	}
-
-	clean := make(map[string]interface{}, len(data)+2)
-	for k, v := range data {
-		key := strings.ToLower(k)
-		key = strings.ReplaceAll(key, "assignedto", "assigned_to")
-		key = strings.ReplaceAll(key, "ordernumber", "order_number")
-		key = strings.ReplaceAll(key, "outboundnumber", "order_number")
-		key = strings.ReplaceAll(key, "completedat", "completed_at")
-		key = strings.ReplaceAll(key, "updatedat", "updated_at")
-
-		if protected[key] {
-			continue
+		// Only open|assigned → in_progress is a valid start transition.
+		if task.Status != "open" && task.Status != "assigned" {
+			handledResp = &responses.InternalResponse{
+				Message:    fmt.Sprintf("No se puede iniciar una tarea en estado '%s'", task.Status),
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+			return fmt.Errorf("invalid transition")
 		}
-		if !whitelist[key] {
-			continue
+
+		items, err := parsePickingItemsWithLegacyFallback(task.Items)
+		if err != nil {
+			return fmt.Errorf("parse items: %w", err)
 		}
-		clean[key] = v
+
+		// Validate no expired lots before reserving (B4).
+		if resp := r.validateNoExpiredLots(items); resp != nil {
+			handledResp = resp
+			return fmt.Errorf("expired lot")
+		}
+
+		// Apply lazy reservations.
+		if resp := r.applyReservations(tx, items); resp != nil {
+			handledResp = resp
+			return fmt.Errorf("reservation failed")
+		}
+
+		if err := tx.Exec(
+			`UPDATE picking_tasks SET status = 'in_progress', updated_at = NOW() WHERE id = ?`, id,
+		).Error; err != nil {
+			return fmt.Errorf("update status: %w", err)
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		if handledResp != nil {
+			return handledResp
+		}
+		return &responses.InternalResponse{Error: txErr, Message: "Error al iniciar picking"}
 	}
 
-	clean["updated_at"] = tools.GetCurrentTime()
+	if r.AuditService != nil {
+		r.AuditService.Log(ctx, &userId, tools.ActionExecute, "picking_task", id, nil, nil, "", "")
+	}
+	return nil
+}
 
-	var nextStatus string
-	currentStatus := strings.ToLower(strings.TrimSpace(task.Status))
+// ─────────────────────────────────────────────────────────────────────────────
+// B3b/B3c — UpdatePickingTask: full rewrite with reserve recalc
+// ─────────────────────────────────────────────────────────────────────────────
 
-	if raw, ok := clean["status"]; ok {
-		if s, ok := raw.(string); ok {
-			sLower := strings.ToLower(strings.TrimSpace(s))
-			// Enforce allowed status transitions
-			if !isValidPickingStatusTransition(currentStatus, sLower) {
-				return &responses.InternalResponse{
-					Message:    fmt.Sprintf("Transición de estado no permitida: %s → %s", currentStatus, sLower),
+func (r *PickingTaskRepository) UpdatePickingTask(ctx context.Context, id string, data map[string]interface{}, userId string) *responses.InternalResponse {
+	var handledResp *responses.InternalResponse
+
+	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
+		var task database.PickingTask
+		if err := tx.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				handledResp = &responses.InternalResponse{
+					Message: "Tarea no encontrada", Handled: true, StatusCode: responses.StatusNotFound,
+				}
+				return fmt.Errorf("not found")
+			}
+			return err
+		}
+
+		clean := sanitizePickingUpdatePayload(data)
+		clean["updated_at"] = tools.GetCurrentTime()
+
+		// Validate and apply status transition if status changed.
+		nextStatus, _ := clean["status"].(string)
+		if nextStatus != "" {
+			currentStatus := strings.ToLower(strings.TrimSpace(task.Status))
+			nextStatus = strings.ToLower(strings.TrimSpace(nextStatus))
+			clean["status"] = nextStatus
+
+			if !isValidPickingTransition(currentStatus, nextStatus) {
+				handledResp = &responses.InternalResponse{
+					Message:    fmt.Sprintf("Transición inválida: %s → %s", currentStatus, nextStatus),
 					Handled:    true,
 					StatusCode: responses.StatusConflict,
 				}
+				return fmt.Errorf("invalid transition")
 			}
-			nextStatus = sLower
-			switch sLower {
-			case "closed":
+
+			// B3c — cancel from in_progress releases reservations.
+			if nextStatus == "cancelled" && currentStatus == "in_progress" {
+				oldItems, err := parsePickingItemsWithLegacyFallback(task.Items)
+				if err != nil {
+					return fmt.Errorf("parse old items for cancel: %w", err)
+				}
+				if resp := r.releaseReservations(tx, oldItems); resp != nil {
+					handledResp = resp
+					return fmt.Errorf("release failed")
+				}
+			}
+
+			// Set completed_at based on terminal status.
+			switch nextStatus {
+			case "completed", "completed_with_differences", "cancelled", "abandoned", "closed":
 				clean["completed_at"] = tools.GetCurrentTime()
 			default:
 				clean["completed_at"] = gorm.Expr("NULL")
 			}
-			clean["status"] = sLower
 		}
-	}
 
-	if items, ok := clean["items"]; ok {
-		switch it := items.(type) {
-		case map[string]interface{}, []interface{}:
-			b, err := json.Marshal(it)
+		// B3b — if items changed while task is in_progress, recalculate reservations.
+		if rawItems, itemsChanged := clean["items"]; itemsChanged && task.Status == "in_progress" {
+			// Release old reservations first.
+			oldItems, err := parsePickingItemsWithLegacyFallback(task.Items)
 			if err != nil {
-				return &responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
+				return fmt.Errorf("parse old items: %w", err)
 			}
-			clean["items"] = b
+			if resp := r.releaseReservations(tx, oldItems); resp != nil {
+				handledResp = resp
+				return fmt.Errorf("release old failed")
+			}
+
+			// Convert clean["items"] ([]interface{} from JSON decode) → typed slice
+			// via re-marshal to avoid unsafe type assertions.
+			newItemsBytes, err := json.Marshal(rawItems)
+			if err != nil {
+				return fmt.Errorf("marshal new items: %w", err)
+			}
+			var newItems []requests.PickingTaskItemRequest
+			if err := json.Unmarshal(newItemsBytes, &newItems); err != nil {
+				return fmt.Errorf("parse new items: %w", err)
+			}
+
+			if resp := r.validateNoExpiredLots(newItems); resp != nil {
+				handledResp = resp
+				return fmt.Errorf("expired lot in update")
+			}
+
+			if resp := r.applyReservations(tx, newItems); resp != nil {
+				handledResp = resp
+				return fmt.Errorf("apply new reservations failed")
+			}
+
+			// Store the serialised items.
+			clean["items"] = json.RawMessage(newItemsBytes)
+		} else if rawItems, itemsChanged := clean["items"]; itemsChanged {
+			// Not in_progress — just marshal correctly.
+			newItemsBytes, err := json.Marshal(rawItems)
+			if err != nil {
+				return fmt.Errorf("marshal items: %w", err)
+			}
+			clean["items"] = json.RawMessage(newItemsBytes)
 		}
+
+		if err := tx.Model(&task).Updates(clean).Error; err != nil {
+			return fmt.Errorf("update task: %w", err)
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		if handledResp != nil {
+			return handledResp
+		}
+		return &responses.InternalResponse{Error: txErr, Message: "Error al actualizar tarea"}
 	}
 
-	// Optimistic locking: ensure we only update when status has not changed.
-	query := r.DB.Model(&task).Where("id = ?", id)
-	if nextStatus != "" {
-		query = query.Where("status = ?", currentStatus)
+	if r.AuditService != nil {
+		r.AuditService.Log(ctx, &userId, tools.ActionUpdate, "picking_task", id, nil, nil, "", "")
 	}
-
-	if err := query.Updates(clean).Error; err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de picking"}
-	}
-
 	return nil
 }
 
-// isValidPickingStatusTransition returns true when a status change is allowed.
-// Allowed paths:
-// - open -> in_progress
-// - in_progress -> completed
-// - open|in_progress -> cancelled
-// - same -> same (idempotent)
-func isValidPickingStatusTransition(current, next string) bool {
-	if current == next || next == "" {
-		return true
+// ─────────────────────────────────────────────────────────────────────────────
+// B3d — CompletePickingLine: consumes reservations per allocation
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (r *PickingTaskRepository) CompletePickingLine(ctx context.Context, id, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+	var handledResp *responses.InternalResponse
+
+	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
+		var task database.PickingTask
+		if err := tx.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				handledResp = &responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true, StatusCode: responses.StatusNotFound}
+				return fmt.Errorf("not found")
+			}
+			return err
+		}
+
+		existingItems, err := parsePickingItemsWithLegacyFallback(task.Items)
+		if err != nil {
+			return fmt.Errorf("parse task items: %w", err)
+		}
+
+		// Validate lots before touching inventory.
+		if resp := r.validateNoExpiredLots([]requests.PickingTaskItemRequest{item}); resp != nil {
+			handledResp = resp
+			return fmt.Errorf("expired lot in complete line")
+		}
+
+		// Find the matching item by SKU.
+		foundIdx := -1
+		for i := range existingItems {
+			if existingItems[i].SKU == item.SKU {
+				foundIdx = i
+				break
+			}
+		}
+		if foundIdx == -1 {
+			handledResp = &responses.InternalResponse{Message: "Item no encontrado en la tarea de picking", Handled: true}
+			return fmt.Errorf("item not found")
+		}
+
+		// Decrement inventory, reserved_qty, and lot quantities per allocation.
+		for _, alloc := range item.Allocations {
+			pickedQty := alloc.Quantity
+			if alloc.PickedQty != nil {
+				pickedQty = *alloc.PickedQty
+			}
+
+			if err := tx.Exec(`
+				UPDATE inventory
+				   SET quantity     = quantity - ?,
+				       reserved_qty = GREATEST(0, reserved_qty - ?),
+				       updated_at   = NOW()
+				 WHERE sku = ? AND location = ?
+			`, pickedQty, alloc.Quantity, item.SKU, alloc.Location).Error; err != nil {
+				return fmt.Errorf("decrementar inventario %s @ %s: %w", item.SKU, alloc.Location, err)
+			}
+
+			if alloc.LotNumber != nil && *alloc.LotNumber != "" {
+				// Decrement inventory_lots (per-location lot quantity).
+				tx.Exec(`
+					UPDATE inventory_lots
+					   SET quantity = GREATEST(0, quantity - ?)
+					 WHERE inventory_id = (SELECT id FROM inventory WHERE sku = ? AND location = ? LIMIT 1)
+					   AND lot_id      = (SELECT id FROM lots         WHERE sku = ? AND lot_number = ? LIMIT 1)
+				`, pickedQty, item.SKU, alloc.Location, item.SKU, *alloc.LotNumber)
+
+				// Decrement lots global quantity.
+				tx.Exec(`
+					UPDATE lots SET quantity = GREATEST(0, quantity - ?), updated_at = NOW()
+					 WHERE sku = ? AND lot_number = ?
+				`, pickedQty, item.SKU, *alloc.LotNumber)
+			}
+		}
+
+		// Update item status in the task's JSONB.
+		totalPicked := 0.0
+		for _, alloc := range item.Allocations {
+			if alloc.PickedQty != nil {
+				totalPicked += *alloc.PickedQty
+			} else {
+				totalPicked += alloc.Quantity
+			}
+		}
+		if totalPicked >= existingItems[foundIdx].ExpectedQuantity {
+			existingItems[foundIdx].Status = tools.StrPtr("completed")
+		} else {
+			existingItems[foundIdx].Status = tools.StrPtr("partial")
+		}
+		// Store updated allocations from the incoming item.
+		existingItems[foundIdx].Allocations = item.Allocations
+
+		updatedItems, err := json.Marshal(existingItems)
+		if err != nil {
+			return fmt.Errorf("marshal updated items: %w", err)
+		}
+
+		if err := tx.Exec(
+			`UPDATE picking_tasks SET items = ?, updated_at = NOW() WHERE id = ?`,
+			json.RawMessage(updatedItems), id,
+		).Error; err != nil {
+			return fmt.Errorf("update task items: %w", err)
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		if handledResp != nil {
+			return handledResp
+		}
+		return &responses.InternalResponse{Error: txErr, Message: "Error al completar línea de picking"}
 	}
 
-	switch current {
-	case "open":
-		return next == "in_progress" || next == "cancelled"
-	case "in_progress":
-		return next == "completed" || next == "cancelled"
-	default:
-		// completed / closed / cancelled are terminal in this simple model
-		return false
+	if r.AuditService != nil {
+		r.AuditService.Log(ctx, &userId, tools.ActionUpdate, "picking_task", id, nil, nil, "", "")
 	}
+	return nil
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H5 — CompletePickingTask: full task, allocation-aware
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
+	var handledResp *responses.InternalResponse
+
+	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
+		var task database.PickingTask
+		if err := tx.First(&task, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				handledResp = &responses.InternalResponse{Message: "Tarea no encontrada", Handled: true, StatusCode: responses.StatusNotFound}
+				return fmt.Errorf("not found")
+			}
+			return err
+		}
+
+		if task.Status != "in_progress" {
+			handledResp = &responses.InternalResponse{
+				Message:    fmt.Sprintf("No se puede completar una tarea en estado '%s'", task.Status),
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+			return fmt.Errorf("invalid transition")
+		}
+
+		items, err := parsePickingItemsWithLegacyFallback(task.Items)
+		if err != nil {
+			return fmt.Errorf("parse items: %w", err)
+		}
+
+		hasDifferences := false
+		for _, item := range items {
+			for _, alloc := range item.Allocations {
+				pickedQty := alloc.Quantity
+				if alloc.PickedQty != nil {
+					pickedQty = *alloc.PickedQty
+				}
+				if pickedQty != alloc.Quantity {
+					hasDifferences = true
+				}
+
+				// Decrement inventory quantity + release reservation.
+				if err := tx.Exec(`
+					UPDATE inventory
+					   SET quantity     = quantity - ?,
+					       reserved_qty = GREATEST(0, reserved_qty - ?),
+					       updated_at   = NOW()
+					 WHERE sku = ? AND location = ?
+				`, pickedQty, alloc.Quantity, item.SKU, alloc.Location).Error; err != nil {
+					return fmt.Errorf("decrementar %s @ %s: %w", item.SKU, alloc.Location, err)
+				}
+
+				// Decrement lot-level quantities when a specific lot was picked.
+				if alloc.LotNumber != nil && *alloc.LotNumber != "" {
+					tx.Exec(`
+						UPDATE inventory_lots
+						   SET quantity = GREATEST(0, quantity - ?)
+						 WHERE inventory_id = (SELECT id FROM inventory WHERE sku = ? AND location = ? LIMIT 1)
+						   AND lot_id      = (SELECT id FROM lots         WHERE sku = ? AND lot_number = ? LIMIT 1)
+					`, pickedQty, item.SKU, alloc.Location, item.SKU, *alloc.LotNumber)
+
+					tx.Exec(`
+						UPDATE lots SET quantity = GREATEST(0, quantity - ?), updated_at = NOW()
+						 WHERE sku = ? AND lot_number = ?
+					`, pickedQty, item.SKU, *alloc.LotNumber)
+				}
+			}
+		}
+
+		finalStatus := "completed"
+		if hasDifferences {
+			finalStatus = "completed_with_differences"
+		}
+
+		if err := tx.Exec(
+			`UPDATE picking_tasks SET status = ?, completed_at = NOW(), updated_at = NOW() WHERE id = ?`,
+			finalStatus, id,
+		).Error; err != nil {
+			return fmt.Errorf("update status: %w", err)
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		if handledResp != nil {
+			return handledResp
+		}
+		return &responses.InternalResponse{Error: txErr, Message: "Error al completar picking"}
+	}
+
+	if r.AuditService != nil {
+		r.AuditService.Log(ctx, &userId, tools.ActionExecute, "picking_task", id, nil, nil, "", "")
+	}
+	return nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Excel Import / Export
+// ─────────────────────────────────────────────────────────────────────────────
 
 func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
@@ -396,11 +873,9 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 	notes := getOneOf("Notes")
 
 	var assignedId string
-
 	if assignedTo != nil && strings.TrimSpace(*assignedTo) != "" {
 		var user database.User
-
-		if err := r.DB.Where("email = ?", strings.TrimSpace(*assignedTo), strings.TrimSpace(*assignedTo)).First(&user).Error; err != nil {
+		if err := r.DB.Where("email = ?", strings.TrimSpace(*assignedTo)).First(&user).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return &responses.InternalResponse{Error: fmt.Errorf("user %s not found", *assignedTo), Message: "Usuario asignado no encontrado", Handled: true}
 			}
@@ -418,8 +893,6 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 			priorityNorm = "low"
 		case "high", "alta":
 			priorityNorm = "high"
-		default:
-			priorityNorm = "normal"
 		}
 	}
 
@@ -469,7 +942,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 		}
 	}
 
-	var items []database.PickingTaskItem
+	var items []requests.PickingTaskItemRequest
 
 	for i := headerRowIdx + 1; i < len(rows); i++ {
 		row := rows[i]
@@ -484,22 +957,53 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 		lotsStr := get(row, colIndex["lot_numbers"])
 		serialsStr := get(row, colIndex["serial_numbers"])
 
-		qty := 0
-		if n, err := strconv.Atoi(strings.TrimSpace(qtyStr)); err == nil {
+		qty := 0.0
+		if n, err := strconv.ParseFloat(strings.TrimSpace(qtyStr), 64); err == nil {
 			qty = n
 		}
 
-		lots := splitCSV(lotsStr)
-		serials := splitCSV(serialsStr)
+		// Build a single allocation from the Excel location column (legacy-style).
+		allocations := []database.LocationAllocation{}
+		if loc := strings.TrimSpace(location); loc != "" && qty > 0 {
+			allocations = append(allocations, database.LocationAllocation{
+				Location: loc,
+				Quantity: qty,
+			})
+		}
 
-		// TODO B3: Location → Allocations, LotNumbers/SerialNumbers need new types (LotEntry/Serial).
-		// Excel import will be re-wired in B3. Variables consumed to silence unused-var errors.
-		_, _, _ = location, lots, serials
-		items = append(items, database.PickingTaskItem{
+		// Parse lot numbers from comma-separated string.
+		var lotEntries []database.LotEntry
+		for _, ln := range splitCSV(lotsStr) {
+			if ln != "" {
+				lotEntries = append(lotEntries, database.LotEntry{LotNumber: ln, SKU: sku, Quantity: qty})
+			}
+		}
+
+		// Serial numbers — stored in SerialNumbers field.
+		var serials []database.Serial
+		for _, sn := range splitCSV(serialsStr) {
+			if sn != "" {
+				serials = append(serials, database.Serial{SerialNumber: sn, SKU: sku})
+			}
+		}
+
+		item := requests.PickingTaskItemRequest{
 			SKU:              strings.TrimSpace(sku),
-			ExpectedQuantity: float64(qty),
-		})
+			ExpectedQuantity: qty,
+			Allocations:      allocations,
+		}
+		if len(lotEntries) > 0 {
+			item.LotNumbers = lotEntries
+		}
+		if len(serials) > 0 {
+			item.SerialNumbers = serials
+		}
+
+		if qty > 0 {
+			items = append(items, item)
+		}
 	}
+
 	if len(items) == 0 {
 		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No se encontraron items para importar", Handled: true}
 	}
@@ -534,20 +1038,9 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	f.SetSheetName("Sheet1", sheet)
 
 	headers := []string{
-		"ID",
-		"Task ID",
-		"Order Number",
-		"Created By",
-		"Assigned To",
-		"Status",
-		"Priority",
-		"Notes",
-		"Items",
-		"Created At",
-		"Updated At",
-		"Completed At",
+		"ID", "Task ID", "Order Number", "Created By", "Assigned To",
+		"Status", "Priority", "Notes", "Items", "Created At", "Updated At", "Completed At",
 	}
-
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, h)
@@ -556,18 +1049,9 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 	for i, task := range tasks {
 		rowNum := i + 2
 		row := []interface{}{
-			task.ID,
-			task.TaskID,
-			task.OrderNumber,
-			task.CreatedBy,
-			task.AssignedTo,
-			task.Status,
-			task.Priority,
-			task.Notes,
-			string(task.Items),
-			task.CreatedAt.Format(time.RFC3339),
-			nil,
-			nil,
+			task.ID, task.TaskID, task.OrderNumber, task.CreatedBy, task.AssignedTo,
+			task.Status, task.Priority, task.Notes, string(task.Items),
+			task.CreatedAt.Format(time.RFC3339), nil, nil,
 		}
 		if !task.UpdatedAt.IsZero() {
 			row[10] = task.UpdatedAt.Format(time.RFC3339)
@@ -575,7 +1059,6 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 		if !task.CompletedAt.IsZero() {
 			row[11] = task.CompletedAt.Format(time.RFC3339)
 		}
-
 		for j, val := range row {
 			cell, _ := excelize.CoordinatesToCellName(j+1, rowNum)
 			f.SetCellValue(sheet, cell, val)
@@ -584,576 +1067,40 @@ func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al generar el archivo de Excel",
-			Handled: false,
-		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al generar el archivo de Excel"}
 	}
-
 	return buf.Bytes(), nil
-}
-
-func (r *PickingTaskRepository) CompletePickingTask(id string, location, userId string) *responses.InternalResponse {
-	handledResp := &responses.InternalResponse{}
-
-	err := r.DB.Transaction(func(tx *gorm.DB) error {
-		// Get the task
-		var task database.PickingTask
-		if err := tx.First(&task, "id = ?", id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true}
-				return nil
-			}
-			return fmt.Errorf("retrieve picking task: %w", err)
-		}
-
-		if task.Status == "completed" || task.Status == "closed" {
-			*handledResp = responses.InternalResponse{Message: "Tarea de picking ya completada o cerrada", Handled: true}
-
-			return nil
-		}
-
-		var items []requests.PickingTaskItemRequest
-
-		if err := json.Unmarshal(task.Items, &items); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
-			return nil
-		}
-
-		for i := 0; i < len(items); i++ {
-			if items[i].Status != nil && (*items[i].Status == "completed" || *items[i].Status == "partial") {
-				continue
-			}
-
-			sku := items[i].SKU
-
-			items[i].Status = tools.StrPtr("completed")
-			items[i].DeliveredQuantity = tools.IntToPtr(int(items[i].ExpectedQuantity))
-
-			var article database.Article
-
-			if err := tx.Where("sku = ?", sku).First(&article).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
-					continue
-				}
-				return fmt.Errorf("find article %s: %w", sku, err)
-			}
-
-			var inventory database.Inventory
-
-			// Check if there is enough stock in the specified location
-			if err := tx.Where("sku = ? AND location = ?", sku, location).First(&inventory).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente stock para el SKU %s en la ubicación %s", sku, location), Handled: true}
-
-					return nil
-				}
-				return fmt.Errorf("find inventory %s in %s: %w", sku, location, err)
-			}
-
-			if inventory.Quantity < float64(items[i].ExpectedQuantity) {
-				*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente stock para el SKU %s en la ubicación %s", sku, location), Handled: true}
-
-				return nil
-			}
-
-			// Deduct the stock
-			newQty := inventory.Quantity - float64(items[i].ExpectedQuantity)
-
-			if err := tx.Model(&database.Inventory{}).Where("id = ?", inventory.ID).
-				Update("quantity", newQty).Error; err != nil {
-				return fmt.Errorf("update inventory %s in %s: %w", sku, location, err)
-			}
-
-			// Create inventory movement record
-			movement := database.InventoryMovement{
-				SKU:            sku,
-				Location:       location,
-				MovementType:   "picking",
-				Quantity:       float64(items[i].ExpectedQuantity),
-				RemainingStock: newQty,
-				Reason:         tools.StrPtr(fmt.Sprintf("Picking Task %s", task.TaskID)),
-				CreatedBy:      task.CreatedBy,
-				CreatedAt:      tools.GetCurrentTime(),
-			}
-
-			if err := tx.Create(&movement).Error; err != nil {
-				return fmt.Errorf("error al crear movimiento de inventario %s en %s: %w", sku, location, err)
-			}
-
-			if article.TrackBySerial && items[i].SerialNumbers != nil {
-				// Check if given serials count matches expected quantity
-				if len(items[i].SerialNumbers) != items[i].ExpectedQuantity {
-					// If not, then this task can't be completed fully
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("La cantidad de números de serie (%d) no coincide con la cantidad esperada (%d) para el SKU %s", len(items[i].SerialNumbers), items[i].ExpectedQuantity, sku), Handled: true}
-					return nil
-				}
-
-				for k := 0; k < len(items[i].SerialNumbers); k++ {
-					serial := items[i].SerialNumbers[k]
-
-					// Check if serial was created before
-					var serialItem database.Serial
-
-					// Check if serial exists and is in stock and its available
-					if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, sku).First(&serialItem).Error; err != nil {
-						if err == gorm.ErrRecordNotFound {
-							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("El número de serie %s para el SKU %s no se encontró en el inventario", serial.SerialNumber, sku), Handled: true}
-							return nil
-						}
-						return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
-					}
-
-					// Mark serial as picked
-					serialItem.Status = "picked"
-					serialItem.UpdatedAt = tools.GetCurrentTime()
-
-					if err := tx.Save(&serialItem).Error; err != nil {
-						return fmt.Errorf("update serial %s for SKU %s: %w", serial.SerialNumber, sku, err)
-					}
-
-					// Mark serial as completed in the task
-					items[i].SerialNumbers[k].Status = "completed"
-					items[i].SerialNumbers[k].ID = serialItem.ID
-				}
-
-				// Mark item as completed
-				items[i].Status = tools.StrPtr("completed")
-			}
-
-			if article.TrackByLot && items[i].LotNumbers != nil {
-				// Check if given lots sum matches expected quantity
-				var totalLotQty float64
-
-				for _, lot := range items[i].LotNumbers {
-					totalLotQty += lot.Quantity
-				}
-
-				if int(totalLotQty) != items[i].ExpectedQuantity {
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("La cantidad total de lotes (%.2f) no coincide con la cantidad esperada (%d) para el SKU %s", totalLotQty, items[i].ExpectedQuantity, sku), Handled: true}
-
-					return nil
-				}
-
-				for j := 0; j < len(items[i].LotNumbers); j++ {
-					lotNum := items[i].LotNumbers[j]
-
-					var lot database.Lot
-
-					// Check if lot exists for this SKU
-					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, sku).First(&lot).Error; err != nil {
-						if err == gorm.ErrRecordNotFound {
-							*handledResp = responses.InternalResponse{Message: fmt.Sprintf("El número de lote %s para el SKU %s no se encontró en el inventario", lotNum.LotNumber, sku), Handled: true}
-							return nil
-						}
-						return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
-					}
-
-					// Check if lot has enough quantity
-					if lot.Quantity < lotNum.Quantity {
-						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente cantidad en el número de lote %s para el SKU %s (disponible: %.2f, requerido: %.2f)", lotNum.LotNumber, sku, lot.Quantity, lotNum.Quantity), Handled: true}
-						return nil
-					}
-
-					// Deduct lot quantity
-					lot.Quantity -= lotNum.Quantity
-					lot.UpdatedAt = tools.GetCurrentTime()
-
-					if err := tx.Save(&lot).Error; err != nil {
-						return fmt.Errorf("update lot %s for SKU %s: %w", lotNum.LotNumber, sku, err)
-					}
-
-					// Mark lot as completed in the task and deliverd quantity
-					items[i].LotNumbers[j].Status = tools.StrPtr("completed")
-					items[i].LotNumbers[j].ReceivedQuantity = &lotNum.Quantity
-				}
-
-				// Mark item as completed
-				items[i].Status = tools.StrPtr("completed")
-			}
-		}
-
-		updatedItems, err := json.Marshal(items)
-		if err != nil {
-			return fmt.Errorf("marshal updated items: %w", err)
-		}
-
-		task.Items = updatedItems
-
-		clean := map[string]interface{}{
-			"status":       "closed",
-			"items":        updatedItems,
-			"completed_at": tools.GetCurrentTime(),
-			"updated_at":   tools.GetCurrentTime(),
-		}
-
-		if err := tx.Model(&task).Updates(clean).Error; err != nil {
-			return fmt.Errorf("update picking task: %w", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Transacción fallida"}
-	}
-
-	if handledResp.Error != nil || handledResp.Handled {
-		return handledResp
-	}
-
-	return nil
-}
-
-func (r *PickingTaskRepository) CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
-	handledResp := &responses.InternalResponse{}
-
-	err := r.DB.Transaction(func(tx *gorm.DB) error {
-		var task database.PickingTask
-
-		if err := r.DB.First(&task, "id = ?", id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				*handledResp = responses.InternalResponse{Message: "Tarea de picking no encontrada", Handled: true}
-				return nil
-			}
-			*handledResp = responses.InternalResponse{Error: err, Message: "Error al obtener la tarea de picking"}
-			return nil
-		}
-
-		var items []requests.PickingTaskItemRequest
-		var foundItem *requests.PickingTaskItemRequest
-
-		if err := json.Unmarshal(task.Items, &items); err != nil {
-			*handledResp = responses.InternalResponse{Error: err, Message: "Formato de items inválido", Handled: true}
-			return nil
-		}
-
-		found := false
-
-		for i := 0; i < len(items); i++ {
-			if items[i].SKU == item.SKU && items[i].Location == item.Location {
-				foundItem = &items[i]
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			*handledResp = responses.InternalResponse{Message: "Item no encontrado en la tarea de picking", Handled: true}
-			return nil
-		}
-
-		var article database.Article
-
-		if err := tx.Where("sku = ?", foundItem.SKU).First(&article).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				*handledResp = responses.InternalResponse{Message: "Artículo no encontrado para el SKU " + foundItem.SKU, Handled: true}
-				return nil
-			}
-			return fmt.Errorf("find article %s: %w", foundItem.SKU, err)
-		}
-
-		if foundItem.Status != nil && (*foundItem.Status == "completed" || *foundItem.Status == "closed" || *foundItem.Status == "partial") {
-			*handledResp = responses.InternalResponse{Message: "Artículo ya procesado", Handled: true}
-			return nil
-		}
-
-		var qty float64
-		if article.TrackByLot && item.LotNumbers != nil {
-			for _, lot := range item.LotNumbers {
-				qty += lot.Quantity
-			}
-		} else if article.TrackBySerial && item.SerialNumbers != nil {
-			qty = float64(len(item.SerialNumbers))
-		} else {
-			qty = tools.IntToFloat64(item.ExpectedQuantity)
-		}
-
-		if qty <= 0 || qty < float64(foundItem.ExpectedQuantity) {
-			// Update items status to partial for this SKU
-			for i := 0; i < len(items); i++ {
-				if items[i].SKU == item.SKU {
-					items[i].Status = tools.StrPtr("partial")
-					items[i].DeliveredQuantity = tools.IntToPtr(int(qty))
-					break
-				}
-			}
-
-			updatedItems, err := json.Marshal(items)
-			if err != nil {
-				return fmt.Errorf("marshal updated items: %w", err)
-			}
-
-			task.Items = updatedItems
-
-			clean := map[string]interface{}{
-				"items":      updatedItems,
-				"updated_at": tools.GetCurrentTime(),
-			}
-
-			if err := tx.Model(&task).Updates(clean).Error; err != nil {
-				*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de picking"}
-				return nil
-			}
-		} else {
-			// If given quantity meets or exceeds expected, mark item as completed
-			for i := 0; i < len(items); i++ {
-				if items[i].SKU == item.SKU {
-					items[i].Status = tools.StrPtr("completed")
-					items[i].DeliveredQuantity = tools.IntToPtr(int(qty))
-					break
-				}
-			}
-		}
-
-		var inventory database.Inventory
-
-		// Check if there is enough stock in the specified location
-		if err := tx.Where("sku = ? AND location = ?", item.SKU, location).First(&inventory).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("no hay suficiente stock para SKU %s en location %s", item.SKU, location)
-			}
-			return fmt.Errorf("find inventory %s in %s: %w", item.SKU, location, err)
-		}
-
-		if inventory.Quantity < qty {
-			*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente stock para SKU %s en location %s", item.SKU, location), Handled: true}
-
-			return nil
-		}
-
-		// Deduct the stock
-		newQty := inventory.Quantity - qty
-
-		if err := tx.Model(&database.Inventory{}).Where("id = ?", inventory.ID).
-			Update("quantity", newQty).Error; err != nil {
-			return fmt.Errorf("update inventory %s in %s: %w", item.SKU, location, err)
-		}
-
-		// Create inventory movement record
-		movement := database.InventoryMovement{
-			SKU:            item.SKU,
-			Location:       location,
-			MovementType:   "picking",
-			Quantity:       qty,
-			RemainingStock: newQty,
-			Reason:         tools.StrPtr(fmt.Sprintf("Picking Task %s", task.TaskID)),
-			CreatedBy:      task.CreatedBy,
-			CreatedAt:      tools.GetCurrentTime(),
-		}
-
-		if err := tx.Create(&movement).Error; err != nil {
-			return fmt.Errorf("error al crear movimiento de inventario para %s en %s: %w", item.SKU, location, err)
-		}
-
-		if article.TrackBySerial && item.SerialNumbers != nil {
-			for k := 0; k < len(item.SerialNumbers); k++ {
-				serial := item.SerialNumbers[k]
-
-				// Check if serial is in stock and available
-				var serialItem database.Serial
-				if err := tx.Where("serial_number = ? AND sku = ? AND status = 'available'", serial.SerialNumber, item.SKU).First(&serialItem).Error; err != nil {
-					if err == gorm.ErrRecordNotFound {
-						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Número de serie %s para SKU %s no encontrado en inventario", serial.SerialNumber, item.SKU), Handled: true}
-						return nil
-					}
-					return fmt.Errorf("find serial %s for SKU %s: %w", serial.SerialNumber, item.SKU, err)
-				}
-
-				// Mark serial as picked
-				serialItem.Status = "picked"
-				serialItem.UpdatedAt = tools.GetCurrentTime()
-
-				// Iterate over items for this SKU and then itereate over serials to check if already in task
-				alreadyInTask := false
-				for i := 0; i < len(items); i++ {
-					if items[i].SKU == item.SKU {
-						for j := 0; j < len(items[i].SerialNumbers); j++ {
-							if items[i].SerialNumbers[j].SerialNumber == serial.SerialNumber {
-								alreadyInTask = true
-								break
-							}
-						}
-						break
-					}
-				}
-
-				// If not, append it
-				if !alreadyInTask {
-					for i := 0; i < len(items); i++ {
-						if items[i].SKU == item.SKU {
-							items[i].SerialNumbers = append(items[i].SerialNumbers, database.Serial{
-								ID:           serialItem.ID,
-								SerialNumber: serial.SerialNumber,
-								SKU:          item.SKU,
-								Status:       "completed",
-								CreatedAt:    serialItem.CreatedAt,
-								UpdatedAt:    serialItem.UpdatedAt,
-							})
-							break
-						}
-					}
-				}
-
-				if err := tx.Save(&serialItem).Error; err != nil {
-					return fmt.Errorf("update serial %s for SKU %s: %w", serial.SerialNumber, item.SKU, err)
-				}
-
-				// Mark items serial as completed
-				for i := 0; i < len(items); i++ {
-					if items[i].SKU == item.SKU {
-						for j := 0; j < len(items[i].SerialNumbers); j++ {
-							if items[i].SerialNumbers[j].SerialNumber == serial.SerialNumber {
-								items[i].SerialNumbers[j].Status = "completed"
-								items[i].SerialNumbers[j].ID = serialItem.ID
-								break
-							}
-						}
-						break
-					}
-				}
-			}
-
-			if len(item.SerialNumbers) == foundItem.ExpectedQuantity {
-				item.Status = tools.StrPtr("completed")
-			} else {
-				item.Status = tools.StrPtr("partial")
-			}
-		}
-
-		if article.TrackByLot && item.LotNumbers != nil {
-			for j := 0; j < len(item.LotNumbers); j++ {
-				lotNum := item.LotNumbers[j]
-
-				var lot database.Lot
-
-				// Check if lot exists for this SKU
-				if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
-					if err == gorm.ErrRecordNotFound {
-						*handledResp = responses.InternalResponse{Message: fmt.Sprintf("Número de lote %s para SKU %s no encontrado en inventario", lotNum.LotNumber, item.SKU), Handled: true}
-						return nil
-					}
-					return fmt.Errorf("find lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
-				}
-
-				// Check if lot has enough quantity
-				if lot.Quantity < lotNum.Quantity {
-					*handledResp = responses.InternalResponse{Message: fmt.Sprintf("No hay suficiente cantidad en el número de lote %s para SKU %s (disponible: %.2f, requerido: %.2f)", lotNum.LotNumber, item.SKU, lot.Quantity, lotNum.Quantity), Handled: true}
-					return nil
-				}
-
-				// Deduct lot quantity
-				lot.Quantity -= lotNum.Quantity
-				lot.UpdatedAt = tools.GetCurrentTime()
-
-				if err := tx.Save(&lot).Error; err != nil {
-					return fmt.Errorf("update lot %s for SKU %s: %w", lotNum.LotNumber, item.SKU, err)
-				}
-
-				if lot.Quantity != item.LotNumbers[j].Quantity {
-					for i := 0; i < len(items); i++ {
-						if items[i].SKU == item.SKU {
-							for k := 0; k < len(items[i].LotNumbers); k++ {
-								if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
-									items[i].LotNumbers[k].Status = tools.StrPtr("partial")
-									items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
-									break
-								}
-							}
-							items[i].Status = tools.StrPtr("partial")
-							break
-						}
-					}
-				}
-
-				// Mark lot as completed in the task and deliverd quantity
-				for i := 0; i < len(items); i++ {
-					if items[i].SKU == item.SKU {
-						alreadyInTask := false
-						for k := 0; k < len(items[i].LotNumbers); k++ {
-							if items[i].LotNumbers[k].LotNumber == lotNum.LotNumber {
-								items[i].LotNumbers[k].Status = tools.StrPtr("completed")
-								items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
-								alreadyInTask = true
-								break
-							}
-						}
-
-						if !alreadyInTask {
-							items[i].LotNumbers = append(items[i].LotNumbers, requests.CreateLotRequest{
-								LotNumber:        lotNum.LotNumber,
-								SKU:              item.SKU,
-								Quantity:         lotNum.Quantity,
-								ReceivedQuantity: &lotNum.Quantity,
-								Status:           tools.StrPtr("completed"),
-							})
-						}
-
-						break
-					}
-				}
-			}
-
-			// If total lot quantity meets expected, mark item as completed
-			for i := 0; i < len(items); i++ {
-				if items[i].SKU == item.SKU {
-					if qty >= float64(foundItem.ExpectedQuantity) {
-						items[i].Status = tools.StrPtr("completed")
-					} else {
-						items[i].Status = tools.StrPtr("partial")
-					}
-					break
-				}
-			}
-		}
-
-		updatedItems, err := json.Marshal(items)
-		if err != nil {
-			return fmt.Errorf("marshal updated items: %w", err)
-		}
-
-		task.Items = updatedItems
-
-		clean := map[string]interface{}{
-			"items":        updatedItems,
-			"completed_at": tools.GetCurrentTime(),
-			"updated_at":   tools.GetCurrentTime(),
-		}
-
-		if err := tx.Model(&task).Updates(clean).Error; err != nil {
-			return fmt.Errorf("update picking task: %w", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
-	}
-
-	if handledResp.Error != nil || handledResp.Handled {
-		return handledResp
-	}
-
-	return nil
 }
 
 func (r *PickingTaskRepository) GenerateImportTemplate(language string) ([]byte, error) {
 	isEs := language != "en"
 	l2 := getLang(language)
 	_, _ = l2["yes"], l2["no"]
-	title := "Importar Tareas de Picking"; subtitle := "Plantilla de importación — eSTOCK"
-	instrTitle := "📋 Instrucciones"; instrContent := "1. Complete desde la fila 9  •  2. SKU, Cantidad Solicitada, Ubicación y Asignado A son obligatorios (*)  •  3. Lotes y seriales: separe con comas"
+	title := "Importar Tareas de Picking"
+	subtitle := "Plantilla de importación — eSTOCK"
+	instrTitle := "📋 Instrucciones"
+	instrContent := "1. Complete desde la fila 9  •  2. SKU, Cantidad Solicitada, Ubicación y Asignado A son obligatorios (*)  •  3. Lotes y seriales: separe con comas"
 	if !isEs {
-		title = "Import Picking Tasks"; subtitle = "Picking task import template — eSTOCK"
-		instrTitle = "📋 Instructions"; instrContent = "1. Fill in data from row 9  •  2. SKU, Requested Quantity, Location and Assigned To are required (*)  •  3. Lots and serials: separate with commas"
+		title = "Import Picking Tasks"
+		subtitle = "Picking task import template — eSTOCK"
+		instrTitle = "📋 Instructions"
+		instrContent = "1. Fill in data from row 9  •  2. SKU, Requested Quantity, Location and Assigned To are required (*)  •  3. Lots and serials: separate with commas"
 	}
 	prios := []string{"normal", "low", "high"}
 
 	cfg := ModuleTemplateConfig{
-		DataSheetName: func() string { if isEs { return "Picking" }; return "PickingTasks" }(),
-		OptSheetName:  func() string { if isEs { return "Opciones" }; return "Options" }(),
+		DataSheetName: func() string {
+			if isEs {
+				return "Picking"
+			}
+			return "PickingTasks"
+		}(),
+		OptSheetName: func() string {
+			if isEs {
+				return "Opciones"
+			}
+			return "Options"
+		}(),
 		Title: title, Subtitle: subtitle, InstrTitle: instrTitle, InstrContent: instrContent,
 		Columns: func() []ColumnDef {
 			if isEs {
@@ -1184,10 +1131,18 @@ func (r *PickingTaskRepository) GenerateImportTemplate(language string) ([]byte,
 		ExampleRow: []string{"SKU-0001", "25", "LOC-001", "", "", "ORD-001", "operator@company.com", "normal", ""},
 		ApplyValidations: func(f *excelize.File, dataSheet, optSheet string, start, end int) error {
 			f.NewSheet(optSheet)
-			for i, v := range prios { cell, _ := excelize.CoordinatesToCellName(1, i+1); f.SetCellValue(optSheet, cell, v) }
+			for i, v := range prios {
+				cell, _ := excelize.CoordinatesToCellName(1, i+1)
+				f.SetCellValue(optSheet, cell, v)
+			}
 			f.SetSheetVisible(optSheet, false)
 			prioRef := "'" + optSheet + "'!$A$1:$A$3"
-			errPrio := func() string { if isEs { return "Prioridad inválida" }; return "Invalid priority" }()
+			errPrio := func() string {
+				if isEs {
+					return "Prioridad inválida"
+				}
+				return "Invalid priority"
+			}()
 			return addDropListValidation(f, dataSheet, "H9:H2000", prioRef, errPrio, errPrio)
 		},
 	}

@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
@@ -12,9 +14,7 @@ type PickingTaskService struct {
 }
 
 func NewPickingTaskService(repo ports.PickingTaskRepository) *PickingTaskService {
-	return &PickingTaskService{
-		Repository: repo,
-	}
+	return &PickingTaskService{Repository: repo}
 }
 
 func (s *PickingTaskService) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
@@ -29,8 +29,12 @@ func (s *PickingTaskService) CreatePickingTask(userId string, task *requests.Cre
 	return s.Repository.CreatePickingTask(userId, task)
 }
 
-func (s *PickingTaskService) UpdatePickingTask(id string, data map[string]interface{}) *responses.InternalResponse {
-	return s.Repository.UpdatePickingTask(id, data)
+func (s *PickingTaskService) StartPickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
+	return s.Repository.StartPickingTask(ctx, id, userId)
+}
+
+func (s *PickingTaskService) UpdatePickingTask(ctx context.Context, id string, data map[string]interface{}, userId string) *responses.InternalResponse {
+	return s.Repository.UpdatePickingTask(ctx, id, data, userId)
 }
 
 func (s *PickingTaskService) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
@@ -41,12 +45,12 @@ func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.Int
 	return s.Repository.ExportPickingTasksToExcel()
 }
 
-func (s *PickingTaskService) CompletePickingTask(id string, location, userId string) *responses.InternalResponse {
-	return s.Repository.CompletePickingTask(id, location, userId)
+func (s *PickingTaskService) CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
+	return s.Repository.CompletePickingTask(ctx, id, userId)
 }
 
-func (s *PickingTaskService) CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
-	return s.Repository.CompletePickingLine(id, location, userId, item)
+func (s *PickingTaskService) CompletePickingLine(ctx context.Context, id, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+	return s.Repository.CompletePickingLine(ctx, id, userId, item)
 }
 
 func (s *PickingTaskService) GenerateImportTemplate(language string) ([]byte, error) {
