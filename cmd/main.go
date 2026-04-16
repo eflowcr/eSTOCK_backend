@@ -3,9 +3,12 @@ package main
 import (
 	"io"
 	"os"
+	"time"
 
 	"github.com/eflowcr/eSTOCK_backend/configuration"
+	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/routes"
+	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -60,6 +63,33 @@ func main() {
 	r.Use(tools.RequestLogMiddleware())
 
 	routes.RegisterRoutes(r, db, pool, config, redisClient)
+
+	// B7b: cron unificado — stock alerts + stale reservations cleanup.
+	// A8: delay de estabilización antes del primer run para que la DB esté lista.
+	go func() {
+		time.Sleep(30 * time.Second)
+
+		analyzer := func() error {
+			repo := &repositories.StockAlertsRepository{DB: db, Redis: redisClient}
+			svc := services.NewStockAlertsService(repo)
+			if _, resp := svc.Analyze(); resp != nil && resp.Error != nil {
+				return resp.Error
+			}
+			if _, resp := svc.LotExpiration(); resp != nil && resp.Error != nil {
+				return resp.Error
+			}
+			return nil
+		}
+
+		log.Info().Msg("cron: first run (post-startup)")
+		tools.CronDispatch(db, analyzer)
+
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			tools.CronDispatch(db, analyzer)
+		}
+	}()
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/api/docs/openapi.json")))
 
