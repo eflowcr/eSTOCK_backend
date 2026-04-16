@@ -94,6 +94,7 @@ type Inventory struct {
 	UnitPrice    pgtype.Numeric   `json:"unit_price"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	ReservedQty  pgtype.Numeric   `json:"reserved_qty"`
 }
 
 type InventoryLot struct {
@@ -158,6 +159,15 @@ type Lot struct {
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 	Status         string           `json:"status"`
+}
+
+type PasswordResetToken struct {
+	ID        string             `json:"id"`
+	UserID    string             `json:"user_id"`
+	Token     string             `json:"token"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt time.Time          `json:"created_at"`
 }
 
 type PickingTask struct {
