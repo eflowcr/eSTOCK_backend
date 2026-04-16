@@ -721,7 +721,12 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 			}
 
 			// Create inventory movement
+			movID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate movement id: %w", err)
+			}
 			mov := &database.InventoryMovement{
+				ID:             movID,
 				SKU:            sku,
 				Location:       location,
 				MovementType:   "inbound",
@@ -1034,7 +1039,12 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 		}
 
 		// Create inventory movement
+		movLineID, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generate movement id: %w", err)
+		}
 		mov := &database.InventoryMovement{
+			ID:             movLineID,
 			SKU:            item.SKU,
 			Location:       location,
 			MovementType:   "inbound",

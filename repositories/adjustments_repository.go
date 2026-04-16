@@ -341,7 +341,12 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 		}
 
 		// Create inventory movement
+		adjMovID, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generate adjustment movement id: %w", err)
+		}
 		movements := database.InventoryMovement{
+			ID:             adjMovID,
 			SKU:            adjustment.SKU,
 			Location:       adjustment.Location,
 			MovementType:   "adjustment",
