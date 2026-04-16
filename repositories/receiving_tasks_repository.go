@@ -494,7 +494,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		}
 	}
 
-	var items []database.ReceivingTaskItem
+	var items []requests.ReceivingTaskItemRequest
 
 	for i := headerRowIdx + 1; i < len(rows); i++ {
 		row := rows[i]
@@ -513,17 +513,36 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 			expQty = n
 		}
 
-		lots := splitCSV(lotsStr)
-		serials := splitCSV(serialsStr)
-
-		// TODO B3: LotNumbers/SerialNumbers need new types (LotEntry/Serial).
-		// Excel import lots/serials will be re-wired in B3. Variables consumed to silence unused-var errors.
-		_, _ = lots, serials
-		items = append(items, database.ReceivingTaskItem{
+		item := requests.ReceivingTaskItemRequest{
 			SKU:              strings.TrimSpace(sku),
-			ExpectedQuantity: float64(expQty),
+			ExpectedQuantity: expQty,
 			Location:         strings.TrimSpace(location),
-		})
+		}
+
+		// Parse lot numbers from comma-separated string.
+		// Each lot receives the full item quantity; for multi-lot lines operators
+		// should adjust quantities after import via UpdateReceivingTask.
+		for _, ln := range splitCSV(lotsStr) {
+			if ln != "" {
+				item.LotNumbers = append(item.LotNumbers, requests.CreateLotRequest{
+					LotNumber: strings.TrimSpace(ln),
+					SKU:       strings.TrimSpace(sku),
+					Quantity:  float64(expQty),
+				})
+			}
+		}
+
+		// Parse serial numbers from comma-separated string.
+		for _, sn := range splitCSV(serialsStr) {
+			if sn != "" {
+				item.SerialNumbers = append(item.SerialNumbers, database.Serial{
+					SerialNumber: strings.TrimSpace(sn),
+					SKU:          strings.TrimSpace(sku),
+				})
+			}
+		}
+
+		items = append(items, item)
 	}
 	if len(items) == 0 {
 		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No se encontraron items para importar", Handled: true}
@@ -620,8 +639,18 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 			return nil
 		}
 
-		if task.Status == "closed" {
-			*handledResp = responses.InternalResponse{Message: "La tarea de recepción ya está cerrada", Handled: true}
+		// Bloquear si ya está en un estado terminal
+		terminalStates := map[string]bool{
+			"completed":                  true,
+			"completed_with_differences": true,
+			"cancelled":                  true,
+		}
+		if terminalStates[task.Status] {
+			*handledResp = responses.InternalResponse{
+				Message:    "La tarea de recepción ya está completada o cancelada",
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
 			return nil
 		}
 
@@ -805,6 +834,30 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 			}
 		}
 
+		// Detectar si hubo diferencias entre received_qty y expected_qty
+		hasDifferences := false
+		for _, it := range items {
+			if it.ReceivedQuantity != nil && *it.ReceivedQuantity != it.ExpectedQuantity {
+				hasDifferences = true
+				break
+			}
+		}
+
+		finalStatus := "completed"
+		if hasDifferences {
+			finalStatus = "completed_with_differences"
+		}
+
+		// Validar transición (defensivo)
+		if !isValidReceivingTransition(task.Status, finalStatus) {
+			*handledResp = responses.InternalResponse{
+				Message:    fmt.Sprintf("Transición inválida: %s → %s", task.Status, finalStatus),
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+			return nil
+		}
+
 		// Update items
 		updatedItems, err := json.Marshal(items)
 		if err != nil {
@@ -816,7 +869,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 		// Update task fields
 		clean := map[string]interface{}{
 			"items":        updatedItems,
-			"status":       "closed",
+			"status":       finalStatus,
 			"completed_at": tools.GetCurrentTime(),
 			"updated_at":   tools.GetCurrentTime(),
 		}
@@ -1139,6 +1192,36 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 		clean := map[string]interface{}{
 			"items":      updatedItems,
 			"updated_at": tools.GetCurrentTime(),
+		}
+
+		// Auto-cierre: si todos los ítems fueron procesados (completed|partial), cerrar la tarea
+		allProcessed := true
+		for _, it := range items {
+			s := ""
+			if it.Status != nil {
+				s = *it.Status
+			}
+			if s != "completed" && s != "partial" {
+				allProcessed = false
+				break
+			}
+		}
+		if allProcessed {
+			lineDiff := false
+			for _, it := range items {
+				if it.ReceivedQuantity != nil && *it.ReceivedQuantity != it.ExpectedQuantity {
+					lineDiff = true
+					break
+				}
+			}
+			lineStatus := "completed"
+			if lineDiff {
+				lineStatus = "completed_with_differences"
+			}
+			if isValidReceivingTransition(task.Status, lineStatus) {
+				clean["status"] = lineStatus
+				clean["completed_at"] = tools.GetCurrentTime()
+			}
 		}
 
 		if err := tx.Model(&task).Updates(clean).Error; err != nil {
