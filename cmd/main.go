@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/routes"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -27,7 +29,7 @@ func main() {
 	switch config.Environment {
 	case "debug", "development":
 		gin.SetMode(gin.DebugMode)
-		gin.DefaultWriter = io.Discard // so only zerolog is used; no route dump or duplicate "Listening and serving"
+		gin.DefaultWriter = io.Discard
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	case "test":
 		gin.SetMode(gin.TestMode)
@@ -56,16 +58,22 @@ func main() {
 		defer redisClient.Close()
 	}
 
+	// Build shared email sender and notifications service.
+	emailSender := wire.EmailSenderForConfig(config)
+	var notifSvc *services.NotificationsService
+	if db != nil {
+		_, notifSvc = wire.NewNotifications(db, emailSender, config.TenantID)
+	}
+
 	r := gin.New()
-	r.SetTrustedProxies(nil) // avoid "trust all proxies" warning; set explicitly if behind a reverse proxy
+	r.SetTrustedProxies(nil)
 	r.Use(gin.Recovery())
 	r.Use(tools.CORSMiddleware())
 	r.Use(tools.RequestLogMiddleware())
 
-	routes.RegisterRoutes(r, db, pool, config, redisClient)
+	routes.RegisterRoutes(r, db, pool, config, redisClient, notifSvc)
 
-	// B7b: cron unificado — stock alerts + stale reservations cleanup.
-	// A8: delay de estabilización antes del primer run para que la DB esté lista.
+	// Cron: stock alerts + stale reservations + lot expiration notifications.
 	go func() {
 		time.Sleep(30 * time.Second)
 
@@ -81,13 +89,35 @@ func main() {
 			return nil
 		}
 
+		// lotNotifyFn notifies all admin users for expiring lots.
+		var lotNotifyFn func(eventType, title, body string) error
+		if notifSvc != nil {
+			lotNotifyFn = func(eventType, title, body string) error {
+				var adminIDs []string
+				if err := db.Table("users").
+					Joins("JOIN roles ON users.role_id = roles.id").
+					Where("LOWER(roles.name) = 'admin' AND users.is_active = true AND users.deleted_at IS NULL").
+					Pluck("users.id", &adminIDs).Error; err != nil {
+					log.Warn().Err(err).Msg("cron: query admins for lot expiration notify failed")
+					return nil
+				}
+				ctx := context.Background()
+				for _, uid := range adminIDs {
+					if err := notifSvc.Send(ctx, uid, eventType, title, body, "lot", ""); err != nil {
+						log.Warn().Err(err).Str("user_id", uid).Msg("cron: lot expiration notify send failed")
+					}
+				}
+				return nil
+			}
+		}
+
 		log.Info().Msg("cron: first run (post-startup)")
-		tools.CronDispatch(db, analyzer)
+		tools.CronDispatch(db, analyzer, lotNotifyFn)
 
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			tools.CronDispatch(db, analyzer)
+			tools.CronDispatch(db, analyzer, lotNotifyFn)
 		}
 	}()
 

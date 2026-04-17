@@ -20,8 +20,9 @@ import (
 )
 
 type PickingTaskRepository struct {
-	DB           *gorm.DB
-	AuditService *services.AuditService // injected via wire for audit logging
+	DB               *gorm.DB
+	AuditService     *services.AuditService     // injected via wire for audit logging
+	NotificationsSvc *services.NotificationsService // optional: emit task events
 }
 
 // validPickingTransitions declares the allowed status transitions.
@@ -607,6 +608,16 @@ func (r *PickingTaskRepository) UpdatePickingTask(ctx context.Context, id string
 	if r.AuditService != nil {
 		r.AuditService.Log(ctx, &userId, tools.ActionUpdate, "picking_task", id, nil, nil, "", "")
 	}
+
+	// Emit task_assigned notification if assigned_to changed.
+	if r.NotificationsSvc != nil {
+		if newAssignee, ok := data["assigned_to"].(string); ok && newAssignee != "" {
+			_ = r.NotificationsSvc.Send(ctx, newAssignee, "task_assigned",
+				"Nueva tarea de picking asignada", fmt.Sprintf("Se te ha asignado la tarea de picking %s.", id),
+				"picking_task", id)
+		}
+	}
+
 	return nil
 }
 
@@ -825,6 +836,17 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 	if r.AuditService != nil {
 		r.AuditService.Log(ctx, &userId, tools.ActionExecute, "picking_task", id, nil, nil, "", "")
 	}
+
+	// Emit task_completed notification to the assigned operator (fire-and-forget).
+	if r.NotificationsSvc != nil {
+		var task database.PickingTask
+		if err := r.DB.Select("assigned_to").First(&task, "id = ?", id).Error; err == nil && task.AssignedTo != nil && *task.AssignedTo != "" {
+			_ = r.NotificationsSvc.Send(ctx, *task.AssignedTo, "task_completed",
+				"Tarea de picking completada", fmt.Sprintf("La tarea de picking %s ha sido completada.", id),
+				"picking_task", id)
+		}
+	}
+
 	return nil
 }
 

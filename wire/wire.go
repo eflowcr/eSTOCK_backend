@@ -66,7 +66,7 @@ func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.Authenti
 		DB:          db,
 		JWTSecret:   config.JWTSecret,
 		Config:      config,
-		EmailSender: emailSenderForConfig(config),
+		EmailSender: EmailSenderForConfig(config),
 	}
 	return r, services.NewAuthenticationService(r, nil)
 }
@@ -77,7 +77,7 @@ func NewAuthenticationWithRoles(db *gorm.DB, config configuration.Config, rolesR
 		DB:          db,
 		JWTSecret:   config.JWTSecret,
 		Config:      config,
-		EmailSender: emailSenderForConfig(config),
+		EmailSender: EmailSenderForConfig(config),
 	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
@@ -88,20 +88,23 @@ func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesR
 		DB:           db,
 		JWTSecret:    config.JWTSecret,
 		Config:       config,
-		EmailSender:  emailSenderForConfig(config),
+		EmailSender:  EmailSenderForConfig(config),
 		AuditService: auditSvc,
 	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
-// emailSenderForConfig returns the appropriate EmailSender for the current environment.
-// In production with RESEND_API_KEY set, returns ResendEmailSender (stub until S2).
-// Otherwise returns LoggerEmailSender (logs to stdout, no real email sent).
-func emailSenderForConfig(config configuration.Config) tools.EmailSender {
+// EmailSenderForConfig returns the appropriate EmailSender for the current environment.
+// In production with RESEND_API_KEY set, returns ResendEmailSender. Otherwise returns LoggerEmailSender.
+func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
 	if config.Environment == "production" && config.ResendAPIKey != "" {
+		fromAddr := config.ResendFromAddress
+		if fromAddr == "" {
+			fromAddr = "noreply@estock.app"
+		}
 		return &tools.ResendEmailSender{
 			APIKey:   config.ResendAPIKey,
-			FromAddr: "noreply@eprac.com",
+			FromAddr: fromAddr,
 			AppName:  "eSTOCK",
 		}
 	}
@@ -168,13 +171,9 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 	return r, services.NewLotsService(r, articlesRepo)
 }
 
-// NewPickingTask builds PickingTaskRepository (with optional AuditService) and PickingTaskService.
-// When pool is non-nil, audit logging is enabled; otherwise AuditService is nil (graceful no-op).
-func NewPickingTask(db *gorm.DB, auditSvc ...*services.AuditService) (ports.PickingTaskRepository, *services.PickingTaskService) {
-	r := &repositories.PickingTaskRepository{DB: db}
-	if len(auditSvc) > 0 {
-		r.AuditService = auditSvc[0]
-	}
+// NewPickingTask builds PickingTaskRepository and PickingTaskService.
+func NewPickingTask(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService) (ports.PickingTaskRepository, *services.PickingTaskService) {
+	r := &repositories.PickingTaskRepository{DB: db, AuditService: auditSvc, NotificationsSvc: notifSvc}
 	return r, services.NewPickingTaskService(r)
 }
 
@@ -191,8 +190,8 @@ func NewPresentations(db *gorm.DB, pool *pgxpool.Pool) (ports.PresentationsRepos
 	return r, services.NewPresentationsService(r)
 }
 
-func NewReceivingTasks(db *gorm.DB) (ports.ReceivingTasksRepository, *services.ReceivingTasksService) {
-	r := &repositories.ReceivingTasksRepository{DB: db}
+func NewReceivingTasks(db *gorm.DB, notifSvc *services.NotificationsService) (ports.ReceivingTasksRepository, *services.ReceivingTasksService) {
+	r := &repositories.ReceivingTasksRepository{DB: db, NotificationsSvc: notifSvc}
 	return r, services.NewReceivingTasksService(r)
 }
 
@@ -213,9 +212,15 @@ func NewStockAlerts(db *gorm.DB, redisClient *redis.Client) (ports.StockAlertsRe
 	return r, services.NewStockAlertsService(r)
 }
 
-func NewUsers(db *gorm.DB, config configuration.Config) (ports.UsersRepository, *services.UserService) {
-	r := &repositories.UsersRepository{DB: db, JWTSecret: config.JWTSecret}
+func NewUsers(db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService) (ports.UsersRepository, *services.UserService) {
+	r := &repositories.UsersRepository{DB: db, JWTSecret: config.JWTSecret, NotificationsSvc: notifSvc}
 	return r, services.NewUserService(r)
+}
+
+// NewNotifications builds NotificationsRepository and NotificationsService.
+func NewNotifications(db *gorm.DB, emailSender tools.EmailSender, tenantID string) (ports.NotificationsRepository, *services.NotificationsService) {
+	r := &repositories.NotificationsRepository{DB: db}
+	return r, services.NewNotificationsService(r, emailSender, tenantID)
 }
 
 // NewLocationTypes builds LocationTypesRepository and LocationTypesService. Requires pool (Postgres).

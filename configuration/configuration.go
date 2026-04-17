@@ -47,6 +47,10 @@ type Config struct {
 	// Optional: if unset, LoggerEmailSender is used instead (logs to stdout).
 	ResendAPIKey string
 
+	// ResendFromAddress is the "from" address for transactional emails (env: RESEND_FROM_ADDRESS).
+	// Example: "noreply@estock.app". Defaults to "noreply@estock.app" if unset.
+	ResendFromAddress string
+
 	// TenantID is the UUID of the current tenant (env: TENANT_ID).
 	// Single-tenant mode: defaults to a fixed UUID if unset.
 	TenantID string
@@ -75,11 +79,12 @@ func LoadConfig() (Config, error) {
 		ServerAddress: os.Getenv("SERVER_ADDRESS"),
 		MigrationURL:  os.Getenv("MIGRATION_URL"),
 		RedisURL:      os.Getenv("REDIS_URL"),
-		Environment:  os.Getenv("ENVIRONMENT"),
-		Version:      os.Getenv("Version"),
-		AppURL:       os.Getenv("APP_URL"),
-		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
-		TenantID:     os.Getenv("TENANT_ID"),
+		Environment:       os.Getenv("ENVIRONMENT"),
+		Version:           os.Getenv("Version"),
+		AppURL:            os.Getenv("APP_URL"),
+		ResendAPIKey:      os.Getenv("RESEND_API_KEY"),
+		ResendFromAddress: os.Getenv("RESEND_FROM_ADDRESS"),
+		TenantID:          os.Getenv("TENANT_ID"),
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"

@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
@@ -19,7 +21,8 @@ import (
 )
 
 type ReceivingTasksRepository struct {
-	DB *gorm.DB
+	DB               *gorm.DB
+	NotificationsSvc *services.NotificationsService // optional: emit task events
 }
 
 // validReceivingTransitions declara las transiciones permitidas de status.
@@ -387,6 +390,15 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[strin
 
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
+	}
+
+	// Emit task_assigned notification if assigned_to changed.
+	if r.NotificationsSvc != nil {
+		if newAssignee, ok := data["assigned_to"].(string); ok && newAssignee != "" {
+			_ = r.NotificationsSvc.Send(context.Background(), newAssignee, "task_assigned",
+				"Nueva tarea de recepción asignada", fmt.Sprintf("Se te ha asignado la tarea de recepción %s.", id),
+				"receiving_task", id)
+		}
 	}
 
 	return nil
@@ -917,6 +929,16 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 
 	if handledResp.Error != nil || handledResp.Handled {
 		return handledResp
+	}
+
+	// Emit task_completed notification to the assigned user (fire-and-forget).
+	if r.NotificationsSvc != nil {
+		var task database.ReceivingTask
+		if err2 := r.DB.Select("assigned_to").First(&task, "id = ?", id).Error; err2 == nil && task.AssignedTo != nil && *task.AssignedTo != "" {
+			_ = r.NotificationsSvc.Send(context.Background(), *task.AssignedTo, "task_completed",
+				"Tarea de recepción completada", fmt.Sprintf("La tarea de recepción %s ha sido completada.", id),
+				"receiving_task", id)
+		}
 	}
 
 	return nil

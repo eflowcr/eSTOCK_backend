@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, redisClient *goredis.Client) {
+func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, redisClient *goredis.Client, notifSvc *services.NotificationsService) {
 	RegisterHealthRoutes(r, db)
 
 	api := r.Group("/api")
@@ -26,13 +26,13 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	}
 	RegisterAuthenticationRoutes(api, db, config, rolesRepo, auditSvc)
 	RegisterEncryptionRoutes(api, config)
-	RegisterUserRoutes(api, db, config)
+	RegisterUserRoutes(api, db, config, notifSvc)
 	RegisterPreferencesRoutes(api, pool, config)
 	RegisterDashboardRoutes(api, db, config)
 	RegisterInventoryRoutes(api, db, pool, config)
 	RegisterSerialRoutes(api, db, pool, config)
-	RegisterReceivingTasksRoutes(api, db, config)
-	RegisterPickingTasksRoutes(api, db, config)
+	RegisterReceivingTasksRoutes(api, db, config, notifSvc)
+	RegisterPickingTasksRoutes(api, db, config, auditSvc, notifSvc)
 	RegisterAdjustmentsRoutes(api, db, pool, config, auditSvc)
 	RegisterStockAlertsRoutes(api, db, config, redisClient)
 	RegisterInventoryMovementsRoutes(api, db, config)
@@ -52,6 +52,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterClientsRoutes(api, pool, config, rolesRepo)
 	RegisterCategoriesRoutes(api, pool, config, rolesRepo)
 	RegisterStockSettingsRoutes(api, pool, config, rolesRepo)
+	RegisterNotificationsRoutes(api, db, config, notifSvc)
 
 	RegisterDocsRoutes(r)
 }

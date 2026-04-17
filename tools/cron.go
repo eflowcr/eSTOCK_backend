@@ -2,6 +2,8 @@ package tools
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -104,14 +106,125 @@ func RunStockAlertAnalysis(db *gorm.DB, analyzer func() error) error {
 	return analyzer()
 }
 
+// LotExpirationWindow describes a lot approaching expiration.
+type LotExpirationWindow struct {
+	LotID          string
+	LotNumber      string
+	SKU            string
+	ExpirationDate time.Time
+	DaysToExpire   int
+	AssignedUsers  []string // user IDs to notify (e.g. admins, supervisors)
+}
+
+// RunLotExpirationCheck queries lots expiring in the next 8 days and calls notifyFn for each.
+// It emits "lot_expiring_7d" for lots with 6-8 days to expire, and "lot_expiring_1d" for 0-2 days.
+// notifyFn is responsible for calling NotificationsService.Send; it's injected to avoid import cycles.
+func RunLotExpirationCheck(db *gorm.DB, notifyFn func(eventType, title, body string) error) error {
+	if db == nil {
+		return errors.New("cron: nil db")
+	}
+
+	type lotRow struct {
+		ID             string     `gorm:"column:id"`
+		LotNumber      string     `gorm:"column:lot_number"`
+		SKU            string     `gorm:"column:sku"`
+		ExpirationDate *time.Time `gorm:"column:expiration_date"`
+	}
+
+	var lots []lotRow
+	now := time.Now().UTC()
+	in8days := now.AddDate(0, 0, 8)
+
+	if err := db.Table("lots").
+		Select("id, lot_number, sku, expiration_date").
+		Where("expiration_date IS NOT NULL AND expiration_date BETWEEN ? AND ? AND quantity > 0", now, in8days).
+		Scan(&lots).Error; err != nil {
+		return fmt.Errorf("lot_expiration_check: query: %w", err)
+	}
+
+	for _, lot := range lots {
+		if lot.ExpirationDate == nil {
+			continue
+		}
+		days := int(lot.ExpirationDate.Sub(now).Hours() / 24)
+
+		var eventType, title, body string
+		switch {
+		case days <= 2:
+			eventType = "lot_expiring_1d"
+			title = fmt.Sprintf("⚠ Lote por vencer: %s (%s)", lot.LotNumber, lot.SKU)
+			body = fmt.Sprintf("El lote %s del SKU %s vence en %d día(s) (%s).",
+				lot.LotNumber, lot.SKU, days, lot.ExpirationDate.Format("2006-01-02"))
+		case days <= 8:
+			eventType = "lot_expiring_7d"
+			title = fmt.Sprintf("Lote próximo a vencer: %s (%s)", lot.LotNumber, lot.SKU)
+			body = fmt.Sprintf("El lote %s del SKU %s vence en %d día(s) (%s). Tome acción pronto.",
+				lot.LotNumber, lot.SKU, days, lot.ExpirationDate.Format("2006-01-02"))
+		default:
+			continue
+		}
+
+		if notifyFn != nil {
+			if err := notifyFn(eventType, title, body); err != nil {
+				log.Warn().Err(err).Str("lot", lot.LotNumber).Str("event", eventType).Msg("cron: lot_expiration notify failed")
+			}
+		}
+	}
+
+	return nil
+}
+
+// RunLowStockNotifications queries open stock_alerts and calls notifyFn for each unresolved low-stock alert.
+// notifyFn is injected to avoid import cycles with services.
+func RunLowStockNotifications(db *gorm.DB, notifyFn func(sku, message string) error) error {
+	if db == nil {
+		return nil
+	}
+
+	type alertRow struct {
+		SKU     string `gorm:"column:sku"`
+		Message string `gorm:"column:message"`
+	}
+
+	var alerts []alertRow
+	if err := db.Table("stock_alerts").
+		Select("sku, message").
+		Where("is_resolved = false AND alert_type = 'low_stock'").
+		Order("created_at DESC").
+		Limit(50).
+		Scan(&alerts).Error; err != nil {
+		log.Warn().Err(err).Msg("cron: low_stock_notifications query failed")
+		return nil
+	}
+
+	for _, a := range alerts {
+		if notifyFn != nil {
+			if err := notifyFn(a.SKU, a.Message); err != nil {
+				log.Warn().Err(err).Str("sku", a.SKU).Msg("cron: low_stock notify failed")
+			}
+		}
+	}
+	return nil
+}
+
 // CronDispatch ejecuta todos los jobs del cron en secuencia.
 // Se invoca: una vez al arrancar (tras delay de estabilización) y luego cada hora por el ticker.
 // Los errores se loggean sin parar la ejecución del siguiente job.
-func CronDispatch(db *gorm.DB, analyzer func() error) {
+// lotNotifyFn and lowStockNotifyFn are optional callbacks for notification integration.
+func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn ...func(eventType, title, body string) error) {
 	if err := RunStockAlertAnalysis(db, analyzer); err != nil {
 		log.Error().Err(err).Msg("cron: stock alerts failed")
 	}
 	if err := RunStaleReservationsCleanup(db); err != nil {
 		log.Error().Err(err).Msg("cron: stale reservations cleanup failed")
 	}
+
+	var lotFn func(string, string, string) error
+	if len(lotNotifyFn) > 0 {
+		lotFn = lotNotifyFn[0]
+	}
+	if err := RunLotExpirationCheck(db, lotFn); err != nil {
+		log.Error().Err(err).Msg("cron: lot expiration check failed")
+	}
 }
+
