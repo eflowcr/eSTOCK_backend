@@ -6,7 +6,9 @@ package database
 type ReceivingTaskItem struct {
 	SKU              string     `json:"sku"`
 	ExpectedQuantity float64    `json:"expected_qty"`
-	ReceivedQuantity *float64   `json:"received_qty,omitempty"`
+	ReceivedQuantity *float64   `json:"received_qty,omitempty"` // legacy field — derived as accepted+rejected
+	AcceptedQty      float64    `json:"accepted_qty"`            // units that entered stock (S2 R1)
+	RejectedQty      float64    `json:"rejected_qty"`            // units rejected, REJECTED movement recorded (S2 R1)
 	Location         string     `json:"location"` // single destination location per line
 	Status           *string    `json:"status,omitempty"`
 	LotNumbers       []LotEntry `json:"lots,omitempty"`

@@ -9,14 +9,20 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 var _ ports.ReceivingTasksRepository = (*repositories.ReceivingTasksRepository)(nil)
 
-func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService) {
+func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService, pool *pgxpool.Pool) {
+	_, clientsSvc := wire.NewClients(pool)
 	_, receivingTasksService := wire.NewReceivingTasks(db, notifSvc)
-	receivingTasksController := controllers.NewReceivingTasksController(*receivingTasksService, config.JWTSecret)
+	if clientsSvc != nil {
+		receivingTasksService.WithClientsService(clientsSvc)
+	}
+	receivingTasksController := controllers.NewReceivingTasksController(*receivingTasksService, config.JWTSecret).
+		WithTenantID(config.TenantID)
 
 	route := router.Group("/receiving-tasks")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
@@ -30,5 +36,6 @@ func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config c
 		route.GET("/export", receivingTasksController.ExportReceivingTaskToExcel)
 		route.PATCH("/complete-full-task/:id/:location", receivingTasksController.CompleteFullTask)
 		route.PATCH("/complete-receiving-line/:id/:location", receivingTasksController.CompleteReceivingLine)
+		route.PATCH("/:id/supplier", receivingTasksController.LinkSupplier) // S2 R2 E1.7
 	}
 }

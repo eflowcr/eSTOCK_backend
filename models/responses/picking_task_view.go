@@ -20,4 +20,8 @@ type PickingTaskView struct {
 	CreatedAt        time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt        time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 	CompletedAt      *time.Time      `gorm:"column:completed_at" json:"completed_at"`
+	// S2 R2 customer fields
+	CustomerID   *string `gorm:"column:customer_id" json:"customer_id,omitempty"`
+	CustomerCode *string `gorm:"column:customer_code" json:"customer_code,omitempty"`
+	CustomerName *string `gorm:"column:customer_name" json:"customer_name,omitempty"`
 }

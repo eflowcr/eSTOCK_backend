@@ -20,4 +20,12 @@ type ReceivingTasksView struct {
 	CreatedAt        time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt        time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 	CompletedAt      *time.Time      `gorm:"column:completed_at" json:"completed_at"`
+	// S2 R2 vendor/supplier fields
+	SupplierID      *string `gorm:"column:supplier_id" json:"supplier_id,omitempty"`
+	VendorRef       *string `gorm:"column:vendor_ref" json:"vendor_ref,omitempty"`
+	TrackingNumber  *string `gorm:"column:tracking_number" json:"tracking_number,omitempty"`
+	ReceptionMethod *string `gorm:"column:reception_method" json:"reception_method,omitempty"`
+	Incoterms       *string `gorm:"column:incoterms" json:"incoterms,omitempty"`
+	SupplierCode    *string `gorm:"column:supplier_code" json:"supplier_code,omitempty"`
+	SupplierName    *string `gorm:"column:supplier_name" json:"supplier_name,omitempty"`
 }

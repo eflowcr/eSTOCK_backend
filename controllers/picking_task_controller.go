@@ -12,10 +12,17 @@ import (
 type PickingTasksController struct {
 	Service   services.PickingTaskService
 	JWTSecret string
+	TenantID  string // S2 R2
 }
 
 func NewPickingTasksController(service services.PickingTaskService, jwtSecret string) *PickingTasksController {
 	return &PickingTasksController{Service: service, JWTSecret: jwtSecret}
+}
+
+// WithTenantID sets the tenant ID (S2 R2 pattern).
+func (c *PickingTasksController) WithTenantID(tenantID string) *PickingTasksController {
+	c.TenantID = tenantID
+	return c
 }
 
 func (c *PickingTasksController) GetAllPickingTasks(ctx *gin.Context) {
@@ -242,4 +249,30 @@ func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
 	}
 	ctx.Header("Content-Disposition", "attachment; filename=picking_tasks.xlsx")
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
+}
+
+// LinkCustomer handles PATCH /picking-tasks/:id/customer (S2 R2 E1.7).
+func (c *PickingTasksController) LinkCustomer(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "LinkCustomer", "link_customer", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+
+	var req requests.LinkCustomerRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		tools.ResponseBadRequest(ctx, "LinkCustomer", "Formato de solicitud inválido", "link_customer")
+		return
+	}
+
+	resp := c.Service.LinkCustomer(id, req.CustomerID)
+	if resp != nil {
+		writeErrorResponse(ctx, "LinkCustomer", "link_customer", resp)
+		return
+	}
+
+	if req.CustomerID == nil || *req.CustomerID == "" {
+		tools.ResponseOK(ctx, "LinkCustomer", "Cliente desvinculado de la tarea", "link_customer", nil, false, "")
+	} else {
+		tools.ResponseOK(ctx, "LinkCustomer", "Cliente vinculado a la tarea", "link_customer", nil, false, "")
+	}
 }

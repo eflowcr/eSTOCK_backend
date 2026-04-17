@@ -26,4 +26,6 @@ type PickingTaskRepository interface {
 	// CompletePickingLine finalises a single item using its allocations (B3d).
 	CompletePickingLine(ctx context.Context, id, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse
 	GenerateImportTemplate(language string) ([]byte, error)
+	// LinkCustomer links or unlinks a customer on a picking task (S2 R2 E1.7).
+	LinkCustomer(taskID string, customerID *string) *responses.InternalResponse
 }

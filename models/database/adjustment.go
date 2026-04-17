@@ -12,6 +12,7 @@ type Adjustment struct {
 	Reason           string    `gorm:"column:reason" json:"reason"`
 	Notes            *string   `gorm:"column:notes" json:"notes"`
 	UserID           string    `gorm:"column:user_id" json:"user_id"`
+	AdjustmentType   string    `gorm:"column:adjustment_type" json:"adjustment_type"` // S2 D1: increase|decrease|count_reconcile
 	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 

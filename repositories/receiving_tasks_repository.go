@@ -1057,13 +1057,25 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			qty = tools.IntToFloat64(item.ExpectedQuantity)
 		}
 
-		// Compare with database expected quantity
-		if qty <= 0 || qty < float64(foundItem.ExpectedQuantity) {
-			// Update items status to partial for this SKU
+		// R1: extract accepted/rejected quantities. Default: accepted = full qty (backward compat).
+		acceptedQty := qty
+		if item.AcceptedQty != nil {
+			acceptedQty = *item.AcceptedQty
+		}
+		rejectedQty := 0.0
+		if item.RejectedQty != nil {
+			rejectedQty = *item.RejectedQty
+		}
+
+		// Determine item line status: partial if (accepted+rejected) < expected, else completed.
+		totalProcessed := acceptedQty + rejectedQty
+		if totalProcessed <= 0 || totalProcessed < float64(foundItem.ExpectedQuantity) {
 			for i := 0; i < len(items); i++ {
 				if items[i].SKU == item.SKU {
 					items[i].Status = tools.StrPtr("partial")
-					items[i].ReceivedQuantity = tools.IntToPtr(int(qty))
+					items[i].ReceivedQuantity = tools.IntToPtr(int(totalProcessed))
+					items[i].AcceptedQty = &acceptedQty
+					items[i].RejectedQty = &rejectedQty
 					break
 				}
 			}
@@ -1085,11 +1097,13 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 				return nil
 			}
 		} else {
-			// If given quantity meets or exceeds expected, mark item as completed
+			// Line done: mark as completed; record accepted/rejected in JSONB.
 			for i := 0; i < len(items); i++ {
 				if items[i].SKU == item.SKU {
 					items[i].Status = tools.StrPtr("completed")
-					items[i].ReceivedQuantity = tools.IntToPtr(int(qty))
+					items[i].ReceivedQuantity = tools.IntToPtr(int(totalProcessed))
+					items[i].AcceptedQty = &acceptedQty
+					items[i].RejectedQty = &rejectedQty
 					break
 				}
 			}
@@ -1118,7 +1132,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			inventory.Name = article.Name
 			inventory.Description = article.Description
 			inventory.Location = location
-			inventory.Quantity = qty
+			inventory.Quantity = acceptedQty // R1: only accepted units enter stock
 			inventory.Status = "available"
 			inventory.Presentation = article.Presentation
 			inventory.UnitPrice = article.UnitPrice
@@ -1134,8 +1148,8 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			}
 
 			lineBeforeQty = inventory.Quantity
-			// Update existing inventory
-			inventory.Quantity += qty
+			// R1: only accepted units enter stock
+			inventory.Quantity += acceptedQty
 			inventory.UpdatedAt = time.Now()
 
 			if err := tx.Save(&inventory).Error; err != nil {
@@ -1152,7 +1166,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			}
 		}
 
-		// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
+		// Create INBOUND movement for accepted units (R1).
 		movLineID, err := tools.GenerateNanoid(tx)
 		if err != nil {
 			return fmt.Errorf("generate movement id: %w", err)
@@ -1164,7 +1178,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			SKU:            item.SKU,
 			Location:       location,
 			MovementType:   "inbound",
-			Quantity:       qty,
+			Quantity:       acceptedQty,
 			RemainingStock: lineAfterQty,
 			Reason:         tools.StrPtr("receiving task line completion"),
 			CreatedBy:      userId,
@@ -1180,6 +1194,34 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 
 		if err := tx.Create(mov).Error; err != nil {
 			return fmt.Errorf("create inventory movement: %w", err)
+		}
+
+		// R1: create REJECTED movement if any units were rejected.
+		if rejectedQty > 0 {
+			rejMovID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate rejected movement id: %w", err)
+			}
+			rejRefType := "receiving_task"
+			rejMovType := "REJECTED"
+			rejMov := &database.InventoryMovement{
+				ID:             rejMovID,
+				SKU:            item.SKU,
+				Location:       location,
+				MovementType:   rejMovType,
+				Quantity:       rejectedQty,
+				RemainingStock: lineAfterQty,
+				Reason:         tools.StrPtr("receiving rejection"),
+				CreatedBy:      userId,
+				CreatedAt:      tools.GetCurrentTime(),
+				ReferenceType:  &rejRefType,
+				ReferenceID:    &id,
+				LotID:          lineLotID,
+				UserID:         &userId,
+			}
+			if err := tx.Create(rejMov).Error; err != nil {
+				return fmt.Errorf("create rejected movement: %w", err)
+			}
 		}
 
 		if article.TrackBySerial && item.SerialNumbers != nil {
@@ -1345,9 +1387,18 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			}
 		}
 		if allProcessed {
+			// R1 status: completed_with_differences if any item has rejections OR accepted < expected.
 			lineDiff := false
 			for _, it := range items {
-				if it.ReceivedQuantity != nil && *it.ReceivedQuantity != it.ExpectedQuantity {
+				itAccepted := float64(it.ExpectedQuantity)
+				if it.AcceptedQty != nil {
+					itAccepted = *it.AcceptedQty
+				}
+				itRejected := 0.0
+				if it.RejectedQty != nil {
+					itRejected = *it.RejectedQty
+				}
+				if itRejected > 0 || itAccepted < float64(it.ExpectedQuantity) {
 					lineDiff = true
 					break
 				}

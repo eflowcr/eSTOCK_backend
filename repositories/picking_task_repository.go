@@ -199,6 +199,7 @@ func sanitizePickingUpdatePayload(data map[string]interface{}) map[string]interf
 		"order_number": true,
 		"updated_at":   true,
 		"completed_at": true,
+		"customer_id":  true, // S2 R2
 	}
 
 	clean := make(map[string]interface{}, len(data)+2)
@@ -240,6 +241,9 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 			pt.created_at,
 			pt.updated_at,
 			pt.completed_at,
+			pt.customer_id,
+			c.code AS customer_code,
+			c.name AS customer_name,
 			jsonb_agg(
 				jsonb_build_object(
 					'sku', item->>'sku',
@@ -263,6 +267,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
+		LEFT JOIN clients c ON pt.customer_id = c.id
 		GROUP BY
 			pt.id,
 			pt.task_id,
@@ -278,7 +283,10 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 			pt.notes,
 			pt.created_at,
 			pt.updated_at,
-			pt.completed_at;
+			pt.completed_at,
+			pt.customer_id,
+			c.code,
+			c.name;
 	`
 
 	if err := r.DB.Raw(sqlRar).Scan(&tasks).Error; err != nil {
@@ -403,6 +411,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 			Priority:    priority,
 			Notes:       task.Notes,
 			Items:       json.RawMessage(itemsJSON),
+			CustomerID:  task.CustomerID, // S2 R2
 		}
 
 		if err := tx.Create(&pickingTask).Error; err != nil {
