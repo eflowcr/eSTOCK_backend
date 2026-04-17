@@ -66,7 +66,7 @@ func cronSeedUser(t *testing.T, db *gorm.DB) string {
 	require.NoError(t, db.Exec(`
 		INSERT INTO users (id, first_name, last_name, email, password, created_at, updated_at)
 		VALUES (?, 'Cron', 'Test', ?, 'hashed', NOW(), NOW())
-		ON CONFLICT (email) DO NOTHING`, id, id+"@crontest.com").Error)
+		ON CONFLICT (email) WHERE deleted_at IS NULL AND email IS NOT NULL DO NOTHING`, id, id+"@crontest.com").Error)
 	var uid string
 	db.Raw("SELECT id FROM users WHERE email = ?", id+"@crontest.com").Scan(&uid)
 	if uid == "" {
@@ -77,12 +77,17 @@ func cronSeedUser(t *testing.T, db *gorm.DB) string {
 
 func cronSeedInventory(t *testing.T, db *gorm.DB, sku, location string, qty, reserved float64) string {
 	t.Helper()
+	// Ensure article exists (inventory has FK to articles.sku)
+	require.NoError(t, db.Exec(`
+		INSERT INTO articles (sku, name, presentation, rotation_strategy, track_by_lot, track_by_serial, track_expiration)
+		VALUES (?, ?, 'unit', 'fifo', false, false, false)
+		ON CONFLICT (sku) DO NOTHING`, sku, sku).Error)
 	id, err := GenerateNanoid(db)
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(`
-		INSERT INTO inventory (id, sku, location, quantity, reserved_qty, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
-		id, sku, location, qty, reserved).Error)
+		INSERT INTO inventory (id, sku, name, location, quantity, reserved_qty, status, presentation, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'available', 'unit', NOW(), NOW())`,
+		id, sku, sku, location, qty, reserved).Error)
 	return id
 }
 
