@@ -75,6 +75,10 @@ func (m *mockAdjustmentsRepo) ExportAdjustmentsToExcel() ([]byte, *responses.Int
 	return m.exportBytes, m.exportErr
 }
 
+func (m *mockAdjustmentsRepo) GetInventoryForAdjustment(sku, location string) (*database.Inventory, *responses.InternalResponse) {
+	return nil, &responses.InternalResponse{Message: "not implemented in mock", Handled: true, StatusCode: responses.StatusNotFound}
+}
+
 // mockReasonCodesRepo is an in-memory fake for AdjustmentReasonCodesRepository used by AdjustmentsService.
 type mockReasonCodesForAdjRepo struct {
 	byCode    map[string]*database.AdjustmentReasonCode

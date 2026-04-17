@@ -64,6 +64,13 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 			rt.created_at,
 			rt.updated_at,
 			rt.completed_at,
+			rt.supplier_id,
+			rt.vendor_ref,
+			rt.tracking_number,
+			rt.reception_method,
+			rt.incoterms,
+			c.code AS supplier_code,
+			c.name AS supplier_name,
 			jsonb_agg(
 				jsonb_build_object(
 					'sku', item->>'sku',
@@ -72,6 +79,8 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 					'location', item->>'location',
 					'expected_qty', item->>'expected_qty',
 					'received_qty', item->>'received_qty',
+					'accepted_qty', item->>'accepted_qty',
+					'rejected_qty', item->>'rejected_qty',
 					'lots', (
 						SELECT jsonb_agg(l)
 						FROM jsonb_array_elements(item->'lots') AS l
@@ -87,6 +96,7 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 		LEFT JOIN users usr_assignee ON rt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
+		LEFT JOIN clients c ON rt.supplier_id = c.id
 		GROUP BY
 			rt.id,
 			rt.task_id,
@@ -102,7 +112,14 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 			rt.notes,
 			rt.created_at,
 			rt.updated_at,
-			rt.completed_at;
+			rt.completed_at,
+			rt.supplier_id,
+			rt.vendor_ref,
+			rt.tracking_number,
+			rt.reception_method,
+			rt.incoterms,
+			c.code,
+			c.name;
 
 	`
 
@@ -225,15 +242,20 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 		}
 
 		receivingTask := database.ReceivingTask{
-			ID:            id,
-			TaskID:        taskID,
-			InboundNumber: task.InboundNumber,
-			CreatedBy:     userId,
-			AssignedTo:    task.AssignedTo,
-			Status:        "open",
-			Priority:      priority,
-			Notes:         task.Notes,
-			Items:         itemsJSON,
+			ID:              id,
+			TaskID:          taskID,
+			InboundNumber:   task.InboundNumber,
+			CreatedBy:       userId,
+			AssignedTo:      task.AssignedTo,
+			Status:          "open",
+			Priority:        priority,
+			Notes:           task.Notes,
+			Items:           itemsJSON,
+			SupplierID:      task.SupplierID,
+			VendorRef:       task.VendorRef,
+			TrackingNumber:  task.TrackingNumber,
+			ReceptionMethod: task.ReceptionMethod,
+			Incoterms:       task.Incoterms,
 		}
 
 		if err := tx.Create(&receivingTask).Error; err != nil {
@@ -326,14 +348,19 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[strin
 		}
 
 		whitelist := map[string]bool{
-			"assigned_to":    true,
-			"priority":       true,
-			"status":         true,
-			"notes":          true,
-			"items":          true,
-			"inbound_number": true,
-			"updated_at":     true,
-			"completed_at":   true,
+			"assigned_to":      true,
+			"priority":         true,
+			"status":           true,
+			"notes":            true,
+			"items":            true,
+			"inbound_number":   true,
+			"updated_at":       true,
+			"completed_at":     true,
+			"supplier_id":      true,
+			"vendor_ref":       true,
+			"tracking_number":  true,
+			"reception_method": true,
+			"incoterms":        true,
 		}
 
 		clean := make(map[string]interface{}, len(data)+2)
@@ -708,17 +735,21 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 				return fmt.Errorf("check inventory for SKU %s and location %s: %w", sku, location, err)
 			}
 
+			itemQty := tools.IntToFloat64(items[i].ExpectedQuantity)
+			var beforeQty float64
+
 			if inventoryCount == 0 {
 				invID, err := tools.GenerateNanoid(tx)
 				if err != nil {
 					return fmt.Errorf("generate inventory id for SKU %s: %w", sku, err)
 				}
+				beforeQty = 0
 				inventory.ID = invID
 				inventory.SKU = sku
 				inventory.Name = article.Name
 				inventory.Description = article.Description
 				inventory.Location = location
-				inventory.Quantity = tools.IntToFloat64(items[i].ExpectedQuantity)
+				inventory.Quantity = itemQty
 				inventory.Status = "available"
 				inventory.Presentation = article.Presentation
 				inventory.UnitPrice = article.UnitPrice
@@ -733,8 +764,9 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 					return fmt.Errorf("find inventory for SKU %s and location %s: %w", sku, location, err)
 				}
 
+				beforeQty = inventory.Quantity
 				// Update existing inventory
-				inventory.Quantity += tools.IntToFloat64(items[i].ExpectedQuantity)
+				inventory.Quantity += itemQty
 				inventory.UpdatedAt = time.Now()
 
 				if err := tx.Save(&inventory).Error; err != nil {
@@ -742,21 +774,39 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 				}
 			}
 
-			// Create inventory movement
+			// Resolve lot_id: use if exactly one lot in the item (M3 retrofit).
+			var movLotID *string
+			if len(items[i].LotNumbers) == 1 {
+				var lot database.Lot
+				if err := tx.Where("sku = ? AND lot_number = ?", sku, items[i].LotNumbers[0].LotNumber).First(&lot).Error; err == nil {
+					movLotID = &lot.ID
+				}
+			}
+
+			// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
 			movID, err := tools.GenerateNanoid(tx)
 			if err != nil {
 				return fmt.Errorf("generate movement id: %w", err)
 			}
+			afterQty := inventory.Quantity
+			refType := "receiving_task"
 			mov := &database.InventoryMovement{
 				ID:             movID,
 				SKU:            sku,
 				Location:       location,
 				MovementType:   "inbound",
-				Quantity:       tools.IntToFloat64(items[i].ExpectedQuantity),
-				RemainingStock: inventory.Quantity,
+				Quantity:       itemQty,
+				RemainingStock: afterQty,
 				Reason:         tools.StrPtr("receiving task completion"),
 				CreatedBy:      userId,
 				CreatedAt:      tools.GetCurrentTime(),
+				ReferenceType:  &refType,
+				ReferenceID:    &id,
+				LotID:          movLotID,
+				UnitCost:       inventory.UnitPrice,
+				BeforeQty:      &beforeQty,
+				AfterQty:       &afterQty,
+				UserID:         &userId,
 			}
 
 			if err := tx.Create(mov).Error; err != nil {
@@ -1055,11 +1105,14 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			return fmt.Errorf("check inventory for SKU %s and location %s: %w", item.SKU, location, err)
 		}
 
+		var lineBeforeQty float64
+
 		if inventoryCount == 0 {
 			lineInvID, err := tools.GenerateNanoid(tx)
 			if err != nil {
 				return fmt.Errorf("generate inventory id for SKU %s: %w", item.SKU, err)
 			}
+			lineBeforeQty = 0
 			inventory.ID = lineInvID
 			inventory.SKU = item.SKU
 			inventory.Name = article.Name
@@ -1080,6 +1133,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 				return fmt.Errorf("find inventory for SKU %s and location %s: %w", item.SKU, location, err)
 			}
 
+			lineBeforeQty = inventory.Quantity
 			// Update existing inventory
 			inventory.Quantity += qty
 			inventory.UpdatedAt = time.Now()
@@ -1089,21 +1143,39 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			}
 		}
 
-		// Create inventory movement
+		// Resolve lot_id: use if exactly one lot in the item (M3 retrofit).
+		var lineLotID *string
+		if len(item.LotNumbers) == 1 {
+			var lot database.Lot
+			if err := tx.Where("sku = ? AND lot_number = ?", item.SKU, item.LotNumbers[0].LotNumber).First(&lot).Error; err == nil {
+				lineLotID = &lot.ID
+			}
+		}
+
+		// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
 		movLineID, err := tools.GenerateNanoid(tx)
 		if err != nil {
 			return fmt.Errorf("generate movement id: %w", err)
 		}
+		lineAfterQty := inventory.Quantity
+		lineRefType := "receiving_task"
 		mov := &database.InventoryMovement{
 			ID:             movLineID,
 			SKU:            item.SKU,
 			Location:       location,
 			MovementType:   "inbound",
 			Quantity:       qty,
-			RemainingStock: inventory.Quantity,
+			RemainingStock: lineAfterQty,
 			Reason:         tools.StrPtr("receiving task line completion"),
 			CreatedBy:      userId,
 			CreatedAt:      tools.GetCurrentTime(),
+			ReferenceType:  &lineRefType,
+			ReferenceID:    &id,
+			LotID:          lineLotID,
+			UnitCost:       inventory.UnitPrice,
+			BeforeQty:      &lineBeforeQty,
+			AfterQty:       &lineAfterQty,
+			UserID:         &userId,
 		}
 
 		if err := tx.Create(mov).Error; err != nil {
@@ -1363,4 +1435,13 @@ func (r *ReceivingTasksRepository) GenerateImportTemplate(language string) ([]by
 		},
 	}
 	return BuildModuleImportTemplate(cfg)
+}
+
+// LinkSupplier links or unlinks a supplier on a receiving task (S2 R2 E1.7 — Track A).
+func (r *ReceivingTasksRepository) LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse {
+	update := map[string]interface{}{"supplier_id": supplierID, "updated_at": tools.GetCurrentTime()}
+	if err := r.DB.Table("receiving_tasks").Where("id = ?", taskID).Updates(update).Error; err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Error al vincular proveedor"}
+	}
+	return nil
 }

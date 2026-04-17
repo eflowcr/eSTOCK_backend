@@ -669,6 +669,12 @@ func (r *PickingTaskRepository) CompletePickingLine(ctx context.Context, id, use
 				pickedQty = *alloc.PickedQty
 			}
 
+			// Fetch inventory before decrement to populate before/after qty on movement.
+			var inv database.Inventory
+			if err := tx.Where("sku = ? AND location = ?", item.SKU, alloc.Location).First(&inv).Error; err != nil {
+				return fmt.Errorf("fetch inventory %s @ %s: %w", item.SKU, alloc.Location, err)
+			}
+
 			if err := tx.Exec(`
 				UPDATE inventory
 				   SET quantity     = quantity - ?,
@@ -693,6 +699,44 @@ func (r *PickingTaskRepository) CompletePickingLine(ctx context.Context, id, use
 					UPDATE lots SET quantity = GREATEST(0, quantity - ?), updated_at = NOW()
 					 WHERE sku = ? AND lot_number = ?
 				`, pickedQty, item.SKU, *alloc.LotNumber)
+			}
+
+			// Resolve lot_id if allocation references a lot.
+			var lotID *string
+			if alloc.LotNumber != nil && *alloc.LotNumber != "" {
+				var lot database.Lot
+				if err := tx.Where("sku = ? AND lot_number = ?", item.SKU, *alloc.LotNumber).First(&lot).Error; err == nil {
+					lotID = &lot.ID
+				}
+			}
+
+			// Create OUTBOUND movement (D2 — deuda S1 D4).
+			movID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate picking movement id: %w", err)
+			}
+			beforeQty := inv.Quantity
+			afterQty := inv.Quantity - pickedQty
+			refType := "picking_task"
+			mov := &database.InventoryMovement{
+				ID:             movID,
+				SKU:            item.SKU,
+				Location:       alloc.Location,
+				MovementType:   "outbound",
+				Quantity:       pickedQty,
+				RemainingStock: afterQty,
+				CreatedBy:      userId,
+				CreatedAt:      tools.GetCurrentTime(),
+				ReferenceType:  &refType,
+				ReferenceID:    &id,
+				LotID:          lotID,
+				UnitCost:       inv.UnitPrice,
+				BeforeQty:      &beforeQty,
+				AfterQty:       &afterQty,
+				UserID:         &userId,
+			}
+			if err := tx.Create(mov).Error; err != nil {
+				return fmt.Errorf("create outbound movement %s @ %s: %w", item.SKU, alloc.Location, err)
 			}
 		}
 
@@ -783,6 +827,12 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 					hasDifferences = true
 				}
 
+				// Fetch inventory before decrement to populate before/after qty on movement.
+				var inv database.Inventory
+				if err := tx.Where("sku = ? AND location = ?", item.SKU, alloc.Location).First(&inv).Error; err != nil {
+					return fmt.Errorf("fetch inventory %s @ %s: %w", item.SKU, alloc.Location, err)
+				}
+
 				// Decrement inventory quantity + release reservation.
 				if err := tx.Exec(`
 					UPDATE inventory
@@ -807,6 +857,44 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 						UPDATE lots SET quantity = GREATEST(0, quantity - ?), updated_at = NOW()
 						 WHERE sku = ? AND lot_number = ?
 					`, pickedQty, item.SKU, *alloc.LotNumber)
+				}
+
+				// Resolve lot_id if allocation references a lot.
+				var lotID *string
+				if alloc.LotNumber != nil && *alloc.LotNumber != "" {
+					var lot database.Lot
+					if err := tx.Where("sku = ? AND lot_number = ?", item.SKU, *alloc.LotNumber).First(&lot).Error; err == nil {
+						lotID = &lot.ID
+					}
+				}
+
+				// Create OUTBOUND movement per allocation (D2 — deuda S1 D4).
+				movID, err := tools.GenerateNanoid(tx)
+				if err != nil {
+					return fmt.Errorf("generate picking movement id: %w", err)
+				}
+				beforeQty := inv.Quantity
+				afterQty := inv.Quantity - pickedQty
+				refType := "picking_task"
+				mov := &database.InventoryMovement{
+					ID:             movID,
+					SKU:            item.SKU,
+					Location:       alloc.Location,
+					MovementType:   "outbound",
+					Quantity:       pickedQty,
+					RemainingStock: afterQty,
+					CreatedBy:      userId,
+					CreatedAt:      tools.GetCurrentTime(),
+					ReferenceType:  &refType,
+					ReferenceID:    &id,
+					LotID:          lotID,
+					UnitCost:       inv.UnitPrice,
+					BeforeQty:      &beforeQty,
+					AfterQty:       &afterQty,
+					UserID:         &userId,
+				}
+				if err := tx.Create(mov).Error; err != nil {
+					return fmt.Errorf("create outbound movement %s @ %s: %w", item.SKU, alloc.Location, err)
 				}
 			}
 		}
@@ -1169,4 +1257,13 @@ func (r *PickingTaskRepository) GenerateImportTemplate(language string) ([]byte,
 		},
 	}
 	return BuildModuleImportTemplate(cfg)
+}
+
+// LinkCustomer links or unlinks a customer on a picking task (S2 R2 E1.7 — Track A).
+func (r *PickingTaskRepository) LinkCustomer(taskID string, customerID *string) *responses.InternalResponse {
+	update := map[string]interface{}{"customer_id": customerID, "updated_at": tools.GetCurrentTime()}
+	if err := r.DB.Model(&database.PickingTask{}).Where("id = ?", taskID).Updates(update).Error; err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Error al vincular cliente"}
+	}
+	return nil
 }

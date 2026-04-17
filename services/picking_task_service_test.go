@@ -82,6 +82,10 @@ func (m *mockPickingTaskRepo) GenerateImportTemplate(language string) ([]byte, e
 	return m.templateBytes, m.templateErr
 }
 
+func (m *mockPickingTaskRepo) LinkCustomer(taskID string, customerID *string) *responses.InternalResponse {
+	return nil
+}
+
 // --- Tests ---
 
 func TestPickingTaskService_GetAllPickingTasks_Success(t *testing.T) {

@@ -76,6 +76,10 @@ func (m *mockReceivingTasksRepo) GenerateImportTemplate(language string) ([]byte
 	return m.templateBytes, m.templateErr
 }
 
+func (m *mockReceivingTasksRepo) LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse {
+	return nil
+}
+
 // --- Tests ---
 
 func TestReceivingTasksService_GetAllReceivingTasks_Success(t *testing.T) {

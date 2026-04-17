@@ -57,6 +57,10 @@ func (m *mockAdjustmentsRepoCtrl) ExportAdjustmentsToExcel() ([]byte, *responses
 	return m.exportData, m.exportErr
 }
 
+func (m *mockAdjustmentsRepoCtrl) GetInventoryForAdjustment(sku, location string) (*database.Inventory, *responses.InternalResponse) {
+	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
+}
+
 // mock reason codes repo (used by AdjustmentsService)
 type mockAdjustmentReasonCodesRepoForAdj struct {
 	byCode map[string]*database.AdjustmentReasonCode

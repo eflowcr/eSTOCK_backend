@@ -200,20 +200,34 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 		currentQuantity := inventory.Quantity
 		newQuantity := currentQuantity + adjustmentQuantity
 
-		if newQuantity < 0 {
-			return errors.New("la cantidad de ajuste resulta en un inventario negativo")
+		// count_reconcile is allowed to set any qty (including below reserved or below 0 — physical reality).
+		// decrease/increase checks are enforced by the service before this point.
+		isCountReconcile := adjustment.AdjustmentType == "count_reconcile"
+		if !isCountReconcile {
+			if newQuantity < 0 {
+				return errors.New("la cantidad de ajuste resulta en un inventario negativo")
+			}
+			// B3e (A6): block adjustment if new qty would fall below reserved_qty.
+			if newQuantity < inventory.ReservedQty {
+				return fmt.Errorf(
+					"no puede ajustar a %.2f — hay %.2f uds reservadas en pickings activos. Cancele los pickings antes de ajustar",
+					newQuantity, inventory.ReservedQty,
+				)
+			}
 		}
 
-		// B3e (A6): block adjustment if new qty would fall below reserved_qty.
-		if newQuantity < inventory.ReservedQty {
-			return fmt.Errorf(
-				"no puede ajustar a %.2f — hay %.2f uds reservadas en pickings activos. Cancele los pickings antes de ajustar",
-				newQuantity, inventory.ReservedQty,
-			)
+		adjType := adjustment.AdjustmentType
+		if adjType == "" {
+			adjType = "increase"
 		}
 
 		// Create the adjustment record
+		adjID, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generate adjustment id: %w", err)
+		}
 		newAdjustment := database.Adjustment{
+			ID:               adjID,
 			SKU:              adjustment.SKU,
 			Location:         adjustment.Location,
 			PreviousQuantity: int(math.Round(float64(currentQuantity))),
@@ -222,6 +236,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Reason:           adjustment.Reason,
 			Notes:            &adjustment.Notes,
 			UserID:           userId,
+			AdjustmentType:   adjType,
 		}
 
 		err = tx.
@@ -350,11 +365,15 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			}
 		}
 
-		// Create inventory movement
+		// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
 		adjMovID, err := tools.GenerateNanoid(tx)
 		if err != nil {
 			return fmt.Errorf("generate adjustment movement id: %w", err)
 		}
+		refType := "adjustment"
+		refID := created.ID
+		beforeQtyAdj := currentQuantity
+		afterQtyAdj := newQuantity
 		movements := database.InventoryMovement{
 			ID:             adjMovID,
 			SKU:            adjustment.SKU,
@@ -365,6 +384,11 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Reason:         &adjustment.Reason,
 			CreatedBy:      userId,
 			CreatedAt:      tools.GetCurrentTime(),
+			ReferenceType:  &refType,
+			ReferenceID:    &refID,
+			BeforeQty:      &beforeQtyAdj,
+			AfterQty:       &afterQtyAdj,
+			UserID:         &userId,
 		}
 
 		err = tx.Table(database.InventoryMovement{}.TableName()).Create(&movements).Error
@@ -481,4 +505,13 @@ func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.I
 	}
 
 	return buf.Bytes(), nil
+}
+
+// GetInventoryForAdjustment returns the inventory record for a SKU+location pair (Track A stub).
+func (r *AdjustmentsRepository) GetInventoryForAdjustment(sku, location string) (*database.Inventory, *responses.InternalResponse) {
+	var inv database.Inventory
+	if err := r.DB.Where("sku = ? AND location = ?", sku, location).First(&inv).Error; err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "Inventario no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+	}
+	return &inv, nil
 }

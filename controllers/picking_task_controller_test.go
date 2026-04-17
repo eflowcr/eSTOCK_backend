@@ -76,6 +76,10 @@ func (m *mockPickingTaskRepoCtrl) GenerateImportTemplate(language string) ([]byt
 	return m.templateData, m.templateErr
 }
 
+func (m *mockPickingTaskRepoCtrl) LinkCustomer(taskID string, customerID *string) *responses.InternalResponse {
+	return nil
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func newPickingTasksController(repo *mockPickingTaskRepoCtrl) *PickingTasksController {
