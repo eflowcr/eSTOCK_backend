@@ -92,3 +92,13 @@ func (s *InventoryService) GetPickSuggestionsBySKU(sku string, qty float64) (*dt
 func (s *InventoryService) GenerateImportTemplate(language string) ([]byte, error) {
 	return s.Repository.GenerateImportTemplate(language)
 }
+
+// GetValuation returns AVCO-based inventory valuation grouped by article, location, or category.
+func (s *InventoryService) GetValuation(groupBy string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+	switch groupBy {
+	case "article", "location", "category":
+	default:
+		groupBy = "article"
+	}
+	return s.Repository.GetValuation(groupBy)
+}

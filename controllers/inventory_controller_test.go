@@ -121,6 +121,10 @@ func (m *mockInventoryRepoCtrl) GenerateImportTemplate(language string) ([]byte,
 	return []byte("tpl"), nil
 }
 
+func (m *mockInventoryRepoCtrl) GetValuation(_ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+	return nil, nil
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 const inventoryTestJWTSecret = "test-secret"

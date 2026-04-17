@@ -14,7 +14,7 @@ import (
 
 var _ ports.InventoryRepository = (*repositories.InventoryRepository)(nil)
 
-func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	_, inventoryService := wire.NewInventory(db, pool)
 	inventoryController := controllers.NewInventoryController(*inventoryService, config.JWTSecret)
 
@@ -28,6 +28,7 @@ func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool
 		route.GET("/export", inventoryController.ExportInventoryToExcel)
 
 		route.GET("/", inventoryController.GetAllInventory)
+		route.GET("/valuation", tools.RequirePermission(rolesRepo, "inventory", "read"), inventoryController.GetInventoryValuation)
 		route.GET("/pick-suggestions/:sku", inventoryController.GetPickSuggestions)
 		route.GET("/sku/:sku/location/:location", inventoryController.GetInventoryBySkuAndLocation)
 		route.POST("/", inventoryController.CreateInventory)

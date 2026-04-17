@@ -12,8 +12,9 @@ import (
 )
 
 const createLot = `-- name: CreateLot :one
-INSERT INTO lots (lot_number, sku, quantity, expiration_date, status)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO lots (lot_number, sku, quantity, expiration_date, status,
+                 lot_notes, manufactured_at, best_before_date)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
           lot_notes, manufactured_at, best_before_date
 `
@@ -24,6 +25,9 @@ type CreateLotParams struct {
 	Quantity       pgtype.Numeric   `json:"quantity"`
 	ExpirationDate pgtype.Timestamp `json:"expiration_date"`
 	Status         string           `json:"status"`
+	LotNotes       pgtype.Text      `json:"lot_notes"`
+	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
+	BestBeforeDate pgtype.Date      `json:"best_before_date"`
 }
 
 func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error) {
@@ -33,6 +37,9 @@ func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, erro
 		arg.Quantity,
 		arg.ExpirationDate,
 		arg.Status,
+		arg.LotNotes,
+		arg.ManufacturedAt,
+		arg.BestBeforeDate,
 	)
 	var i Lot
 	err := row.Scan(
@@ -137,6 +144,9 @@ SET
     quantity = $4,
     expiration_date = $5,
     status = $6,
+    lot_notes = $7,
+    manufactured_at = $8,
+    best_before_date = $9,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
@@ -150,6 +160,9 @@ type UpdateLotParams struct {
 	Quantity       pgtype.Numeric   `json:"quantity"`
 	ExpirationDate pgtype.Timestamp `json:"expiration_date"`
 	Status         string           `json:"status"`
+	LotNotes       pgtype.Text      `json:"lot_notes"`
+	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
+	BestBeforeDate pgtype.Date      `json:"best_before_date"`
 }
 
 func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error) {
@@ -160,6 +173,9 @@ func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, erro
 		arg.Quantity,
 		arg.ExpirationDate,
 		arg.Status,
+		arg.LotNotes,
+		arg.ManufacturedAt,
+		arg.BestBeforeDate,
 	)
 	var i Lot
 	err := row.Scan(

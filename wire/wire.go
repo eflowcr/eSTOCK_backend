@@ -30,6 +30,22 @@ func NewArticles(db *gorm.DB, pool *pgxpool.Pool) (ports.ArticlesRepository, *se
 	return r, services.NewArticlesService(r)
 }
 
+// NewArticlesWithDeps builds ArticlesService with optional CategoriesRepo and LocationsRepo for M2 validation.
+func NewArticlesWithDeps(db *gorm.DB, pool *pgxpool.Pool) (ports.ArticlesRepository, *services.ArticlesService) {
+	repo, svc := NewArticles(db, pool)
+	if pool != nil {
+		_, catSvc := NewCategories(pool)
+		_, locSvc := NewLocations(db, pool)
+		if catSvc != nil {
+			svc.WithCategoriesRepo(catSvc)
+		}
+		if locSvc != nil {
+			svc.WithLocationsRepo(locSvc)
+		}
+	}
+	return repo, svc
+}
+
 // NewAuditLog builds AuditLogRepository and AuditService. Requires pool (Postgres); no GORM fallback for audit.
 func NewAuditLog(pool *pgxpool.Pool) (ports.AuditLogRepository, *services.AuditService) {
 	if pool == nil {
@@ -163,7 +179,7 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 	var articlesRepo ports.ArticlesRepository
 	if pool != nil {
 		queries := sqlc.New(pool)
-		r = repositories.NewLotsRepositorySQLC(queries)
+		r = repositories.NewLotsRepositorySQLCWithGORM(queries, db)
 		articlesRepo, _ = NewArticles(db, pool)
 	} else {
 		r = &repositories.LotsRepository{DB: db}

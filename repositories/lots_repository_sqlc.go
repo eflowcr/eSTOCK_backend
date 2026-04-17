@@ -12,16 +12,24 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"gorm.io/gorm"
 )
 
 // LotsRepositorySQLC implements ports.LotsRepository using sqlc-generated queries.
+// DB is optional; used by GetLotTrace (which requires cross-table raw SQL not modeled in sqlc).
 type LotsRepositorySQLC struct {
 	queries *sqlc.Queries
+	DB      *gorm.DB
 }
 
 // NewLotsRepositorySQLC returns a lots repository backed by sqlc.
 func NewLotsRepositorySQLC(queries *sqlc.Queries) *LotsRepositorySQLC {
 	return &LotsRepositorySQLC{queries: queries}
+}
+
+// NewLotsRepositorySQLCWithGORM returns a lots repository backed by sqlc with GORM for trace queries.
+func NewLotsRepositorySQLCWithGORM(queries *sqlc.Queries, db *gorm.DB) *LotsRepositorySQLC {
+	return &LotsRepositorySQLC{queries: queries, DB: db}
 }
 
 var _ ports.LotsRepository = (*LotsRepositorySQLC)(nil)
@@ -78,6 +86,9 @@ func (r *LotsRepositorySQLC) CreateLot(data *requests.CreateLotRequest) *respons
 		Quantity:       qty,
 		ExpirationDate: expPg,
 		Status:         status,
+		LotNotes:       ptrStringToPgText(data.LotNotes),
+		ManufacturedAt: ptrStringToPgDate(data.ManufacturedAt),
+		BestBeforeDate: ptrStringToPgDate(data.BestBeforeDate),
 	}
 	_, err := r.queries.CreateLot(ctx, arg)
 	if err != nil {
@@ -123,6 +134,9 @@ func (r *LotsRepositorySQLC) UpdateLot(id string, data map[string]interface{}) *
 		Quantity:       lot.Quantity,
 		ExpirationDate: lot.ExpirationDate,
 		Status:         lot.Status,
+		LotNotes:       lot.LotNotes,
+		ManufacturedAt: lot.ManufacturedAt,
+		BestBeforeDate: lot.BestBeforeDate,
 	}
 	_, err = r.queries.UpdateLot(ctx, arg)
 	if err != nil {
@@ -148,4 +162,34 @@ func (r *LotsRepositorySQLC) DeleteLot(id string) *responses.InternalResponse {
 		return &responses.InternalResponse{Error: err, Message: "Failed to delete lot", Handled: false}
 	}
 	return nil
+}
+
+func (r *LotsRepositorySQLC) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
+	ctx := context.Background()
+	l, err := r.queries.GetLotByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &responses.InternalResponse{
+				Message:    "Lot not found",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
+			}
+		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Failed to retrieve lot", Handled: false}
+	}
+	lot := sqlcLotToDatabase(l)
+	return &lot, nil
+}
+
+// GetLotTrace delegates to the GORM-based LotsRepository when DB is available.
+func (r *LotsRepositorySQLC) GetLotTrace(lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+	if r.DB == nil {
+		return nil, &responses.InternalResponse{
+			Message:    "GetLotTrace requiere conexión GORM — configure DB en el repositorio SQLC",
+			Handled:    true,
+			StatusCode: responses.StatusInternalServerError,
+		}
+	}
+	gormRepo := &LotsRepository{DB: r.DB}
+	return gormRepo.GetLotTrace(lotID)
 }

@@ -26,4 +26,5 @@ type InventoryRepository interface {
 	CreateInventorySerial(id string, input *requests.CreateInventorySerial) *responses.InternalResponse
 	DeleteInventorySerial(id string) *responses.InternalResponse
 	GenerateImportTemplate(language string) ([]byte, error)
+	GetValuation(groupBy string) (*responses.InventoryValuationResponse, *responses.InternalResponse)
 }

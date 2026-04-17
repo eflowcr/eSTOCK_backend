@@ -29,7 +29,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterUserRoutes(api, db, config, notifSvc)
 	RegisterPreferencesRoutes(api, pool, config)
 	RegisterDashboardRoutes(api, db, config)
-	RegisterInventoryRoutes(api, db, pool, config)
+	RegisterInventoryRoutes(api, db, pool, config, rolesRepo)
 	RegisterSerialRoutes(api, db, pool, config)
 	RegisterReceivingTasksRoutes(api, db, config, notifSvc, pool)
 	RegisterPickingTasksRoutes(api, db, config, auditSvc, notifSvc, pool)

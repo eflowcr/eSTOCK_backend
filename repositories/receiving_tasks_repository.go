@@ -1305,20 +1305,43 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 						expirationDate = &exp
 					}
 				}
+				// A1.5b: shelf_life auto-expiry — only when lot has no explicit expiration date
+				if expirationDate == nil && article.ShelfLifeInDays != nil && *article.ShelfLifeInDays > 0 {
+					exp := time.Now().AddDate(0, 0, *article.ShelfLifeInDays)
+					expirationDate = &exp
+				}
 
 				lotID, err := tools.GenerateNanoid(tx)
 				if err != nil {
 					return fmt.Errorf("generate nanoid for lot: %w", err)
 				}
 
+				lotNotes := (*string)(nil)
+				if lotNum.LotNotes != nil {
+					lotNotes = lotNum.LotNotes
+				}
+				manufacturedAt := (*time.Time)(nil)
+				if lotNum.ManufacturedAt != nil && *lotNum.ManufacturedAt != "" {
+					if t, err2 := time.Parse("2006-01-02", *lotNum.ManufacturedAt); err2 == nil {
+						manufacturedAt = &t
+					}
+				}
+				bestBeforeDate := (*time.Time)(nil)
+				if lotNum.BestBeforeDate != nil && *lotNum.BestBeforeDate != "" {
+					if t, err2 := time.Parse("2006-01-02", *lotNum.BestBeforeDate); err2 == nil {
+						bestBeforeDate = &t
+					}
+				}
 				if err := tx.Exec(`
-					INSERT INTO lots (id, sku, lot_number, quantity, expiration_date, status, created_at, updated_at)
-					VALUES (?, ?, ?, ?, ?, 'active', NOW(), NOW())
+					INSERT INTO lots (id, sku, lot_number, quantity, expiration_date, status,
+					                 lot_notes, manufactured_at, best_before_date, created_at, updated_at)
+					VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, NOW(), NOW())
 					ON CONFLICT (sku, lot_number) WHERE (status IS NULL OR status != 'archived')
 					DO UPDATE SET
 						quantity   = lots.quantity + EXCLUDED.quantity,
 						updated_at = NOW()
-				`, lotID, item.SKU, lotNum.LotNumber, lotNum.Quantity, expirationDate).Error; err != nil {
+				`, lotID, item.SKU, lotNum.LotNumber, lotNum.Quantity, expirationDate,
+					lotNotes, manufacturedAt, bestBeforeDate).Error; err != nil {
 					return fmt.Errorf("upsert lote %s: %w", lotNum.LotNumber, err)
 				}
 

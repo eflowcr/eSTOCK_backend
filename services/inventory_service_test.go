@@ -54,6 +54,9 @@ func (m *mockInventoryRepo) DeleteInventoryLot(_ string) *responses.InternalResp
 func (m *mockInventoryRepo) CreateInventorySerial(_ string, _ *requests.CreateInventorySerial) *responses.InternalResponse { return nil }
 func (m *mockInventoryRepo) DeleteInventorySerial(_ string) *responses.InternalResponse { return nil }
 func (m *mockInventoryRepo) GenerateImportTemplate(_ string) ([]byte, error) { return nil, nil }
+func (m *mockInventoryRepo) GetValuation(_ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+	return nil, nil
+}
 
 // ── GetAllInventory ───────────────────────────────────────────────────────────
 
@@ -126,4 +129,24 @@ func TestInventoryService_ValidateImportRows_Delegates(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	assert.Nil(t, results)
+}
+
+// ─── V1: Valuation endpoint ───────────────────────────────────────────────────
+
+func TestInventoryService_GetValuation_DefaultsToArticle(t *testing.T) {
+	repo := &mockInventoryRepo{}
+	svc := NewInventoryService(repo, nil)
+	result, errResp := svc.GetValuation("")
+	require.Nil(t, errResp)
+	// mock returns nil, which is fine for this test
+	_ = result
+}
+
+func TestInventoryService_GetValuation_ValidGroupBy(t *testing.T) {
+	repo := &mockInventoryRepo{}
+	svc := NewInventoryService(repo, nil)
+	for _, gb := range []string{"article", "location", "category"} {
+		_, errResp := svc.GetValuation(gb)
+		require.Nil(t, errResp, "group_by=%s", gb)
+	}
 }

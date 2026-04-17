@@ -1521,3 +1521,88 @@ func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, e
 	}
 	return BuildModuleImportTemplate(cfg)
 }
+
+// GetValuation returns AVCO-based inventory valuation grouped by article, location, or category.
+// AVCO unit_cost is computed from inventory_movements (weighted average of inbound/adjustment qty*cost).
+func (r *InventoryRepository) GetValuation(groupBy string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+	type breakdownRow struct {
+		Key   string
+		Label string
+		Value float64
+		Qty   float64
+	}
+
+	avcoSubquery := `
+		SELECT sku,
+		       CASE WHEN SUM(CASE WHEN movement_type IN ('inbound','INBOUND','ADJUSTMENT','TRANSFER_IN') AND quantity > 0 THEN quantity ELSE 0 END) = 0
+		            THEN 0
+		            ELSE SUM(CASE WHEN movement_type IN ('inbound','INBOUND','ADJUSTMENT','TRANSFER_IN') AND quantity > 0 THEN quantity * COALESCE(unit_cost, 0) ELSE 0 END) /
+		                 SUM(CASE WHEN movement_type IN ('inbound','INBOUND','ADJUSTMENT','TRANSFER_IN') AND quantity > 0 THEN quantity ELSE 0 END)
+		       END AS avco
+		FROM inventory_movements
+		GROUP BY sku`
+
+	var rows []breakdownRow
+	var err error
+
+	switch groupBy {
+	case "location":
+		err = r.DB.Raw(`
+			SELECT inv.location AS key,
+			       inv.location AS label,
+			       COALESCE(SUM(inv.quantity), 0) AS qty,
+			       COALESCE(SUM(inv.quantity * COALESCE(m.avco, 0)), 0) AS value
+			FROM inventory inv
+			LEFT JOIN (`+avcoSubquery+`) m ON m.sku = inv.sku
+			WHERE inv.quantity > 0
+			GROUP BY inv.location
+			ORDER BY value DESC
+		`).Scan(&rows).Error
+	case "category":
+		err = r.DB.Raw(`
+			SELECT COALESCE(a.category_id, 'uncategorized') AS key,
+			       COALESCE(c.name, 'Uncategorized') AS label,
+			       COALESCE(SUM(inv.quantity), 0) AS qty,
+			       COALESCE(SUM(inv.quantity * COALESCE(m.avco, 0)), 0) AS value
+			FROM inventory inv
+			JOIN articles a ON a.sku = inv.sku
+			LEFT JOIN categories c ON c.id = a.category_id
+			LEFT JOIN (`+avcoSubquery+`) m ON m.sku = inv.sku
+			WHERE inv.quantity > 0
+			GROUP BY a.category_id, c.name
+			ORDER BY value DESC
+		`).Scan(&rows).Error
+	default: // article
+		groupBy = "article"
+		err = r.DB.Raw(`
+			SELECT inv.sku AS key,
+			       COALESCE(a.name, inv.sku) AS label,
+			       COALESCE(SUM(inv.quantity), 0) AS qty,
+			       COALESCE(SUM(inv.quantity * COALESCE(m.avco, 0)), 0) AS value
+			FROM inventory inv
+			LEFT JOIN articles a ON a.sku = inv.sku
+			LEFT JOIN (`+avcoSubquery+`) m ON m.sku = inv.sku
+			WHERE inv.quantity > 0
+			GROUP BY inv.sku, a.name
+			ORDER BY value DESC
+		`).Scan(&rows).Error
+	}
+
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al calcular valuación de inventario", Handled: false}
+	}
+
+	breakdown := make([]responses.ValuationBreakdownItem, len(rows))
+	var total float64
+	for i, r := range rows {
+		breakdown[i] = responses.ValuationBreakdownItem{Key: r.Key, Label: r.Label, Value: r.Value, Qty: r.Qty}
+		total += r.Value
+	}
+
+	return &responses.InventoryValuationResponse{
+		TotalValue: total,
+		Currency:   "CRC",
+		GroupBy:    groupBy,
+		Breakdown:  breakdown,
+	}, nil
+}

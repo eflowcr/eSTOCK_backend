@@ -371,3 +371,14 @@ func (c *InventoryController) DeleteInventorySerial(ctx *gin.Context) {
 
 	tools.ResponseOK(ctx, "DeleteInventorySerial", "Serial de inventario eliminado con éxito", "delete_inventory_serial", nil, false, "")
 }
+
+// GetInventoryValuation handles GET /api/inventory/valuation?group_by=article|location|category
+func (c *InventoryController) GetInventoryValuation(ctx *gin.Context) {
+	groupBy := ctx.DefaultQuery("group_by", "article")
+	result, errResp := c.Service.GetValuation(groupBy)
+	if errResp != nil {
+		writeErrorResponse(ctx, "GetInventoryValuation", "get_inventory_valuation", errResp)
+		return
+	}
+	tools.ResponseOK(ctx, "GetInventoryValuation", "Valuación de inventario obtenida", "get_inventory_valuation", result, false, "")
+}

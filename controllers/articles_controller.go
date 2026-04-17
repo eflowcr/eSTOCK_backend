@@ -59,7 +59,7 @@ func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
 		return
 	}
 
-	tools.ResponseOK(ctx, "GetArticleByID", "Artículo recuperado con éxito", "get_article_by_id", article, false, "")
+	tools.ResponseOK(ctx, "GetArticleByID", "Artículo recuperado con éxito", "get_article_by_id", c.Service.EnrichArticle(article), false, "")
 }
 
 func (c *ArticlesController) GetBySku(ctx *gin.Context) {
@@ -143,7 +143,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		newVal, _ := json.Marshal(updatedArticle)
 		c.AuditService.Log(ctx.Request.Context(), uid, tools.ActionUpdate, tools.ResourceArticle, id, oldVal, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
 	}
-	payload := gin.H{"article": updatedArticle}
+	payload := gin.H{"article": c.Service.EnrichArticle(updatedArticle)}
 	if len(warnings) > 0 {
 		payload["warnings"] = warnings
 	}
