@@ -7,6 +7,8 @@ package sqlc
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -17,6 +19,12 @@ type Querier interface {
 	// Audit logs: who did what, when, how
 	// Schema: db/migrations (000003_audit_logs_schema)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
+	// Categories CRUD for sqlc
+	// Schema: db/migrations/000018_sprint_s2.up.sql (categories table)
+	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
+	// Clients CRUD for sqlc
+	// Schema: db/migrations/000018_sprint_s2.up.sql (clients table)
+	CreateClient(ctx context.Context, arg CreateClientParams) (Client, error)
 	CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error)
 	CreateLocationType(ctx context.Context, arg CreateLocationTypeParams) (LocationType, error)
 	CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error)
@@ -42,6 +50,9 @@ type Querier interface {
 	GetAdjustmentReasonCodeByID(ctx context.Context, id string) (AdjustmentReasonCode, error)
 	GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error)
 	GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error)
+	GetCategoryByID(ctx context.Context, id string) (Category, error)
+	GetClientByID(ctx context.Context, id string) (Client, error)
+	GetClientByTenantAndCode(ctx context.Context, arg GetClientByTenantAndCodeParams) (Client, error)
 	GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error)
 	GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error)
 	GetLocationTypeByCode(ctx context.Context, code string) (LocationType, error)
@@ -59,6 +70,9 @@ type Querier interface {
 	// Serials CRUD for sqlc
 	// Schema: db/migrations (serials table)
 	GetSerialByID(ctx context.Context, id string) (Serial, error)
+	// StockSettings CRUD for sqlc
+	// Schema: db/migrations/000018_sprint_s2.up.sql (stock_settings table)
+	GetStockSettings(ctx context.Context, tenantID pgtype.UUID) (StockSetting, error)
 	GetStockTransferByID(ctx context.Context, id string) (GetStockTransferByIDRow, error)
 	GetStockTransferByTransferNumber(ctx context.Context, transferNumber string) (GetStockTransferByTransferNumberRow, error)
 	GetStockTransferLineByID(ctx context.Context, id string) (StockTransferLine, error)
@@ -71,6 +85,8 @@ type Querier interface {
 	// Schema: db/migrations (articles, lots, serials tables)
 	ListArticles(ctx context.Context) ([]ListArticlesRow, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
+	ListCategoriesByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Category, error)
+	ListClientsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Client, error)
 	// Location types CRUD for sqlc. Schema: db/migrations (location_types table)
 	ListLocationTypes(ctx context.Context) ([]LocationType, error)
 	ListLocationTypesAdmin(ctx context.Context) ([]LocationType, error)
@@ -102,8 +118,12 @@ type Querier interface {
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
 	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
+	SoftDeleteCategory(ctx context.Context, id string) error
+	SoftDeleteClient(ctx context.Context, id string) error
 	UpdateAdjustmentReasonCode(ctx context.Context, arg UpdateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
 	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error)
+	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
+	UpdateClient(ctx context.Context, arg UpdateClientParams) (Client, error)
 	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)
@@ -116,6 +136,7 @@ type Querier interface {
 	UpdateStockTransferLine(ctx context.Context, arg UpdateStockTransferLineParams) (StockTransferLine, error)
 	UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (UpdateStockTransferStatusRow, error)
 	UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (UserPreference, error)
+	UpsertStockSettings(ctx context.Context, arg UpsertStockSettingsParams) (StockSetting, error)
 }
 
 var _ Querier = (*Queries)(nil)

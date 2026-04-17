@@ -276,3 +276,33 @@ func NewUserPreferences(pool *pgxpool.Pool) ports.UserPreferencesRepository {
 	queries := sqlc.New(pool)
 	return repositories.NewUserPreferencesRepositorySQLC(queries)
 }
+
+// NewClients builds ClientsRepository and ClientsService. Requires pool (Postgres).
+func NewClients(pool *pgxpool.Pool) (ports.ClientsRepository, *services.ClientsService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewClientsRepositorySQLC(queries, pool)
+	return r, services.NewClientsService(r)
+}
+
+// NewCategories builds CategoriesRepository and CategoriesService. Requires pool (Postgres).
+func NewCategories(pool *pgxpool.Pool) (ports.CategoriesRepository, *services.CategoriesService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewCategoriesRepositorySQLC(queries, pool)
+	return r, services.NewCategoriesService(r)
+}
+
+// NewStockSettings builds StockSettingsRepository and StockSettingsService. Requires pool (Postgres).
+func NewStockSettings(pool *pgxpool.Pool) (ports.StockSettingsRepository, *services.StockSettingsService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewStockSettingsRepositorySQLC(queries)
+	return r, services.NewStockSettingsService(r)
+}

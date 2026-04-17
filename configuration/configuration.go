@@ -46,6 +46,10 @@ type Config struct {
 	// ResendAPIKey is the API key for the Resend email service (env: RESEND_API_KEY).
 	// Optional: if unset, LoggerEmailSender is used instead (logs to stdout).
 	ResendAPIKey string
+
+	// TenantID is the UUID of the current tenant (env: TENANT_ID).
+	// Single-tenant mode: defaults to a fixed UUID if unset.
+	TenantID string
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -75,6 +79,10 @@ func LoadConfig() (Config, error) {
 		Version:      os.Getenv("Version"),
 		AppURL:       os.Getenv("APP_URL"),
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
+		TenantID:     os.Getenv("TENANT_ID"),
+	}
+	if cfg.TenantID == "" {
+		cfg.TenantID = "00000000-0000-0000-0000-000000000001"
 	}
 	if cfg.DBSource == "" {
 		cfg.DBSource = os.Getenv("DATABASE_URL")
