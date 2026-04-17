@@ -2,12 +2,14 @@
 -- Schema: db/migrations (lots table)
 
 -- name: ListLots :many
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 ORDER BY created_at DESC;
 
 -- name: GetLotByID :one
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 WHERE id = $1
 LIMIT 1;
@@ -15,7 +17,8 @@ LIMIT 1;
 -- name: CreateLot :one
 INSERT INTO lots (lot_number, sku, quantity, expiration_date, status)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status;
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+          lot_notes, manufactured_at, best_before_date;
 
 -- name: UpdateLot :one
 UPDATE lots
@@ -27,7 +30,8 @@ SET
     status = $6,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status;
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+          lot_notes, manufactured_at, best_before_date;
 
 -- name: DeleteLot :exec
 DELETE FROM lots WHERE id = $1;

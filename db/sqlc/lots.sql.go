@@ -14,7 +14,8 @@ import (
 const createLot = `-- name: CreateLot :one
 INSERT INTO lots (lot_number, sku, quantity, expiration_date, status)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+          lot_notes, manufactured_at, best_before_date
 `
 
 type CreateLotParams struct {
@@ -43,6 +44,9 @@ func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
 	)
 	return i, err
 }
@@ -57,7 +61,8 @@ func (q *Queries) DeleteLot(ctx context.Context, id string) error {
 }
 
 const getLotByID = `-- name: GetLotByID :one
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 WHERE id = $1
 LIMIT 1
@@ -75,13 +80,17 @@ func (q *Queries) GetLotByID(ctx context.Context, id string) (Lot, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
 	)
 	return i, err
 }
 
 const listLots = `-- name: ListLots :many
 
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 ORDER BY created_at DESC
 `
@@ -106,6 +115,9 @@ func (q *Queries) ListLots(ctx context.Context) ([]Lot, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Status,
+			&i.LotNotes,
+			&i.ManufacturedAt,
+			&i.BestBeforeDate,
 		); err != nil {
 			return nil, err
 		}
@@ -127,7 +139,8 @@ SET
     status = $6,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+          lot_notes, manufactured_at, best_before_date
 `
 
 type UpdateLotParams struct {
@@ -158,6 +171,9 @@ func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
 	)
 	return i, err
 }

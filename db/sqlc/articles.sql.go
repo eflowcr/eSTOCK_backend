@@ -33,7 +33,10 @@ INSERT INTO articles (
 RETURNING id, sku, name, description, unit_price, presentation,
           track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
-          created_at, updated_at
+          created_at, updated_at,
+          category_id, shelf_life_in_days, safety_stock, batch_number_series,
+          serial_number_series, min_order_qty, default_location_id,
+          receiving_notes, shipping_notes
 `
 
 type CreateArticleParams struct {
@@ -52,22 +55,31 @@ type CreateArticleParams struct {
 }
 
 type CreateArticleRow struct {
-	ID               string           `json:"id"`
-	Sku              string           `json:"sku"`
-	Name             string           `json:"name"`
-	Description      pgtype.Text      `json:"description"`
-	UnitPrice        pgtype.Numeric   `json:"unit_price"`
-	Presentation     string           `json:"presentation"`
-	TrackByLot       bool             `json:"track_by_lot"`
-	TrackBySerial    bool             `json:"track_by_serial"`
-	TrackExpiration  bool             `json:"track_expiration"`
-	RotationStrategy string           `json:"rotation_strategy"`
-	MinQuantity      pgtype.Int4      `json:"min_quantity"`
-	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
-	ImageUrl         pgtype.Text      `json:"image_url"`
-	IsActive         pgtype.Bool      `json:"is_active"`
-	CreatedAt        pgtype.Timestamp `json:"created_at"`
-	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+	ID                 string           `json:"id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
 func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error) {
@@ -103,6 +115,15 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (C
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CategoryID,
+		&i.ShelfLifeInDays,
+		&i.SafetyStock,
+		&i.BatchNumberSeries,
+		&i.SerialNumberSeries,
+		&i.MinOrderQty,
+		&i.DefaultLocationID,
+		&i.ReceivingNotes,
+		&i.ShippingNotes,
 	)
 	return i, err
 }
@@ -120,29 +141,41 @@ const getArticleByID = `-- name: GetArticleByID :one
 SELECT id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
-       created_at, updated_at
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
 FROM articles
 WHERE id = $1
 LIMIT 1
 `
 
 type GetArticleByIDRow struct {
-	ID               string           `json:"id"`
-	Sku              string           `json:"sku"`
-	Name             string           `json:"name"`
-	Description      pgtype.Text      `json:"description"`
-	UnitPrice        pgtype.Numeric   `json:"unit_price"`
-	Presentation     string           `json:"presentation"`
-	TrackByLot       bool             `json:"track_by_lot"`
-	TrackBySerial    bool             `json:"track_by_serial"`
-	TrackExpiration  bool             `json:"track_expiration"`
-	RotationStrategy string           `json:"rotation_strategy"`
-	MinQuantity      pgtype.Int4      `json:"min_quantity"`
-	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
-	ImageUrl         pgtype.Text      `json:"image_url"`
-	IsActive         pgtype.Bool      `json:"is_active"`
-	CreatedAt        pgtype.Timestamp `json:"created_at"`
-	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+	ID                 string           `json:"id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
 func (q *Queries) GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error) {
@@ -165,6 +198,15 @@ func (q *Queries) GetArticleByID(ctx context.Context, id string) (GetArticleByID
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CategoryID,
+		&i.ShelfLifeInDays,
+		&i.SafetyStock,
+		&i.BatchNumberSeries,
+		&i.SerialNumberSeries,
+		&i.MinOrderQty,
+		&i.DefaultLocationID,
+		&i.ReceivingNotes,
+		&i.ShippingNotes,
 	)
 	return i, err
 }
@@ -173,29 +215,41 @@ const getArticleBySku = `-- name: GetArticleBySku :one
 SELECT id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
-       created_at, updated_at
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
 FROM articles
 WHERE sku = $1
 LIMIT 1
 `
 
 type GetArticleBySkuRow struct {
-	ID               string           `json:"id"`
-	Sku              string           `json:"sku"`
-	Name             string           `json:"name"`
-	Description      pgtype.Text      `json:"description"`
-	UnitPrice        pgtype.Numeric   `json:"unit_price"`
-	Presentation     string           `json:"presentation"`
-	TrackByLot       bool             `json:"track_by_lot"`
-	TrackBySerial    bool             `json:"track_by_serial"`
-	TrackExpiration  bool             `json:"track_expiration"`
-	RotationStrategy string           `json:"rotation_strategy"`
-	MinQuantity      pgtype.Int4      `json:"min_quantity"`
-	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
-	ImageUrl         pgtype.Text      `json:"image_url"`
-	IsActive         pgtype.Bool      `json:"is_active"`
-	CreatedAt        pgtype.Timestamp `json:"created_at"`
-	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+	ID                 string           `json:"id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
 func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error) {
@@ -218,6 +272,15 @@ func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (GetArticleBy
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CategoryID,
+		&i.ShelfLifeInDays,
+		&i.SafetyStock,
+		&i.BatchNumberSeries,
+		&i.SerialNumberSeries,
+		&i.MinOrderQty,
+		&i.DefaultLocationID,
+		&i.ReceivingNotes,
+		&i.ShippingNotes,
 	)
 	return i, err
 }
@@ -227,28 +290,40 @@ const listArticles = `-- name: ListArticles :many
 SELECT id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
-       created_at, updated_at
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
 FROM articles
 ORDER BY created_at ASC
 `
 
 type ListArticlesRow struct {
-	ID               string           `json:"id"`
-	Sku              string           `json:"sku"`
-	Name             string           `json:"name"`
-	Description      pgtype.Text      `json:"description"`
-	UnitPrice        pgtype.Numeric   `json:"unit_price"`
-	Presentation     string           `json:"presentation"`
-	TrackByLot       bool             `json:"track_by_lot"`
-	TrackBySerial    bool             `json:"track_by_serial"`
-	TrackExpiration  bool             `json:"track_expiration"`
-	RotationStrategy string           `json:"rotation_strategy"`
-	MinQuantity      pgtype.Int4      `json:"min_quantity"`
-	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
-	ImageUrl         pgtype.Text      `json:"image_url"`
-	IsActive         pgtype.Bool      `json:"is_active"`
-	CreatedAt        pgtype.Timestamp `json:"created_at"`
-	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+	ID                 string           `json:"id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
 // Articles CRUD and related queries for sqlc
@@ -279,6 +354,15 @@ func (q *Queries) ListArticles(ctx context.Context) ([]ListArticlesRow, error) {
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CategoryID,
+			&i.ShelfLifeInDays,
+			&i.SafetyStock,
+			&i.BatchNumberSeries,
+			&i.SerialNumberSeries,
+			&i.MinOrderQty,
+			&i.DefaultLocationID,
+			&i.ReceivingNotes,
+			&i.ShippingNotes,
 		); err != nil {
 			return nil, err
 		}
@@ -291,7 +375,8 @@ func (q *Queries) ListArticles(ctx context.Context) ([]ListArticlesRow, error) {
 }
 
 const listLotsBySku = `-- name: ListLotsBySku :many
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 WHERE sku = $1
 `
@@ -315,6 +400,9 @@ func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Status,
+			&i.LotNotes,
+			&i.ManufacturedAt,
+			&i.BestBeforeDate,
 		); err != nil {
 			return nil, err
 		}
@@ -381,7 +469,10 @@ WHERE id = $1
 RETURNING id, sku, name, description, unit_price, presentation,
           track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
-          created_at, updated_at
+          created_at, updated_at,
+          category_id, shelf_life_in_days, safety_stock, batch_number_series,
+          serial_number_series, min_order_qty, default_location_id,
+          receiving_notes, shipping_notes
 `
 
 type UpdateArticleParams struct {
@@ -402,22 +493,31 @@ type UpdateArticleParams struct {
 }
 
 type UpdateArticleRow struct {
-	ID               string           `json:"id"`
-	Sku              string           `json:"sku"`
-	Name             string           `json:"name"`
-	Description      pgtype.Text      `json:"description"`
-	UnitPrice        pgtype.Numeric   `json:"unit_price"`
-	Presentation     string           `json:"presentation"`
-	TrackByLot       bool             `json:"track_by_lot"`
-	TrackBySerial    bool             `json:"track_by_serial"`
-	TrackExpiration  bool             `json:"track_expiration"`
-	RotationStrategy string           `json:"rotation_strategy"`
-	MinQuantity      pgtype.Int4      `json:"min_quantity"`
-	MaxQuantity      pgtype.Int4      `json:"max_quantity"`
-	ImageUrl         pgtype.Text      `json:"image_url"`
-	IsActive         pgtype.Bool      `json:"is_active"`
-	CreatedAt        pgtype.Timestamp `json:"created_at"`
-	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+	ID                 string           `json:"id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
 func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error) {
@@ -455,6 +555,15 @@ func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (U
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CategoryID,
+		&i.ShelfLifeInDays,
+		&i.SafetyStock,
+		&i.BatchNumberSeries,
+		&i.SerialNumberSeries,
+		&i.MinOrderQty,
+		&i.DefaultLocationID,
+		&i.ReceivingNotes,
+		&i.ShippingNotes,
 	)
 	return i, err
 }

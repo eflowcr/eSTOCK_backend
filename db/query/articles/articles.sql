@@ -5,7 +5,10 @@
 SELECT id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
-       created_at, updated_at
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
 FROM articles
 ORDER BY created_at ASC;
 
@@ -13,7 +16,10 @@ ORDER BY created_at ASC;
 SELECT id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
-       created_at, updated_at
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
 FROM articles
 WHERE id = $1
 LIMIT 1;
@@ -22,7 +28,10 @@ LIMIT 1;
 SELECT id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
-       created_at, updated_at
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
 FROM articles
 WHERE sku = $1
 LIMIT 1;
@@ -41,7 +50,10 @@ INSERT INTO articles (
 RETURNING id, sku, name, description, unit_price, presentation,
           track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
-          created_at, updated_at;
+          created_at, updated_at,
+          category_id, shelf_life_in_days, safety_stock, batch_number_series,
+          serial_number_series, min_order_qty, default_location_id,
+          receiving_notes, shipping_notes;
 
 -- name: UpdateArticle :one
 UPDATE articles
@@ -64,14 +76,18 @@ WHERE id = $1
 RETURNING id, sku, name, description, unit_price, presentation,
           track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
-          created_at, updated_at;
+          created_at, updated_at,
+          category_id, shelf_life_in_days, safety_stock, batch_number_series,
+          serial_number_series, min_order_qty, default_location_id,
+          receiving_notes, shipping_notes;
 
 -- name: DeleteArticle :exec
 DELETE FROM articles WHERE id = $1;
 
 -- Lots by SKU (for UpdateArticle warnings)
 -- name: ListLotsBySku :many
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 WHERE sku = $1;
 
