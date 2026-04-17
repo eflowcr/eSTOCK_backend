@@ -63,7 +63,17 @@ func (r *LotsRepository) CreateLot(data *requests.CreateLotRequest) *responses.I
 		expirationDate, _ = time.Parse("2006-01-02", *data.ExpirationDate)
 	}
 
+	lotID, idErr := tools.GenerateNanoid(r.DB)
+	if idErr != nil {
+		return &responses.InternalResponse{
+			Error:   idErr,
+			Message: "Failed to generate lot id",
+			Handled: false,
+		}
+	}
+
 	lot := &database.Lot{
+		ID:             lotID,
 		LotNumber:      data.LotNumber,
 		SKU:            data.SKU,
 		Quantity:       data.Quantity,

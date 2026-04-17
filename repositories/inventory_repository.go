@@ -581,7 +581,16 @@ func (r *InventoryRepository) UpdateInventory(item *requests.UpdateInventory) *r
 
 		if lotCount == 0 {
 			// Create new lot
+			invLotID, lotIDErr := tools.GenerateNanoid(r.DB)
+			if lotIDErr != nil {
+				return &responses.InternalResponse{
+					Error:   lotIDErr,
+					Message: "Error al generar id de lote",
+					Handled: false,
+				}
+			}
 			lot := &database.Lot{
+				ID:        invLotID,
 				LotNumber: *item.DefaultLotNumber,
 				SKU:       item.SKU,
 				Quantity:  item.Quantity,
@@ -1360,7 +1369,16 @@ func (r *InventoryRepository) GetInventorySerials(inventoryID string) ([]respons
 }
 
 func (r *InventoryRepository) CreateInventoryLot(id string, input *requests.CreateInventoryLotRequest) *responses.InternalResponse {
+	invLotID, idErr := tools.GenerateNanoid(r.DB)
+	if idErr != nil {
+		return &responses.InternalResponse{
+			Error:   idErr,
+			Message: "Error al generar id de inventory_lot",
+			Handled: false,
+		}
+	}
 	inventoryLot := &database.InventoryLot{
+		ID:          invLotID,
 		InventoryID: id,
 		LotID:       input.LotID,
 		Quantity:    input.Quantity,

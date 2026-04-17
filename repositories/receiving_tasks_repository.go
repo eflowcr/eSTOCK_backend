@@ -250,7 +250,12 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 						parsedDate = tools.ParseDate(*items[i].LotNumbers[j].ExpirationDate)
 					}
 
+					lotID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generate lot id for %s/%s: %w", sku, items[i].LotNumbers[j].LotNumber, err)
+					}
 					lot := database.Lot{
+						ID:             lotID,
 						LotNumber:      items[i].LotNumbers[j].LotNumber,
 						SKU:            sku,
 						Quantity:       items[i].LotNumbers[j].Quantity,
@@ -692,6 +697,11 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 			}
 
 			if inventoryCount == 0 {
+				invID, err := tools.GenerateNanoid(tx)
+				if err != nil {
+					return fmt.Errorf("generate inventory id for SKU %s: %w", sku, err)
+				}
+				inventory.ID = invID
 				inventory.SKU = sku
 				inventory.Name = article.Name
 				inventory.Description = article.Description
@@ -813,7 +823,16 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 						return errors.New("failed to retrieve existing lot")
 					}
 
-					// Update lot status to available
+					// Upsert lot quantity:
+					// - pending = created for this task → quantity already set, just activate
+					// - available = existing lot → accumulate
+					currentStatus := ""
+					if lot.Status != nil {
+						currentStatus = *lot.Status
+					}
+					if currentStatus == "available" {
+						lot.Quantity += lotNum.Quantity
+					}
 					lot.Status = tools.StrPtr("available")
 					lot.UpdatedAt = tools.GetCurrentTime()
 
@@ -821,7 +840,12 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 						return errors.New("failed to update lot status")
 					}
 
+					invLotID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generate inventory_lot id: %w", err)
+					}
 					inventoryLot := &database.InventoryLot{
+						ID:          invLotID,
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    lotNum.Quantity,
@@ -1010,6 +1034,11 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 		}
 
 		if inventoryCount == 0 {
+			lineInvID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate inventory id for SKU %s: %w", item.SKU, err)
+			}
+			inventory.ID = lineInvID
 			inventory.SKU = item.SKU
 			inventory.Name = article.Name
 			inventory.Description = article.Description
@@ -1166,7 +1195,12 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 					return fmt.Errorf("retrieve lot after upsert %s: %w", lotNum.LotNumber, err)
 				}
 
+				lineInvLotID, err := tools.GenerateNanoid(tx)
+				if err != nil {
+					return fmt.Errorf("generate inventory_lot id: %w", err)
+				}
 				inventoryLot := &database.InventoryLot{
+					ID:          lineInvLotID,
 					InventoryID: inventory.ID,
 					LotID:       upsertedLot.ID,
 					Quantity:    lotNum.Quantity,

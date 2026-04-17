@@ -277,7 +277,12 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 
 					// If lot does not exist, create it
 					if err == gorm.ErrRecordNotFound {
+						adjLotID, lotIDErr := tools.GenerateNanoid(tx)
+						if lotIDErr != nil {
+							return fmt.Errorf("generate lot id: %w", lotIDErr)
+						}
 						lot = database.Lot{
+							ID:             adjLotID,
 							LotNumber:      adjustment.Lots[i].LotNumber,
 							SKU:            adjustment.SKU,
 							Quantity:       lotQuantity,
@@ -290,7 +295,12 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 						}
 
 						// Create associate the lot with the adjustment
+						adjInvLotID, adjILErr := tools.GenerateNanoid(tx)
+						if adjILErr != nil {
+							return fmt.Errorf("generate inventory_lot id: %w", adjILErr)
+						}
 						inventoryLot := database.InventoryLot{
+							ID:          adjInvLotID,
 							InventoryID: inventory.ID,
 							LotID:       lot.ID,
 							Quantity:    lotQuantity,
