@@ -34,7 +34,7 @@ func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool
 			route.GET("/table/export", read, tools.GenericExportHandler(pool, cfg, "lots.csv"))
 		}
 		route.GET("/:id/trace", read, lotsController.GetLotTrace)
-		route.GET("/:sku", read, lotsController.GetLotsBySKU)
+		route.GET("/:id", read, lotsController.GetLotsBySKU)
 		route.POST("/", create, lotsController.CreateLot)
 		route.PUT("/:id", update, lotsController.UpdateLot)
 		route.DELETE("/:id", delete, lotsController.DeleteLot)

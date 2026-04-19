@@ -19,3 +19,7 @@ func NewInventoryMovementsService(repo ports.InventoryMovementsRepository) *Inve
 func (s *InventoryMovementsService) GetAllInventoryMovements(sku string) ([]database.InventoryMovement, *responses.InternalResponse) {
 	return s.Repository.GetAllInventoryMovements(sku)
 }
+
+func (s *InventoryMovementsService) ListMovements(f ports.MovementsFilter) ([]database.InventoryMovement, *responses.InternalResponse) {
+	return s.Repository.ListMovements(f)
+}

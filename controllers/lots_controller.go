@@ -34,7 +34,7 @@ func (c *LotsController) GetAllLots(ctx *gin.Context) {
 }
 
 func (c *LotsController) GetLotsBySKU(ctx *gin.Context) {
-	sku := ctx.Param("sku")
+	sku := ctx.Param("id")
 	lots, response := c.Service.GetLotsBySKU(&sku)
 
 	if response != nil {
