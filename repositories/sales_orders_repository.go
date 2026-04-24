@@ -31,18 +31,27 @@ type inventoryPickSuggestor interface {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // nextSONumber generates "SO-YYYY-NNNN" unique per tenant per year inside tx.
+// Uses SELECT MAX(...) FOR UPDATE to prevent race conditions between concurrent requests,
+// mirroring the generatePONumber pattern in purchase_orders_repository.go.
 func nextSONumber(tx *gorm.DB, tenantID string) (string, error) {
 	year := time.Now().Year()
 	prefix := fmt.Sprintf("SO-%d-", year)
 
-	var count int64
-	if err := tx.Model(&database.SalesOrder{}).
-		Where("tenant_id = ? AND so_number LIKE ? AND deleted_at IS NULL", tenantID, prefix+"%").
-		Count(&count).Error; err != nil {
-		return "", err
+	var maxNum int
+	if err := tx.Raw(`
+		SELECT COALESCE(MAX(
+			CAST(SUBSTRING(so_number FROM LENGTH($1)+1) AS INTEGER)
+		), 0)
+		FROM sales_orders
+		WHERE tenant_id = $2
+		  AND so_number LIKE $3
+		  AND deleted_at IS NULL
+		FOR UPDATE
+	`, prefix, tenantID, prefix+"%").Scan(&maxNum).Error; err != nil {
+		return "", fmt.Errorf("generate SO number: %w", err)
 	}
 
-	return fmt.Sprintf("%s%04d", prefix, count+1), nil
+	return fmt.Sprintf("%s%04d", prefix, maxNum+1), nil
 }
 
 // toSalesOrderResponse builds the full API response for a header + its items.
@@ -492,8 +501,12 @@ func (r *SalesOrdersRepository) Submit(id, tenantID, userID string) (*responses.
 		if err != nil {
 			return fmt.Errorf("generate picking id: %w", err)
 		}
-		nowMillis := time.Now().UnixNano() / int64(time.Millisecond)
-		taskID := fmt.Sprintf("PICK-%06d", nowMillis%1_000_000)
+		// Use SELECT nanoid(8) inside the tx for collision-free task_id generation,
+		// matching the pattern used by PurchaseOrdersRepository.Submit.
+		var taskID string
+		if err := tx.Raw("SELECT nanoid(8)").Scan(&taskID).Error; err != nil {
+			return fmt.Errorf("generate task_id: %w", err)
+		}
 
 		pickingTask := &database.PickingTask{
 			ID:           pickingID,
