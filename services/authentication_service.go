@@ -22,6 +22,14 @@ func NewAuthenticationService(repo ports.AuthenticationRepository, rolesRepo por
 	}
 }
 
+func (s *AuthenticationService) RequestPasswordReset(ctx context.Context, email string) *responses.InternalResponse {
+	return s.Repository.RequestPasswordReset(ctx, email)
+}
+
+func (s *AuthenticationService) ResetPassword(ctx context.Context, token, newPassword string) *responses.InternalResponse {
+	return s.Repository.ResetPassword(ctx, token, newPassword)
+}
+
 func (s *AuthenticationService) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
 	resp, errResp := s.Repository.Login(login)
 	if errResp != nil || resp == nil {

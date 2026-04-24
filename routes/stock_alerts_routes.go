@@ -17,7 +17,7 @@ import (
 
 var _ ports.StockAlertsRepository = (*repositories.StockAlertsRepository)(nil)
 
-func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, redisClient *goredis.Client) {
+func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, redisClient *goredis.Client, rolesRepo ports.RolesRepository) {
 	_, stockAlertsService := wire.NewStockAlerts(db, redisClient)
 	stockAlertsController := controllers.NewStockAlertsController(*stockAlertsService)
 
@@ -27,10 +27,13 @@ func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config conf
 	route := router.Group("/stock-alerts")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
-		route.GET("/:resolved", stockAlertsController.GetAllStockAlerts)
-		route.GET("/analyze", analyzeRateLimiter, stockAlertsController.Analyze)
-		route.GET("/lot-expiration", stockAlertsController.LotExpiration)
-		route.PATCH("/:id/resolve", stockAlertsController.ResolveAlert)
-		route.GET("/export", stockAlertsController.ExportAlertsToExcel)
+		read := tools.RequirePermission(rolesRepo, "stock_alerts", "read")
+		update := tools.RequirePermission(rolesRepo, "stock_alerts", "update")
+
+		route.GET("/:resolved", read, stockAlertsController.GetAllStockAlerts)
+		route.GET("/analyze", read, analyzeRateLimiter, stockAlertsController.Analyze)
+		route.GET("/lot-expiration", read, stockAlertsController.LotExpiration)
+		route.PATCH("/:id/resolve", update, stockAlertsController.ResolveAlert)
+		route.GET("/export", read, stockAlertsController.ExportAlertsToExcel)
 	}
 }

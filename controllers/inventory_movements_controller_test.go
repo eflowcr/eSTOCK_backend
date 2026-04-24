@@ -6,6 +6,7 @@ import (
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,13 @@ type mockInventoryMovementsRepoCtrl struct {
 }
 
 func (m *mockInventoryMovementsRepoCtrl) GetAllInventoryMovements(sku string) ([]database.InventoryMovement, *responses.InternalResponse) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.movements, nil
+}
+
+func (m *mockInventoryMovementsRepoCtrl) ListMovements(_ ports.MovementsFilter) ([]database.InventoryMovement, *responses.InternalResponse) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}

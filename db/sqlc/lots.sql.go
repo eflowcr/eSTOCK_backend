@@ -12,9 +12,11 @@ import (
 )
 
 const createLot = `-- name: CreateLot :one
-INSERT INTO lots (lot_number, sku, quantity, expiration_date, status)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+INSERT INTO lots (lot_number, sku, quantity, expiration_date, status,
+                 lot_notes, manufactured_at, best_before_date)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+          lot_notes, manufactured_at, best_before_date
 `
 
 type CreateLotParams struct {
@@ -23,6 +25,9 @@ type CreateLotParams struct {
 	Quantity       pgtype.Numeric   `json:"quantity"`
 	ExpirationDate pgtype.Timestamp `json:"expiration_date"`
 	Status         string           `json:"status"`
+	LotNotes       pgtype.Text      `json:"lot_notes"`
+	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
+	BestBeforeDate pgtype.Date      `json:"best_before_date"`
 }
 
 func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error) {
@@ -32,6 +37,9 @@ func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, erro
 		arg.Quantity,
 		arg.ExpirationDate,
 		arg.Status,
+		arg.LotNotes,
+		arg.ManufacturedAt,
+		arg.BestBeforeDate,
 	)
 	var i Lot
 	err := row.Scan(
@@ -43,6 +51,9 @@ func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
 	)
 	return i, err
 }
@@ -57,7 +68,8 @@ func (q *Queries) DeleteLot(ctx context.Context, id string) error {
 }
 
 const getLotByID = `-- name: GetLotByID :one
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 WHERE id = $1
 LIMIT 1
@@ -75,13 +87,17 @@ func (q *Queries) GetLotByID(ctx context.Context, id string) (Lot, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
 	)
 	return i, err
 }
 
 const listLots = `-- name: ListLots :many
 
-SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date
 FROM lots
 ORDER BY created_at DESC
 `
@@ -106,6 +122,9 @@ func (q *Queries) ListLots(ctx context.Context) ([]Lot, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Status,
+			&i.LotNotes,
+			&i.ManufacturedAt,
+			&i.BestBeforeDate,
 		); err != nil {
 			return nil, err
 		}
@@ -125,9 +144,13 @@ SET
     quantity = $4,
     expiration_date = $5,
     status = $6,
+    lot_notes = $7,
+    manufactured_at = $8,
+    best_before_date = $9,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status
+RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+          lot_notes, manufactured_at, best_before_date
 `
 
 type UpdateLotParams struct {
@@ -137,6 +160,9 @@ type UpdateLotParams struct {
 	Quantity       pgtype.Numeric   `json:"quantity"`
 	ExpirationDate pgtype.Timestamp `json:"expiration_date"`
 	Status         string           `json:"status"`
+	LotNotes       pgtype.Text      `json:"lot_notes"`
+	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
+	BestBeforeDate pgtype.Date      `json:"best_before_date"`
 }
 
 func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error) {
@@ -147,6 +173,9 @@ func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, erro
 		arg.Quantity,
 		arg.ExpirationDate,
 		arg.Status,
+		arg.LotNotes,
+		arg.ManufacturedAt,
+		arg.BestBeforeDate,
 	)
 	var i Lot
 	err := row.Scan(
@@ -158,6 +187,9 @@ func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
 	)
 	return i, err
 }

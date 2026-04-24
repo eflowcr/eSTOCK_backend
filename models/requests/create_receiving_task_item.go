@@ -10,4 +10,8 @@ type ReceivingTaskItemRequest struct {
 	SerialNumbers    []database.Serial  `json:"serials,omitempty"`
 	Status           *string            `json:"status,omitempty"`
 	ReceivedQuantity *int               `json:"received_qty,omitempty"`
+	// S2 R1: explicit accepted/rejected split. When both are nil/0 but ReceivedQuantity > 0
+	// the service backfills AcceptedQty = ReceivedQuantity (legacy compatibility).
+	AcceptedQty *float64 `json:"accepted_qty,omitempty" validate:"omitempty,gte=0"`
+	RejectedQty *float64 `json:"rejected_qty,omitempty" validate:"omitempty,gte=0"`
 }

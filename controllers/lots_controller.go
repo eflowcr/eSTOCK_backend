@@ -34,7 +34,7 @@ func (c *LotsController) GetAllLots(ctx *gin.Context) {
 }
 
 func (c *LotsController) GetLotsBySKU(ctx *gin.Context) {
-	sku := ctx.Param("sku")
+	sku := ctx.Param("id")
 	lots, response := c.Service.GetLotsBySKU(&sku)
 
 	if response != nil {
@@ -104,4 +104,19 @@ func (c *LotsController) DeleteLot(ctx *gin.Context) {
 	}
 
 	tools.ResponseOK(ctx, "DeleteLot", "Lot deleted successfully", "delete_lot", nil, false, "")
+}
+
+// GetLotTrace handles GET /api/lots/:id/trace
+func (c *LotsController) GetLotTrace(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "GetLotTrace", "get_lot_trace", "Invalid lot ID")
+	if !ok {
+		return
+	}
+
+	trace, resp := c.Service.GetTrace(id)
+	if resp != nil {
+		writeErrorResponse(ctx, "GetLotTrace", "get_lot_trace", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "GetLotTrace", "Trazabilidad de lote obtenida", "get_lot_trace", trace, false, "")
 }

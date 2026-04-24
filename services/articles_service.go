@@ -11,14 +11,38 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 )
 
+// categoryLookupForArticles is a narrow read-only interface for category validation.
+type categoryLookupForArticles interface {
+	GetByID(id string) (*database.Category, *responses.InternalResponse)
+}
+
+// locationLookupForArticles is a narrow read-only interface for location validation.
+type locationLookupForArticles interface {
+	GetLocationByID(id string) (*database.Location, *responses.InternalResponse)
+}
+
 type ArticlesService struct {
-	Repository ports.ArticlesRepository
+	Repository    ports.ArticlesRepository
+	CategoriesRepo categoryLookupForArticles // optional: validate category_id on create/update
+	LocationsRepo  locationLookupForArticles  // optional: validate default_location_id
 }
 
 func NewArticlesService(repo ports.ArticlesRepository) *ArticlesService {
 	return &ArticlesService{
 		Repository: repo,
 	}
+}
+
+// WithCategoriesRepo attaches a CategoriesRepository for category_id validation.
+func (s *ArticlesService) WithCategoriesRepo(r categoryLookupForArticles) *ArticlesService {
+	s.CategoriesRepo = r
+	return s
+}
+
+// WithLocationsRepo attaches a LocationsRepository for default_location_id validation.
+func (s *ArticlesService) WithLocationsRepo(r locationLookupForArticles) *ArticlesService {
+	s.LocationsRepo = r
+	return s
 }
 
 func (s *ArticlesService) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
@@ -33,7 +57,57 @@ func (s *ArticlesService) GetBySku(sku string) (*database.Article, *responses.In
 	return s.Repository.GetBySku(sku)
 }
 
+// EnrichArticle builds an ArticleResponse with embedded category and default_location objects.
+func (s *ArticlesService) EnrichArticle(art *database.Article) *responses.ArticleResponse {
+	if art == nil {
+		return nil
+	}
+	r := &responses.ArticleResponse{
+		ID:               art.ID,
+		SKU:              art.SKU,
+		Name:             art.Name,
+		Description:      art.Description,
+		UnitPrice:        art.UnitPrice,
+		Presentation:     art.Presentation,
+		TrackByLot:       art.TrackByLot,
+		TrackBySerial:    art.TrackBySerial,
+		TrackExpiration:  art.TrackExpiration,
+		RotationStrategy: art.RotationStrategy,
+		MinQuantity:      art.MinQuantity,
+		MaxQuantity:      art.MaxQuantity,
+		ImageURL:         art.ImageURL,
+		IsActive:         art.IsActive,
+		CreatedAt:        art.CreatedAt,
+		UpdatedAt:        art.UpdatedAt,
+		CategoryID:       art.CategoryID,
+		ShelfLifeInDays:  art.ShelfLifeInDays,
+		SafetyStock:      art.SafetyStock,
+		BatchNumberSeries:  art.BatchNumberSeries,
+		SerialNumberSeries: art.SerialNumberSeries,
+		MinOrderQty:        art.MinOrderQty,
+		DefaultLocationID:  art.DefaultLocationID,
+		ReceivingNotes:     art.ReceivingNotes,
+		ShippingNotes:      art.ShippingNotes,
+	}
+	if art.CategoryID != nil && s.CategoriesRepo != nil {
+		cat, _ := s.CategoriesRepo.GetByID(*art.CategoryID)
+		if cat != nil {
+			r.Category = &responses.EmbeddedCategory{ID: cat.ID, Name: cat.Name}
+		}
+	}
+	if art.DefaultLocationID != nil && s.LocationsRepo != nil {
+		loc, _ := s.LocationsRepo.GetLocationByID(*art.DefaultLocationID)
+		if loc != nil {
+			r.DefaultLocation = &responses.EmbeddedLocation{ID: loc.ID, Code: loc.LocationCode}
+		}
+	}
+	return r
+}
+
 func (s *ArticlesService) CreateArticle(article *requests.Article) *responses.InternalResponse {
+	if errResp := s.validateArticleFields(article); errResp != nil {
+		return errResp
+	}
 	if errResp := s.validateRotationStrategy(article.RotationStrategy, article.TrackExpiration); errResp != nil {
 		return errResp
 	}
@@ -77,6 +151,10 @@ func (s *ArticlesService) UpdateArticle(id string, data *requests.Article) (*dat
 		}
 	}
 
+	if errResp := s.validateArticleFields(data); errResp != nil {
+		return nil, errResp, nil
+	}
+
 	if errResp := s.validateRotationStrategy(data.RotationStrategy, data.TrackExpiration); errResp != nil {
 		return nil, errResp, nil
 	}
@@ -107,6 +185,52 @@ func (s *ArticlesService) GenerateImportTemplate(language string) ([]byte, *resp
 
 func (s *ArticlesService) DeleteArticle(id string) *responses.InternalResponse {
 	return s.Repository.DeleteArticle(id)
+}
+
+// validateArticleFields validates the new M2 fields.
+func (s *ArticlesService) validateArticleFields(data *requests.Article) *responses.InternalResponse {
+	if data.ShelfLifeInDays != nil && *data.ShelfLifeInDays < 0 {
+		return &responses.InternalResponse{
+			Message:    "shelf_life_in_days debe ser >= 0",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+	if data.SafetyStock < 0 {
+		return &responses.InternalResponse{
+			Message:    "safety_stock debe ser >= 0",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+	if data.MinOrderQty < 0 {
+		return &responses.InternalResponse{
+			Message:    "min_order_qty debe ser >= 0",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+	if data.CategoryID != nil && *data.CategoryID != "" && s.CategoriesRepo != nil {
+		cat, resp := s.CategoriesRepo.GetByID(*data.CategoryID)
+		if resp != nil || cat == nil {
+			return &responses.InternalResponse{
+				Message:    fmt.Sprintf("category_id inválido: categoría no encontrada"),
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+		}
+	}
+	if data.DefaultLocationID != nil && *data.DefaultLocationID != "" && s.LocationsRepo != nil {
+		loc, resp := s.LocationsRepo.GetLocationByID(*data.DefaultLocationID)
+		if resp != nil || loc == nil {
+			return &responses.InternalResponse{
+				Message:    "default_location_id inválido: ubicación no encontrada",
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+		}
+	}
+	return nil
 }
 
 // validateRotationStrategy enforces WMS rule: FEFO requires expiration tracking.

@@ -75,6 +75,10 @@ func (m *mockReceivingTasksRepoCtrl) GenerateImportTemplate(language string) ([]
 	return []byte("template"), nil
 }
 
+func (m *mockReceivingTasksRepoCtrl) LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse {
+	return nil
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 const testJWTSecret = "test-secret"

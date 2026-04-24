@@ -12,6 +12,7 @@ import (
 type ReceivingTasksController struct {
 	Service   services.ReceivingTasksService
 	JWTSecret string
+	TenantID  string // S2 R2 — used for supplier validation context
 }
 
 func NewReceivingTasksController(service services.ReceivingTasksService, jwtSecret string) *ReceivingTasksController {
@@ -19,6 +20,12 @@ func NewReceivingTasksController(service services.ReceivingTasksService, jwtSecr
 		Service:   service,
 		JWTSecret: jwtSecret,
 	}
+}
+
+// WithTenantID sets the tenant ID (S2 R2 pattern).
+func (c *ReceivingTasksController) WithTenantID(tenantID string) *ReceivingTasksController {
+	c.TenantID = tenantID
+	return c
 }
 
 func (c *ReceivingTasksController) GetAllReceivingTasks(ctx *gin.Context) {
@@ -220,4 +227,30 @@ func (c *ReceivingTasksController) CompleteReceivingLine(ctx *gin.Context) {
 	}
 
 	tools.ResponseOK(ctx, "CompleteReceivingLine", "Línea de recepción marcada como completa con éxito", "complete_receiving_line", nil, false, "")
+}
+
+// LinkSupplier handles PATCH /receiving-tasks/:id/supplier (S2 R2 E1.7).
+func (c *ReceivingTasksController) LinkSupplier(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "LinkSupplier", "link_supplier", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+
+	var req requests.LinkSupplierRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		tools.ResponseBadRequest(ctx, "LinkSupplier", "Formato de solicitud inválido", "link_supplier")
+		return
+	}
+
+	resp := c.Service.LinkSupplier(id, req.SupplierID)
+	if resp != nil {
+		writeErrorResponse(ctx, "LinkSupplier", "link_supplier", resp)
+		return
+	}
+
+	if req.SupplierID == nil || *req.SupplierID == "" {
+		tools.ResponseOK(ctx, "LinkSupplier", "Proveedor desvinculado de la tarea", "link_supplier", nil, false, "")
+	} else {
+		tools.ResponseOK(ctx, "LinkSupplier", "Proveedor vinculado a la tarea", "link_supplier", nil, false, "")
+	}
 }

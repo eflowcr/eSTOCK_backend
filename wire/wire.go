@@ -11,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -27,6 +28,22 @@ func NewArticles(db *gorm.DB, pool *pgxpool.Pool) (ports.ArticlesRepository, *se
 		r = &repositories.ArticlesRepository{DB: db}
 	}
 	return r, services.NewArticlesService(r)
+}
+
+// NewArticlesWithDeps builds ArticlesService with optional CategoriesRepo and LocationsRepo for M2 validation.
+func NewArticlesWithDeps(db *gorm.DB, pool *pgxpool.Pool) (ports.ArticlesRepository, *services.ArticlesService) {
+	repo, svc := NewArticles(db, pool)
+	if pool != nil {
+		_, catSvc := NewCategories(pool)
+		_, locSvc := NewLocations(db, pool)
+		if catSvc != nil {
+			svc.WithCategoriesRepo(catSvc)
+		}
+		if locSvc != nil {
+			svc.WithLocationsRepo(locSvc)
+		}
+	}
+	return repo, svc
 }
 
 // NewAuditLog builds AuditLogRepository and AuditService. Requires pool (Postgres); no GORM fallback for audit.
@@ -61,14 +78,53 @@ func NewAdjustments(db *gorm.DB, pool *pgxpool.Pool) (ports.AdjustmentsRepositor
 }
 
 func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.AuthenticationRepository, *services.AuthenticationService) {
-	r := &repositories.AuthenticationRepository{DB: db, JWTSecret: config.JWTSecret}
+	r := &repositories.AuthenticationRepository{
+		DB:          db,
+		JWTSecret:   config.JWTSecret,
+		Config:      config,
+		EmailSender: EmailSenderForConfig(config),
+	}
 	return r, services.NewAuthenticationService(r, nil)
 }
 
 // NewAuthenticationWithRoles builds the auth service with roles repo so login response includes permissions.
 func NewAuthenticationWithRoles(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository) (ports.AuthenticationRepository, *services.AuthenticationService) {
-	r := &repositories.AuthenticationRepository{DB: db, JWTSecret: config.JWTSecret}
+	r := &repositories.AuthenticationRepository{
+		DB:          db,
+		JWTSecret:   config.JWTSecret,
+		Config:      config,
+		EmailSender: EmailSenderForConfig(config),
+	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
+}
+
+// NewAuthenticationWithAudit builds the auth service with roles repo and audit service.
+func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository, auditSvc *services.AuditService) (ports.AuthenticationRepository, *services.AuthenticationService) {
+	r := &repositories.AuthenticationRepository{
+		DB:           db,
+		JWTSecret:    config.JWTSecret,
+		Config:       config,
+		EmailSender:  EmailSenderForConfig(config),
+		AuditService: auditSvc,
+	}
+	return r, services.NewAuthenticationService(r, rolesRepo)
+}
+
+// EmailSenderForConfig returns the appropriate EmailSender for the current environment.
+// In production with RESEND_API_KEY set, returns ResendEmailSender. Otherwise returns LoggerEmailSender.
+func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
+	if config.Environment == "production" && config.ResendAPIKey != "" {
+		fromAddr := config.ResendFromAddress
+		if fromAddr == "" {
+			fromAddr = "noreply@estock.app"
+		}
+		return &tools.ResendEmailSender{
+			APIKey:   config.ResendAPIKey,
+			FromAddr: fromAddr,
+			AppName:  "eSTOCK",
+		}
+	}
+	return &tools.LoggerEmailSender{}
 }
 
 func NewDashboard(db *gorm.DB) (ports.DashboardRepository, *services.DashboardService) {
@@ -123,7 +179,7 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 	var articlesRepo ports.ArticlesRepository
 	if pool != nil {
 		queries := sqlc.New(pool)
-		r = repositories.NewLotsRepositorySQLC(queries)
+		r = repositories.NewLotsRepositorySQLCWithGORM(queries, db)
 		articlesRepo, _ = NewArticles(db, pool)
 	} else {
 		r = &repositories.LotsRepository{DB: db}
@@ -131,8 +187,9 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 	return r, services.NewLotsService(r, articlesRepo)
 }
 
-func NewPickingTask(db *gorm.DB) (ports.PickingTaskRepository, *services.PickingTaskService) {
-	r := &repositories.PickingTaskRepository{DB: db}
+// NewPickingTask builds PickingTaskRepository and PickingTaskService.
+func NewPickingTask(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService) (ports.PickingTaskRepository, *services.PickingTaskService) {
+	r := &repositories.PickingTaskRepository{DB: db, AuditService: auditSvc, NotificationsSvc: notifSvc}
 	return r, services.NewPickingTaskService(r)
 }
 
@@ -149,8 +206,8 @@ func NewPresentations(db *gorm.DB, pool *pgxpool.Pool) (ports.PresentationsRepos
 	return r, services.NewPresentationsService(r)
 }
 
-func NewReceivingTasks(db *gorm.DB) (ports.ReceivingTasksRepository, *services.ReceivingTasksService) {
-	r := &repositories.ReceivingTasksRepository{DB: db}
+func NewReceivingTasks(db *gorm.DB, notifSvc *services.NotificationsService) (ports.ReceivingTasksRepository, *services.ReceivingTasksService) {
+	r := &repositories.ReceivingTasksRepository{DB: db, NotificationsSvc: notifSvc}
 	return r, services.NewReceivingTasksService(r)
 }
 
@@ -171,9 +228,15 @@ func NewStockAlerts(db *gorm.DB, redisClient *redis.Client) (ports.StockAlertsRe
 	return r, services.NewStockAlertsService(r)
 }
 
-func NewUsers(db *gorm.DB, config configuration.Config) (ports.UsersRepository, *services.UserService) {
-	r := &repositories.UsersRepository{DB: db, JWTSecret: config.JWTSecret}
+func NewUsers(db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService) (ports.UsersRepository, *services.UserService) {
+	r := &repositories.UsersRepository{DB: db, JWTSecret: config.JWTSecret, NotificationsSvc: notifSvc}
 	return r, services.NewUserService(r)
+}
+
+// NewNotifications builds NotificationsRepository and NotificationsService.
+func NewNotifications(db *gorm.DB, emailSender tools.EmailSender, tenantID string) (ports.NotificationsRepository, *services.NotificationsService) {
+	r := &repositories.NotificationsRepository{DB: db}
+	return r, services.NewNotificationsService(r, emailSender, tenantID)
 }
 
 // NewLocationTypes builds LocationTypesRepository and LocationTypesService. Requires pool (Postgres).
@@ -233,4 +296,34 @@ func NewUserPreferences(pool *pgxpool.Pool) ports.UserPreferencesRepository {
 	}
 	queries := sqlc.New(pool)
 	return repositories.NewUserPreferencesRepositorySQLC(queries)
+}
+
+// NewClients builds ClientsRepository and ClientsService. Requires pool (Postgres).
+func NewClients(pool *pgxpool.Pool) (ports.ClientsRepository, *services.ClientsService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewClientsRepositorySQLC(queries, pool)
+	return r, services.NewClientsService(r)
+}
+
+// NewCategories builds CategoriesRepository and CategoriesService. Requires pool (Postgres).
+func NewCategories(pool *pgxpool.Pool) (ports.CategoriesRepository, *services.CategoriesService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewCategoriesRepositorySQLC(queries, pool)
+	return r, services.NewCategoriesService(r)
+}
+
+// NewStockSettings builds StockSettingsRepository and StockSettingsService. Requires pool (Postgres).
+func NewStockSettings(pool *pgxpool.Pool) (ports.StockSettingsRepository, *services.StockSettingsService) {
+	if pool == nil {
+		return nil, nil
+	}
+	queries := sqlc.New(pool)
+	r := repositories.NewStockSettingsRepositorySQLC(queries)
+	return r, services.NewStockSettingsService(r)
 }

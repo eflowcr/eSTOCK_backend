@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, redisClient *goredis.Client) {
+func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, redisClient *goredis.Client, notifSvc *services.NotificationsService) {
 	RegisterHealthRoutes(r, db)
 
 	api := r.Group("/api")
@@ -24,17 +24,17 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	if pool != nil {
 		_, auditSvc = wire.NewAuditLog(pool)
 	}
-	RegisterAuthenticationRoutes(api, db, config, rolesRepo)
+	RegisterAuthenticationRoutes(api, db, config, rolesRepo, auditSvc)
 	RegisterEncryptionRoutes(api, config)
-	RegisterUserRoutes(api, db, config)
+	RegisterUserRoutes(api, db, config, notifSvc)
 	RegisterPreferencesRoutes(api, pool, config)
-	RegisterDashboardRoutes(api, db, config)
-	RegisterInventoryRoutes(api, db, pool, config)
-	RegisterSerialRoutes(api, db, pool, config)
-	RegisterReceivingTasksRoutes(api, db, config)
-	RegisterPickingTasksRoutes(api, db, config)
-	RegisterAdjustmentsRoutes(api, db, pool, config, auditSvc)
-	RegisterStockAlertsRoutes(api, db, config, redisClient)
+	RegisterDashboardRoutes(api, db, config, rolesRepo)
+	RegisterInventoryRoutes(api, db, pool, config, rolesRepo)
+	RegisterSerialRoutes(api, db, pool, config, rolesRepo)
+	RegisterReceivingTasksRoutes(api, db, config, notifSvc, pool, rolesRepo)
+	RegisterPickingTasksRoutes(api, db, config, auditSvc, notifSvc, pool, rolesRepo)
+	RegisterAdjustmentsRoutes(api, db, pool, config, auditSvc, rolesRepo)
+	RegisterStockAlertsRoutes(api, db, config, redisClient, rolesRepo)
 	RegisterInventoryMovementsRoutes(api, db, config)
 	RegisterGamificationRoutes(api, db, config)
 	RegisterPresentationsRoutes(api, db, pool, config)
@@ -48,6 +48,11 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterStockTransfersRoutes(api, db, pool, config, rolesRepo, auditSvc)
 	RegisterLotsRoutes(api, db, pool, config, rolesRepo)
 	RegisterRolesRoutes(api, config, rolesRepo)
+	RegisterAdminCronRoutes(api, db, config, rolesRepo)
+	RegisterClientsRoutes(api, pool, config, rolesRepo)
+	RegisterCategoriesRoutes(api, pool, config, rolesRepo)
+	RegisterStockSettingsRoutes(api, pool, config, rolesRepo)
+	RegisterNotificationsRoutes(api, db, config, notifSvc)
 
 	RegisterDocsRoutes(r)
 }

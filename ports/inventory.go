@@ -8,7 +8,7 @@ import (
 
 // InventoryRepository defines persistence operations for inventory.
 type InventoryRepository interface {
-	GetPickSuggestionsBySKU(sku string) ([]dto.PickSuggestion, *responses.InternalResponse)
+	GetPickSuggestionsBySKU(sku string, qty float64) (*dto.PickSuggestionResponse, *responses.InternalResponse)
 	GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse)
 	GetInventoryBySkuAndLocation(sku, location string) (*dto.EnhancedInventory, *responses.InternalResponse)
 	CreateInventory(userId string, item *requests.CreateInventory) *responses.InternalResponse
@@ -26,4 +26,5 @@ type InventoryRepository interface {
 	CreateInventorySerial(id string, input *requests.CreateInventorySerial) *responses.InternalResponse
 	DeleteInventorySerial(id string) *responses.InternalResponse
 	GenerateImportTemplate(language string) ([]byte, error)
+	GetValuation(groupBy string) (*responses.InventoryValuationResponse, *responses.InternalResponse)
 }

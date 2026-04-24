@@ -15,17 +15,20 @@ import (
 
 var _ ports.AdjustmentsRepository = (*repositories.AdjustmentsRepository)(nil)
 
-func RegisterAdjustmentsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, auditSvc *services.AuditService) {
+func RegisterAdjustmentsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, auditSvc *services.AuditService, rolesRepo ports.RolesRepository) {
 	_, adjustmentsService := wire.NewAdjustments(db, pool)
 	adjustmentsController := controllers.NewAdjustmentsController(*adjustmentsService, config.JWTSecret, auditSvc)
 
 	route := router.Group("/adjustments")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
-		route.GET("/", adjustmentsController.GetAllAdjustments)
-		route.GET("/:id", adjustmentsController.GetAdjustmentByID)
-		route.GET("/:id/details", adjustmentsController.GetAdjustmentDetails)
-		route.POST("/", adjustmentsController.CreateAdjustment)
-		route.GET("/export", adjustmentsController.ExportAdjustmentsToExcel)
+		read := tools.RequirePermission(rolesRepo, "adjustments", "read")
+		create := tools.RequirePermission(rolesRepo, "adjustments", "create")
+
+		route.GET("/", read, adjustmentsController.GetAllAdjustments)
+		route.GET("/:id", read, adjustmentsController.GetAdjustmentByID)
+		route.GET("/:id/details", read, adjustmentsController.GetAdjustmentDetails)
+		route.POST("/", create, adjustmentsController.CreateAdjustment)
+		route.GET("/export", read, adjustmentsController.ExportAdjustmentsToExcel)
 	}
 }

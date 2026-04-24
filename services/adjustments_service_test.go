@@ -21,6 +21,8 @@ type mockAdjustmentsRepo struct {
 	createErr    *responses.InternalResponse
 	exportBytes  []byte
 	exportErr    *responses.InternalResponse
+	inventory    *database.Inventory // returned by GetInventoryForAdjustment
+	invErr       *responses.InternalResponse
 }
 
 func (m *mockAdjustmentsRepo) GetAllAdjustments() ([]database.Adjustment, *responses.InternalResponse) {
@@ -73,6 +75,16 @@ func (m *mockAdjustmentsRepo) CreateAdjustment(userId string, adjustment request
 
 func (m *mockAdjustmentsRepo) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
 	return m.exportBytes, m.exportErr
+}
+
+func (m *mockAdjustmentsRepo) GetInventoryForAdjustment(sku, location string) (*database.Inventory, *responses.InternalResponse) {
+	if m.invErr != nil {
+		return nil, m.invErr
+	}
+	if m.inventory != nil {
+		return m.inventory, nil
+	}
+	return nil, &responses.InternalResponse{Message: "inventory not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
 // mockReasonCodesRepo is an in-memory fake for AdjustmentReasonCodesRepository used by AdjustmentsService.
@@ -312,3 +324,85 @@ func TestAdjustmentsService_ExportAdjustmentsToExcel_Error(t *testing.T) {
 	require.NotNil(t, errResp)
 	assert.Nil(t, data)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D1 — adjustment_type with reserved_qty validation (deuda S1 C4)
+// Setup: inventory.qty=100, reserved_qty=30, available=70
+// ─────────────────────────────────────────────────────────────────────────────
+
+func inventoryWith(qty, reserved float64) *database.Inventory {
+	return &database.Inventory{ID: "inv-1", SKU: "SKU-C4", Location: "LOC-C4", Quantity: qty, ReservedQty: reserved}
+}
+
+// Test 1: decrease qty=80 → rejected (available=70, would leave 20 < reserved=30)
+func TestAdjustmentsService_D1_Decrease_ViolatesReserved_Returns400(t *testing.T) {
+	repo := &mockAdjustmentsRepo{inventory: inventoryWith(100, 30)}
+	svc := NewAdjustmentsService(repo, nil)
+	req := requests.CreateAdjustment{
+		SKU:                "SKU-C4",
+		Location:           "LOC-C4",
+		AdjustmentQuantity: 80,
+		Reason:             "RECOUNT",
+		AdjustmentType:     "decrease",
+	}
+	result, errResp := svc.CreateAdjustment("user-1", req)
+	require.NotNil(t, errResp, "should be rejected when decrease violates reserved_qty")
+	assert.Nil(t, result)
+	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
+	assert.True(t, errResp.Handled)
+}
+
+// Test 2: decrease qty=60 → OK (100−60=40 >= reserved=30, available baja a 10)
+func TestAdjustmentsService_D1_Decrease_RespectsAvailable_OK(t *testing.T) {
+	repo := &mockAdjustmentsRepo{inventory: inventoryWith(100, 30)}
+	svc := NewAdjustmentsService(repo, nil)
+	req := requests.CreateAdjustment{
+		SKU:                "SKU-C4",
+		Location:           "LOC-C4",
+		AdjustmentQuantity: 60,
+		Reason:             "RECOUNT",
+		AdjustmentType:     "decrease",
+	}
+	result, errResp := svc.CreateAdjustment("user-1", req)
+	require.Nil(t, errResp)
+	require.NotNil(t, result)
+	assert.Equal(t, int(-60), result.AdjustmentQty)
+}
+
+// Test 3: count_reconcile target=50 → OK (always allowed regardless of reserves)
+// Notification is fire-and-forget; test verifies the service doesn't block or error.
+func TestAdjustmentsService_D1_CountReconcile_AlwaysOK(t *testing.T) {
+	repo := &mockAdjustmentsRepo{inventory: inventoryWith(100, 30)}
+	svc := NewAdjustmentsService(repo, nil) // no notifSvc — still must succeed
+
+	req := requests.CreateAdjustment{
+		SKU:                "SKU-C4",
+		Location:           "LOC-C4",
+		AdjustmentQuantity: 50, // target = 50, delta = 50−100 = −50
+		Reason:             "CYCLE_COUNT",
+		AdjustmentType:     "count_reconcile",
+	}
+	result, errResp := svc.CreateAdjustment("user-1", req)
+	require.Nil(t, errResp, "count_reconcile must always succeed regardless of reserved_qty")
+	require.NotNil(t, result)
+	// Expected delta: 50 - 100 = -50
+	assert.Equal(t, int(-50), result.AdjustmentQty)
+}
+
+// Test 4: increase qty=20 → OK (legacy path, no reserved check)
+func TestAdjustmentsService_D1_Increase_OK(t *testing.T) {
+	repo := &mockAdjustmentsRepo{}
+	svc := NewAdjustmentsService(repo, nil)
+	req := requests.CreateAdjustment{
+		SKU:                "SKU-C4",
+		Location:           "LOC-C4",
+		AdjustmentQuantity: 20,
+		Reason:             "RECOUNT",
+		AdjustmentType:     "increase",
+	}
+	result, errResp := svc.CreateAdjustment("user-1", req)
+	require.Nil(t, errResp)
+	require.NotNil(t, result)
+	assert.Equal(t, 20, result.AdjustmentQty)
+}
+

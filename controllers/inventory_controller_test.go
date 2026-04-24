@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/dto"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
@@ -34,7 +35,7 @@ type mockInventoryRepoCtrl struct {
 	deleteSerErr *responses.InternalResponse
 	trend        *dto.ConsumptionTrend
 	trendErr     *responses.InternalResponse
-	suggestions  []dto.PickSuggestion
+	pickResp     *dto.PickSuggestionResponse
 	suggestErr   *responses.InternalResponse
 }
 
@@ -112,12 +113,16 @@ func (m *mockInventoryRepoCtrl) DeleteInventorySerial(id string) *responses.Inte
 	return m.deleteSerErr
 }
 
-func (m *mockInventoryRepoCtrl) GetPickSuggestionsBySKU(sku string) ([]dto.PickSuggestion, *responses.InternalResponse) {
-	return m.suggestions, m.suggestErr
+func (m *mockInventoryRepoCtrl) GetPickSuggestionsBySKU(sku string, qty float64) (*dto.PickSuggestionResponse, *responses.InternalResponse) {
+	return m.pickResp, m.suggestErr
 }
 
 func (m *mockInventoryRepoCtrl) GenerateImportTemplate(language string) ([]byte, error) {
 	return []byte("tpl"), nil
+}
+
+func (m *mockInventoryRepoCtrl) GetValuation(_ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+	return nil, nil
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -423,11 +428,17 @@ func TestInventoryController_DeleteInventorySerial_MissingParam(t *testing.T) {
 }
 
 func TestInventoryController_GetPickSuggestions_Success(t *testing.T) {
+	lotNum := "L-001"
 	repo := &mockInventoryRepoCtrl{
-		suggestions: []dto.PickSuggestion{{Location: "A-01", LotNumber: "L-001", Quantity: 3}},
+		pickResp: &dto.PickSuggestionResponse{
+			Allocations: []database.LocationAllocation{{Location: "A-01", Quantity: 3, LotNumber: &lotNum}},
+			TotalFound:  3,
+			Requested:   3,
+			Sufficient:  true,
+		},
 	}
 	ctrl := newInventoryController(repo)
-	w := performRequest(ctrl.GetPickSuggestions, "GET", "/inventory/SKU1/pick", nil,
+	w := performRequest(ctrl.GetPickSuggestions, "GET", "/inventory/SKU1/pick?qty=3", nil,
 		gin.Params{{Key: "sku", Value: "SKU1"}})
 	assert.Equal(t, http.StatusOK, w.Code)
 }

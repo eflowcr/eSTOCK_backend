@@ -215,3 +215,139 @@ func TestArticlesService_DeleteArticle_Error(t *testing.T) {
 	require.NotNil(t, errResp)
 	assert.False(t, errResp.Handled)
 }
+
+// ─── A1: Extended fields + validation ─────────────────────────────────────────
+
+type mockCategoryRepo struct {
+	categories map[string]*database.Category
+}
+
+func (m *mockCategoryRepo) GetByID(id string) (*database.Category, *responses.InternalResponse) {
+	if cat, ok := m.categories[id]; ok {
+		return cat, nil
+	}
+	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
+}
+
+type mockLocationRepo struct {
+	locations map[string]*database.Location
+}
+
+func (m *mockLocationRepo) GetLocationByID(id string) (*database.Location, *responses.InternalResponse) {
+	if loc, ok := m.locations[id]; ok {
+		return loc, nil
+	}
+	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
+}
+
+func TestArticlesService_CreateArticle_ExtendedFields(t *testing.T) {
+	repo := &mockArticlesRepo{articles: []database.Article{}}
+	svc := NewArticlesService(repo)
+	shelfLife := 30
+	safetyStock := 5.0
+	minOrderQty := 10.0
+	catID := "cat-1"
+	locID := "loc-1"
+	req := &requests.Article{
+		SKU:               "EXT-001",
+		Name:              "Extended Article",
+		Presentation:      "unit",
+		ShelfLifeInDays:   &shelfLife,
+		SafetyStock:       safetyStock,
+		MinOrderQty:       minOrderQty,
+		CategoryID:        &catID,
+		DefaultLocationID: &locID,
+	}
+	// No CategoriesRepo/LocationsRepo → validation skipped
+	errResp := svc.CreateArticle(req)
+	require.Nil(t, errResp)
+}
+
+func TestArticlesService_CreateArticle_InvalidCategoryID(t *testing.T) {
+	repo := &mockArticlesRepo{articles: []database.Article{}}
+	svc := NewArticlesService(repo).WithCategoriesRepo(&mockCategoryRepo{
+		categories: map[string]*database.Category{},
+	})
+	catID := "bad-cat"
+	req := &requests.Article{
+		SKU:        "CAT-FAIL",
+		Name:       "Fail",
+		Presentation: "unit",
+		CategoryID: &catID,
+	}
+	errResp := svc.CreateArticle(req)
+	require.NotNil(t, errResp)
+	assert.True(t, errResp.Handled)
+	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
+}
+
+func TestArticlesService_CreateArticle_ValidCategoryID(t *testing.T) {
+	repo := &mockArticlesRepo{articles: []database.Article{}}
+	svc := NewArticlesService(repo).WithCategoriesRepo(&mockCategoryRepo{
+		categories: map[string]*database.Category{
+			"cat-1": {ID: "cat-1", Name: "Electronics"},
+		},
+	})
+	catID := "cat-1"
+	req := &requests.Article{
+		SKU:        "CAT-OK",
+		Name:       "Valid",
+		Presentation: "unit",
+		CategoryID: &catID,
+	}
+	errResp := svc.CreateArticle(req)
+	require.Nil(t, errResp)
+}
+
+func TestArticlesService_CreateArticle_InvalidDefaultLocationID(t *testing.T) {
+	repo := &mockArticlesRepo{articles: []database.Article{}}
+	svc := NewArticlesService(repo).WithLocationsRepo(&mockLocationRepo{
+		locations: map[string]*database.Location{},
+	})
+	locID := "bad-loc"
+	req := &requests.Article{
+		SKU:               "LOC-FAIL",
+		Name:              "Fail",
+		Presentation:      "unit",
+		DefaultLocationID: &locID,
+	}
+	errResp := svc.CreateArticle(req)
+	require.NotNil(t, errResp)
+	assert.True(t, errResp.Handled)
+	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
+}
+
+func TestArticlesService_CreateArticle_NegativeSafetyStock(t *testing.T) {
+	repo := &mockArticlesRepo{articles: []database.Article{}}
+	svc := NewArticlesService(repo)
+	req := &requests.Article{
+		SKU:         "SS-FAIL",
+		Name:        "Fail",
+		Presentation: "unit",
+		SafetyStock: -1.0,
+	}
+	errResp := svc.CreateArticle(req)
+	require.NotNil(t, errResp)
+	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
+}
+
+func TestArticlesService_EnrichArticle_WithCategory(t *testing.T) {
+	repo := &mockArticlesRepo{
+		byID: map[string]*database.Article{
+			"1": {ID: "1", SKU: "E-001", Name: "Enriched", Presentation: "unit",
+				CategoryID: strPtr("cat-1")},
+		},
+	}
+	svc := NewArticlesService(repo).WithCategoriesRepo(&mockCategoryRepo{
+		categories: map[string]*database.Category{
+			"cat-1": {ID: "cat-1", Name: "Electronics"},
+		},
+	})
+	art, _ := svc.GetArticleByID("1")
+	enriched := svc.EnrichArticle(art)
+	require.NotNil(t, enriched)
+	require.NotNil(t, enriched.Category)
+	assert.Equal(t, "Electronics", enriched.Category.Name)
+}
+
+
