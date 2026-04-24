@@ -25,7 +25,10 @@ type NotificationsRepository interface {
 	MarkAllRead(userID, tenantID string) *responses.InternalResponse
 	CountUnread(userID, tenantID string) (int64, *responses.InternalResponse)
 	GetUserEmail(userID string) (string, *responses.InternalResponse)
-	GetPreferences(userID string) (map[string]database.NotificationPreference, *responses.InternalResponse)
+	// GetPreferences returns a userID+tenantID-scoped map of stored preferences.
+	// tenantID scopes results to the current tenant after migration 000021 introduced a 3-column PK.
+	GetPreferences(userID, tenantID string) (map[string]database.NotificationPreference, *responses.InternalResponse)
 	UpsertPreference(pref *database.NotificationPreference) *responses.InternalResponse
-	ListPreferences(userID string) ([]database.NotificationPreference, *responses.InternalResponse)
+	// ListPreferences returns all preferences for userID within tenantID.
+	ListPreferences(userID, tenantID string) ([]database.NotificationPreference, *responses.InternalResponse)
 }
