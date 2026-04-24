@@ -16,6 +16,12 @@ import (
 
 // ─── helper ─────────────────────────────────────────────────────────────────
 
+// TODO(S3/MA3): Paths 3+4 (integration tests) are skipped in CI (-short mode) because they
+// require testcontainers. Two improvements deferred to S3:
+//  1. Run integration tests in CI with docker-in-docker testcontainers setup, OR add an
+//     `-integration` build tag so they can be opted in selectively.
+//  2. Path 4 (DevFreshCreate) should assert that the stored password_hash round-trips
+//     correctly through tools.ComparePasswords — currently only asserts user.Email exists.
 func setupSeederTestDB(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()
 	if testing.Short() {

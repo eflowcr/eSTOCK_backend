@@ -115,7 +115,7 @@ func (c *NotificationsController) GetPreferences(ctx *gin.Context) {
 	userID, _ := ctx.Get(tools.ContextKeyUserID)
 	uid, _ := userID.(string)
 
-	prefs, resp := c.repo.ListPreferences(uid)
+	prefs, resp := c.repo.ListPreferences(uid, c.tenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "GetNotificationPreferences", "get_notification_preferences", resp)
 		return

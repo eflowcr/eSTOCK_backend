@@ -45,9 +45,57 @@ func (m *mockCategoriesRepo) ListByTenant(_ string) ([]database.Category, *respo
 }
 
 // ListByTenantFiltered satisfies the updated ports.CategoriesRepository interface (M8).
-// The mock ignores filter params and returns all categories.
-func (m *mockCategoriesRepo) ListByTenantFiltered(_ string, _ *bool, _ *string, _ *int32, _ *int32) ([]database.Category, *responses.InternalResponse) {
-	return m.categories, nil
+// The mock applies isActive and search filters in-memory to support C1 wiring tests.
+func (m *mockCategoriesRepo) ListByTenantFiltered(_ string, isActive *bool, search *string, limit *int32, offset *int32) ([]database.Category, *responses.InternalResponse) {
+	out := make([]database.Category, 0, len(m.categories))
+	for _, c := range m.categories {
+		if isActive != nil && c.IsActive != *isActive {
+			continue
+		}
+		if search != nil && *search != "" {
+			if !containsIgnoreCaseCat(c.Name, *search) {
+				continue
+			}
+		}
+		out = append(out, c)
+	}
+	// apply offset/limit
+	if offset != nil && int(*offset) < len(out) {
+		out = out[int(*offset):]
+	} else if offset != nil {
+		out = []database.Category{}
+	}
+	if limit != nil && int(*limit) < len(out) {
+		out = out[:int(*limit)]
+	}
+	return out, nil
+}
+
+func containsIgnoreCaseCat(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr ||
+		func() bool {
+			sl, subl := []rune(s), []rune(substr)
+			for i := 0; i <= len(sl)-len(subl); i++ {
+				match := true
+				for j := range subl {
+					sc, subc := sl[i+j], subl[j]
+					if sc >= 'A' && sc <= 'Z' {
+						sc += 32
+					}
+					if subc >= 'A' && subc <= 'Z' {
+						subc += 32
+					}
+					if sc != subc {
+						match = false
+						break
+					}
+				}
+				if match {
+					return true
+				}
+			}
+			return false
+		}())
 }
 
 func (m *mockCategoriesRepo) Update(id string, data *requests.UpdateCategoryRequest) (*database.Category, *responses.InternalResponse) {
@@ -216,4 +264,54 @@ func TestCategoriesController_Update_CycleDetected(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// TestCategoriesController_List_FilterParams verifies that C1 fix correctly wires
+// is_active and search query params through to the SQL-filtered repository path (M8).
+func TestCategoriesController_List_FilterParams(t *testing.T) {
+	repo := &mockCategoriesRepo{
+		categories: []database.Category{
+			{ID: "c1", Name: "Electrónicos", IsActive: true},
+			{ID: "c2", Name: "Ropa", IsActive: false},
+			{ID: "c3", Name: "Electrodomésticos", IsActive: true},
+		},
+	}
+	ctrl := newCategoriesController(repo)
+	r := newCategoriesRouter(ctrl)
+
+	t.Run("is_active=true returns only active", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/categories?is_active=true", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		data := resp["data"].([]interface{})
+		assert.Len(t, data, 2) // c1 + c3
+	})
+
+	t.Run("search filters by name substring", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/categories?search=Electr", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		data := resp["data"].([]interface{})
+		assert.Len(t, data, 2) // c1 + c3
+	})
+
+	t.Run("no params returns all categories", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/categories", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		data := resp["data"].([]interface{})
+		assert.Len(t, data, 3)
+	})
 }

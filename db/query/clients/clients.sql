@@ -28,6 +28,8 @@ FROM clients
 WHERE tenant_id = $1
   AND ($2::text IS NULL OR type = $2)
   AND ($3::boolean IS NULL OR is_active = $3)
+  -- TODO(S3/MA4): escape ILIKE wildcards with replace($4,'%','\%') ESCAPE '\' to prevent
+  -- DoS via catastrophic backtracking on strings containing many '%' or '_' characters.
   AND ($4::text IS NULL OR (name ILIKE '%' || $4 || '%' OR code ILIKE '%' || $4 || '%'))
 ORDER BY name ASC
 LIMIT COALESCE($5::int, 100)

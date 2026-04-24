@@ -119,9 +119,10 @@ func (r *NotificationsRepository) GetUserEmail(userID string) (string, *response
 	return email, nil
 }
 
-func (r *NotificationsRepository) GetPreferences(userID string) (map[string]database.NotificationPreference, *responses.InternalResponse) {
+func (r *NotificationsRepository) GetPreferences(userID, tenantID string) (map[string]database.NotificationPreference, *responses.InternalResponse) {
 	var prefs []database.NotificationPreference
-	if err := r.DB.Where("user_id = ?", userID).Find(&prefs).Error; err != nil {
+	// CA fix: scope query to tenant after migration 000021 introduced 3-column PK (user_id, event_type, tenant_id).
+	if err := r.DB.Where("user_id = ? AND tenant_id = ?", userID, tenantID).Find(&prefs).Error; err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error obteniendo preferencias", Handled: false}
 	}
 	result := make(map[string]database.NotificationPreference, len(prefs))
@@ -136,16 +137,17 @@ func (r *NotificationsRepository) UpsertPreference(pref *database.NotificationPr
 	if err := r.DB.Clauses(clause.OnConflict{
 		// M7: PK now includes tenant_id — ON CONFLICT must match the full composite PK.
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "event_type"}, {Name: "tenant_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"tenant_id", "in_app", "email", "push", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"in_app", "email", "push", "updated_at"}),
 	}).Create(pref).Error; err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error guardando preferencia", Handled: false}
 	}
 	return nil
 }
 
-func (r *NotificationsRepository) ListPreferences(userID string) ([]database.NotificationPreference, *responses.InternalResponse) {
+func (r *NotificationsRepository) ListPreferences(userID, tenantID string) ([]database.NotificationPreference, *responses.InternalResponse) {
 	var prefs []database.NotificationPreference
-	if err := r.DB.Where("user_id = ?", userID).Order("event_type ASC").Find(&prefs).Error; err != nil {
+	// CA fix: scope query to tenant after migration 000021 introduced 3-column PK (user_id, event_type, tenant_id).
+	if err := r.DB.Where("user_id = ? AND tenant_id = ?", userID, tenantID).Order("event_type ASC").Find(&prefs).Error; err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error listando preferencias", Handled: false}
 	}
 	if prefs == nil {

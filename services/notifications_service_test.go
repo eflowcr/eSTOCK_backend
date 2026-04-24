@@ -88,7 +88,7 @@ func (m *mockNotifRepo) GetUserEmail(userID string) (string, *responses.Internal
 	return email, nil
 }
 
-func (m *mockNotifRepo) GetPreferences(userID string) (map[string]database.NotificationPreference, *responses.InternalResponse) {
+func (m *mockNotifRepo) GetPreferences(userID, tenantID string) (map[string]database.NotificationPreference, *responses.InternalResponse) {
 	result := make(map[string]database.NotificationPreference)
 	for k, v := range m.preferences {
 		result[k] = v
@@ -101,7 +101,7 @@ func (m *mockNotifRepo) UpsertPreference(pref *database.NotificationPreference) 
 	return nil
 }
 
-func (m *mockNotifRepo) ListPreferences(userID string) ([]database.NotificationPreference, *responses.InternalResponse) {
+func (m *mockNotifRepo) ListPreferences(userID, tenantID string) ([]database.NotificationPreference, *responses.InternalResponse) {
 	var out []database.NotificationPreference
 	for _, p := range m.preferences {
 		if p.UserID == userID {

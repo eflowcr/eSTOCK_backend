@@ -81,7 +81,7 @@ func (s *stubNotifRepo) GetUserEmail(userID string) (string, *responses.Internal
 	return "", nil
 }
 
-func (s *stubNotifRepo) GetPreferences(userID string) (map[string]database.NotificationPreference, *responses.InternalResponse) {
+func (s *stubNotifRepo) GetPreferences(userID, tenantID string) (map[string]database.NotificationPreference, *responses.InternalResponse) {
 	return map[string]database.NotificationPreference{}, nil
 }
 
@@ -90,7 +90,7 @@ func (s *stubNotifRepo) UpsertPreference(pref *database.NotificationPreference) 
 	return nil
 }
 
-func (s *stubNotifRepo) ListPreferences(userID string) ([]database.NotificationPreference, *responses.InternalResponse) {
+func (s *stubNotifRepo) ListPreferences(userID, tenantID string) ([]database.NotificationPreference, *responses.InternalResponse) {
 	return s.prefs, nil
 }
 

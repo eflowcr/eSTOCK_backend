@@ -17,6 +17,8 @@ SELECT id, tenant_id, name, parent_id, is_active, created_at, updated_at
 FROM categories
 WHERE tenant_id = $1
   AND ($2::boolean IS NULL OR is_active = $2)
+  -- TODO(S3/MA4): escape ILIKE wildcards with replace($3,'%','\%') ESCAPE '\' to prevent
+  -- DoS via catastrophic backtracking on strings containing many '%' or '_' characters.
   AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%')
 ORDER BY name ASC
 LIMIT COALESCE($4::int, 200)
