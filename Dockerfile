@@ -6,12 +6,16 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o main ./cmd
 
-# Run stage — minimal image, no secrets baked in
+# Run stage — minimal image, no secrets baked in, runs as non-root
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates curl
+RUN apk add --no-cache ca-certificates curl && \
+    addgroup -S -g 1001 appgroup && \
+    adduser -S -u 1001 -G appgroup appuser
 WORKDIR /app
-COPY --from=builder /app/main .
-COPY db/migrations ./db/migrations
+COPY --from=builder --chown=appuser:appgroup /app/main .
+COPY --chown=appuser:appgroup db/migrations ./db/migrations
+
+USER appuser
 
 EXPOSE 8080
 
