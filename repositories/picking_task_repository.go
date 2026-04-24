@@ -1127,8 +1127,9 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 				} else {
 					dnTx.Commit()
 					// DN2 — async PDF generation (fire-and-forget via injected generator).
+					// GeneratePDFAsync already spawns its own goroutine internally — do NOT wrap in another go.
 					if r.DNPDFGen != nil {
-						go r.DNPDFGen.GeneratePDFAsync(dnID, taskTenantID)
+						r.DNPDFGen.GeneratePDFAsync(dnID, taskTenantID)
 					}
 				}
 			}
@@ -1138,8 +1139,10 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 	// BO1 — generate backorders for partial SO (only when NOT sourced from backorder — max depth=1).
 	if newSOStatus == "partial" && sourceBackorderID == nil && len(soItems) > 0 {
 		// Compute remaining per SKU (expected - totalPicked including this picking).
-		// soPickedPerSKU contains the qty picked THIS time; we need to compare against expected.
-		// But UpdatePickedQty already updated picked_qty in DB. Reload from soItems as baseline + this batch.
+		// soItems was loaded INSIDE the picking transaction (before commit), so soItem.PickedQty
+		// is the pre-this-picking value from DB. soPickedPerSKU holds the qty picked THIS batch.
+		// totalPicked = pre-pick DB value + this batch qty = correct cumulative total.
+		// NOTE: UpdatePickedQty runs AFTER the picking tx commits, so it does NOT affect soItem.PickedQty here.
 		boParams := make([]BackorderCreationParam, 0)
 		for _, soItem := range soItems {
 			totalPicked := soItem.PickedQty + soPickedPerSKU[soItem.ArticleSKU]
