@@ -34,6 +34,10 @@ func (m *mockPickingTaskRepo) GetAllPickingTasks() ([]responses.PickingTaskView,
 	return m.allTasks, m.allTasksErr
 }
 
+func (m *mockPickingTaskRepo) GetAllForTenant(tenantID string) ([]responses.PickingTaskView, *responses.InternalResponse) {
+	return m.allTasks, m.allTasksErr
+}
+
 func (m *mockPickingTaskRepo) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	if m.byIDErr != nil {
 		return nil, m.byIDErr
@@ -50,7 +54,7 @@ func (m *mockPickingTaskRepo) GetPickingTaskByID(id string) (*database.PickingTa
 	}
 }
 
-func (m *mockPickingTaskRepo) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
+func (m *mockPickingTaskRepo) CreatePickingTask(userId string, tenantID string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
 	return m.createErr
 }
 
@@ -62,11 +66,11 @@ func (m *mockPickingTaskRepo) UpdatePickingTask(_ context.Context, id string, da
 	return m.updateErr
 }
 
-func (m *mockPickingTaskRepo) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (m *mockPickingTaskRepo) ImportPickingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	return m.importErr
 }
 
-func (m *mockPickingTaskRepo) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockPickingTaskRepo) ExportPickingTasksToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportBytes, m.exportErr
 }
 
@@ -149,7 +153,7 @@ func TestPickingTaskService_CreatePickingTask_Success(t *testing.T) {
 		OutboundNumber: "ORD-001",
 		Priority:       "normal",
 	}
-	errResp := svc.CreatePickingTask("user-1", req)
+	errResp := svc.CreatePickingTask("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 }
 
@@ -163,7 +167,7 @@ func TestPickingTaskService_CreatePickingTask_Error(t *testing.T) {
 	}
 	svc := NewPickingTaskService(repo)
 	req := &requests.CreatePickingTaskRequest{OutboundNumber: "ORD-DUP"}
-	errResp := svc.CreatePickingTask("user-1", req)
+	errResp := svc.CreatePickingTask("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusConflict, errResp.StatusCode)
 }
@@ -213,7 +217,7 @@ func TestPickingTaskService_UpdatePickingTask_Error(t *testing.T) {
 func TestPickingTaskService_ImportPickingTaskFromExcel_Success(t *testing.T) {
 	repo := &mockPickingTaskRepo{}
 	svc := NewPickingTaskService(repo)
-	errResp := svc.ImportPickingTaskFromExcel("user-1", []byte("data"))
+	errResp := svc.ImportPickingTaskFromExcel("user-1", "00000000-0000-0000-0000-000000000001", []byte("data"))
 	require.Nil(t, errResp)
 }
 
@@ -226,7 +230,7 @@ func TestPickingTaskService_ImportPickingTaskFromExcel_Error(t *testing.T) {
 		},
 	}
 	svc := NewPickingTaskService(repo)
-	errResp := svc.ImportPickingTaskFromExcel("user-1", []byte("bad"))
+	errResp := svc.ImportPickingTaskFromExcel("user-1", "00000000-0000-0000-0000-000000000001", []byte("bad"))
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
 }
@@ -234,7 +238,7 @@ func TestPickingTaskService_ImportPickingTaskFromExcel_Error(t *testing.T) {
 func TestPickingTaskService_ExportPickingTasksToExcel_Success(t *testing.T) {
 	repo := &mockPickingTaskRepo{exportBytes: []byte("excel-data")}
 	svc := NewPickingTaskService(repo)
-	data, errResp := svc.ExportPickingTasksToExcel()
+	data, errResp := svc.ExportPickingTasksToExcel("tenant-1")
 	require.Nil(t, errResp)
 	assert.Equal(t, []byte("excel-data"), data)
 }
@@ -248,7 +252,7 @@ func TestPickingTaskService_ExportPickingTasksToExcel_Error(t *testing.T) {
 		},
 	}
 	svc := NewPickingTaskService(repo)
-	data, errResp := svc.ExportPickingTasksToExcel()
+	data, errResp := svc.ExportPickingTasksToExcel("tenant-1")
 	require.NotNil(t, errResp)
 	assert.Nil(t, data)
 }

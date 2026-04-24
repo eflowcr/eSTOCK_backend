@@ -24,6 +24,8 @@ type ReceivingTask struct {
 	TrackingNumber  *string `gorm:"column:tracking_number" json:"tracking_number,omitempty"`
 	ReceptionMethod *string `gorm:"column:reception_method" json:"reception_method,omitempty"`
 	Incoterms       *string `gorm:"column:incoterms" json:"incoterms,omitempty"`
+	// S2.5 M3.1 tenant isolation
+	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (ReceivingTask) TableName() string {

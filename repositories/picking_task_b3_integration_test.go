@@ -521,7 +521,7 @@ func TestPickingB3_Adjustment_BlockedIfBelowReserved(t *testing.T) {
 	seedInventory(t, db, "SKU-N", "LOC-1", 100, 40) // 40 reserved
 
 	repo := &AdjustmentsRepository{DB: db}
-	_, resp := repo.CreateAdjustment(userID, requests.CreateAdjustment{
+	_, resp := repo.CreateAdjustment(userID, "00000000-0000-0000-0000-000000000001", requests.CreateAdjustment{
 		SKU:                "SKU-N",
 		Location:           "LOC-1",
 		AdjustmentQuantity: -70, // would leave qty=30, but reserved=40
@@ -539,7 +539,7 @@ func TestPickingB3_Adjustment_AllowedIfAboveReserved(t *testing.T) {
 	seedInventory(t, db, "SKU-O", "LOC-1", 100, 40)
 
 	repo := &AdjustmentsRepository{DB: db}
-	_, resp := repo.CreateAdjustment(userID, requests.CreateAdjustment{
+	_, resp := repo.CreateAdjustment(userID, "00000000-0000-0000-0000-000000000001", requests.CreateAdjustment{
 		SKU:                "SKU-O",
 		Location:           "LOC-1",
 		AdjustmentQuantity: -50, // leaves qty=50, which is >= reserved=40

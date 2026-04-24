@@ -35,6 +35,10 @@ func (m *mockPickingTaskRepoCtrl) GetAllPickingTasks() ([]responses.PickingTaskV
 	return m.tasks, nil
 }
 
+func (m *mockPickingTaskRepoCtrl) GetAllForTenant(tenantID string) ([]responses.PickingTaskView, *responses.InternalResponse) {
+	return m.tasks, nil
+}
+
 func (m *mockPickingTaskRepoCtrl) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	if m.byID != nil {
 		if t, ok := m.byID[id]; ok {
@@ -44,7 +48,7 @@ func (m *mockPickingTaskRepoCtrl) GetPickingTaskByID(id string) (*database.Picki
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockPickingTaskRepoCtrl) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
+func (m *mockPickingTaskRepoCtrl) CreatePickingTask(userId string, tenantID string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
 	return m.createErr
 }
 
@@ -56,11 +60,11 @@ func (m *mockPickingTaskRepoCtrl) UpdatePickingTask(_ context.Context, id string
 	return m.updateErr
 }
 
-func (m *mockPickingTaskRepoCtrl) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (m *mockPickingTaskRepoCtrl) ImportPickingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	return m.importErr
 }
 
-func (m *mockPickingTaskRepoCtrl) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockPickingTaskRepoCtrl) ExportPickingTasksToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportData, m.exportErr
 }
 

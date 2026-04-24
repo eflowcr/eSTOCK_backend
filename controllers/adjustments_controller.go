@@ -13,6 +13,7 @@ type AdjustmentsController struct {
 	Service      services.AdjustmentsService
 	JWTSecret    string
 	AuditService *services.AuditService
+	TenantID     string // S2.5 M3.1 — tenant-scoped reads/writes
 }
 
 func NewAdjustmentsController(service services.AdjustmentsService, jwtSecret string, auditSvc *services.AuditService) *AdjustmentsController {
@@ -23,8 +24,14 @@ func NewAdjustmentsController(service services.AdjustmentsService, jwtSecret str
 	}
 }
 
+// WithTenantID sets the tenant ID (S2.5 M3.1 pattern).
+func (c *AdjustmentsController) WithTenantID(tenantID string) *AdjustmentsController {
+	c.TenantID = tenantID
+	return c
+}
+
 func (c *AdjustmentsController) GetAllAdjustments(ctx *gin.Context) {
-	adjustments, response := c.Service.GetAllAdjustments()
+	adjustments, response := c.Service.ListByTenant(c.TenantID)
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllAdjustments", "get_all_adjustments", response)
@@ -98,7 +105,7 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 		return
 	}
 
-	created, response := c.Service.CreateAdjustment(userId, adjustment)
+	created, response := c.Service.CreateAdjustment(userId, c.TenantID, adjustment)
 	if response != nil {
 		writeErrorResponse(ctx, "CreateAdjustment", "create_adjustment", response)
 		return
@@ -106,12 +113,12 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 
 	if c.AuditService != nil && created != nil {
 		newVal, _ := json.Marshal(map[string]interface{}{
-			"id":         created.ID,
-			"sku":        created.SKU,
-			"location":   created.Location,
-			"quantity":   created.AdjustmentQty,
-			"reason":     created.Reason,
-			"user_id":    created.UserID,
+			"id":       created.ID,
+			"sku":      created.SKU,
+			"location": created.Location,
+			"quantity": created.AdjustmentQty,
+			"reason":   created.Reason,
+			"user_id":  created.UserID,
 		})
 		c.AuditService.Log(ctx.Request.Context(), &userId, tools.ActionCreate, tools.ResourceAdjustment, created.ID, nil, newVal, ctx.ClientIP(), ctx.GetHeader("User-Agent"))
 	}
@@ -120,7 +127,7 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 }
 
 func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
-	data, response := c.Service.ExportAdjustmentsToExcel()
+	data, response := c.Service.ExportAdjustmentsToExcel(c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "ExportAdjustmentsToExcel", "export_adjustments_to_excel", response)
 		return

@@ -92,6 +92,8 @@ func main() {
 		}
 
 		// lotNotifyFn notifies all admin users for expiring lots.
+		// TODO S3: per-tenant cron iteration when multi-tenant signup is live.
+		// Current behavior: queries admins globally across all tenants (safe for single-tenant S1/S2).
 		var lotNotifyFn func(eventType, title, body string) error
 		if notifSvc != nil {
 			lotNotifyFn = func(eventType, title, body string) error {
@@ -114,6 +116,8 @@ func main() {
 		}
 
 		// HR1-M5: lowStockNotifyFn notifies all admin users for unresolved low-stock alerts.
+		// TODO S3: per-tenant cron iteration when multi-tenant signup is live.
+		// Current behavior: queries admins globally across all tenants (safe for single-tenant S1/S2).
 		var lowStockNotifyFn func(sku, message string) error
 		if notifSvc != nil {
 			lowStockNotifyFn = func(sku, message string) error {

@@ -33,33 +33,40 @@ func (s *ReceivingTasksService) WithClientsService(cs clientLookup) *ReceivingTa
 	return s
 }
 
+// GetAllReceivingTasks returns all receiving tasks (no tenant filter).
+// internal use only — bypass tenant. Prefer ListByTenant in HTTP handlers.
 func (s *ReceivingTasksService) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
 	return s.Repository.GetAllReceivingTasks()
+}
+
+// ListByTenant returns receiving tasks scoped to a specific tenant (S2.5 M3.1).
+func (s *ReceivingTasksService) ListByTenant(tenantID string) ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	return s.Repository.GetAllForTenant(tenantID)
 }
 
 func (s *ReceivingTasksService) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	return s.Repository.GetReceivingTaskByID(id)
 }
 
-func (s *ReceivingTasksService) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+func (s *ReceivingTasksService) CreateReceivingTask(userId string, tenantID string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	if task.SupplierID != nil && *task.SupplierID != "" {
 		if resp := s.validateSupplier(*task.SupplierID); resp != nil {
 			return resp
 		}
 	}
-	return s.Repository.CreateReceivingTask(userId, task)
+	return s.Repository.CreateReceivingTask(userId, tenantID, task)
 }
 
 func (s *ReceivingTasksService) UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse {
 	return s.Repository.UpdateReceivingTask(id, data)
 }
 
-func (s *ReceivingTasksService) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
-	return s.Repository.ImportReceivingTaskFromExcel(userID, fileBytes)
+func (s *ReceivingTasksService) ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
+	return s.Repository.ImportReceivingTaskFromExcel(userID, tenantID, fileBytes)
 }
 
-func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportReceivingTaskToExcel()
+func (s *ReceivingTasksService) ExportReceivingTaskToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportReceivingTaskToExcel(tenantID)
 }
 
 func (s *ReceivingTasksService) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {
