@@ -19,10 +19,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// SOPickedQtyUpdater is a narrow interface for updating SO picked quantities after picking (SO3).
+// Implemented by SalesOrdersRepository; defined here to avoid import cycle.
+type SOPickedQtyUpdater interface {
+	UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) *responses.InternalResponse
+}
+
 type PickingTaskRepository struct {
 	DB               *gorm.DB
 	AuditService     *services.AuditService     // injected via wire for audit logging
 	NotificationsSvc *services.NotificationsService // optional: emit task events
+	// S3-W2-B SO3: optional auto-link to update sales order after picking completion.
+	SORepository SOPickedQtyUpdater
 }
 
 // validPickingTransitions declares the allowed status transitions.
@@ -881,6 +889,9 @@ func (r *PickingTaskRepository) CompletePickingLine(ctx context.Context, id, use
 
 func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
 	var handledResp *responses.InternalResponse
+	// SO3: captured for post-tx SO update.
+	var linkedSOID string
+	var soPickedPerSKU map[string]float64
 
 	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
 		var task database.PickingTask
@@ -1001,6 +1012,21 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 			return fmt.Errorf("update status: %w", err)
 		}
 
+		// SO3 — capture SO ID and picked quantities for post-tx update (avoids nested tx deadlock).
+		if task.SalesOrderID != nil && *task.SalesOrderID != "" {
+			linkedSOID = *task.SalesOrderID
+			soPickedPerSKU = make(map[string]float64)
+			for _, item := range items {
+				for _, alloc := range item.Allocations {
+					pickedQty := alloc.Quantity
+					if alloc.PickedQty != nil {
+						pickedQty = *alloc.PickedQty
+					}
+					soPickedPerSKU[item.SKU] += pickedQty
+				}
+			}
+		}
+
 		return nil
 	})
 
@@ -1013,6 +1039,13 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 
 	if r.AuditService != nil {
 		r.AuditService.Log(ctx, &userId, tools.ActionExecute, "picking_task", id, nil, nil, "", "")
+	}
+
+	// SO3 — post-commit: update sales order picked quantities (outside the picking tx to avoid deadlock).
+	if linkedSOID != "" && r.SORepository != nil && len(soPickedPerSKU) > 0 {
+		// Fire-and-forget: picking is already committed; SO status update is best-effort here.
+		// A failed SO update does not roll back the completed picking.
+		r.SORepository.UpdatePickedQty(linkedSOID, soPickedPerSKU) //nolint:errcheck
 	}
 
 	// Emit task_completed notification to the assigned operator (fire-and-forget).
