@@ -290,30 +290,35 @@ func (r *BackordersRepository) Fulfill(id, tenantID, userID string) (*responses.
 
 // UpdateFulfilledBackorder updates backorder remaining_qty and sets status='fulfilled' if qty <= 0.
 // Called from picking_task_repository after completing a backorder-sourced picking task.
+// Wraps in a transaction with SELECT FOR UPDATE to prevent lost updates when two picking tasks
+// sourced from the same backorder complete concurrently.
 func UpdateFulfilledBackorder(db *gorm.DB, backorderID string, pickedPerSKU map[string]float64) error {
-	var bo database.Backorder
-	if err := db.First(&bo, "id = ?", backorderID).Error; err != nil {
-		return fmt.Errorf("load backorder %s: %w", backorderID, err)
-	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var bo database.Backorder
+		// Lock the backorder row to serialize concurrent updates.
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&bo, "id = ?", backorderID).Error; err != nil {
+			return fmt.Errorf("load backorder %s: %w", backorderID, err)
+		}
 
-	newRemaining := bo.RemainingQty - pickedPerSKU[bo.ArticleSKU]
-	if newRemaining < 0 {
-		newRemaining = 0
-	}
+		newRemaining := bo.RemainingQty - pickedPerSKU[bo.ArticleSKU]
+		if newRemaining < 0 {
+			newRemaining = 0
+		}
 
-	now := time.Now()
-	if newRemaining <= 0 {
-		return db.Exec(`
+		now := time.Now()
+		if newRemaining <= 0 {
+			return tx.Exec(`
+				UPDATE backorders
+				   SET remaining_qty = 0, status = 'fulfilled', fulfilled_at = ?, updated_at = ?
+				 WHERE id = ?`,
+				now, now, backorderID,
+			).Error
+		}
+		return tx.Exec(`
 			UPDATE backorders
-			   SET remaining_qty = 0, status = 'fulfilled', fulfilled_at = ?, updated_at = ?
+			   SET remaining_qty = ?, updated_at = ?
 			 WHERE id = ?`,
-			now, now, backorderID,
+			newRemaining, now, backorderID,
 		).Error
-	}
-	return db.Exec(`
-		UPDATE backorders
-		   SET remaining_qty = ?, updated_at = ?
-		 WHERE id = ?`,
-		newRemaining, now, backorderID,
-	).Error
+	})
 }
