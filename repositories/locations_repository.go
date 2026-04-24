@@ -18,11 +18,15 @@ type LocationsRepository struct {
 	DB *gorm.DB
 }
 
-func (r *LocationsRepository) GetAllLocations() ([]database.Location, *responses.InternalResponse) {
+// S3.5 W2-A: All read/write operations are tenant-scoped via WHERE tenant_id = ?.
+// Cross-tenant lookups are not supported by this repo.
+
+func (r *LocationsRepository) GetAllLocations(tenantID string) ([]database.Location, *responses.InternalResponse) {
 	var locations []database.Location
 
 	err := r.DB.
 		Table(database.Location{}.TableName()).
+		Where("tenant_id = ?", tenantID).
 		Order("created_at ASC").
 		Find(&locations).Error
 
@@ -37,12 +41,12 @@ func (r *LocationsRepository) GetAllLocations() ([]database.Location, *responses
 	return locations, nil
 }
 
-func (r *LocationsRepository) GetLocationByID(id string) (*database.Location, *responses.InternalResponse) {
+func (r *LocationsRepository) GetLocationByID(tenantID, id string) (*database.Location, *responses.InternalResponse) {
 	var location database.Location
 
 	err := r.DB.
 		Table(database.Location{}.TableName()).
-		Where("id = ?", id).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
 		First(&location).Error
 
 	if err != nil {
@@ -63,10 +67,10 @@ func (r *LocationsRepository) GetLocationByID(id string) (*database.Location, *r
 	return &location, nil
 }
 
-func (r *LocationsRepository) CreateLocation(input *requests.Location) *responses.InternalResponse {
-	// Verificar si el código ya existe
+func (r *LocationsRepository) CreateLocation(tenantID string, input *requests.Location) *responses.InternalResponse {
+	// Verificar si el código ya existe (per-tenant uniqueness — see migration 000032).
 	var existing database.Location
-	err := r.DB.First(&existing, "location_code = ?", input.LocationCode).Error
+	err := r.DB.First(&existing, "location_code = ? AND tenant_id = ?", input.LocationCode, tenantID).Error
 
 	if err == nil {
 		return &responses.InternalResponse{
@@ -84,6 +88,7 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 	}
 
 	location := &database.Location{
+		TenantID:     tenantID,
 		LocationCode: input.LocationCode,
 		Description:  input.Description,
 		Zone:         input.Zone,
@@ -106,9 +111,9 @@ func (r *LocationsRepository) CreateLocation(input *requests.Location) *response
 	return nil
 }
 
-func (r *LocationsRepository) UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse {
+func (r *LocationsRepository) UpdateLocation(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
 	var location database.Location
-	err := r.DB.First(&location, "id = ?", id).Error
+	err := r.DB.First(&location, "id = ? AND tenant_id = ?", id, tenantID).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
@@ -128,6 +133,7 @@ func (r *LocationsRepository) UpdateLocation(id string, data map[string]interfac
 	protectedFields := map[string]bool{
 		"id":         true,
 		"created_at": true,
+		"tenant_id":  true, // S3.5 W2-A: tenant_id is immutable after creation.
 	}
 
 	for k := range protectedFields {
@@ -147,9 +153,9 @@ func (r *LocationsRepository) UpdateLocation(id string, data map[string]interfac
 	return nil
 }
 
-func (r *LocationsRepository) DeleteLocation(id string) *responses.InternalResponse {
+func (r *LocationsRepository) DeleteLocation(tenantID, id string) *responses.InternalResponse {
 	var location database.Location
-	err := r.DB.First(&location, "id = ?", id).Error
+	err := r.DB.First(&location, "id = ? AND tenant_id = ?", id, tenantID).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
@@ -178,7 +184,7 @@ func (r *LocationsRepository) DeleteLocation(id string) *responses.InternalRespo
 	return nil
 }
 
-func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
+func (r *LocationsRepository) ImportLocationsFromExcel(tenantID string, fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
 	imported := []string{}
 	skipped := []string{}
 
@@ -225,7 +231,7 @@ func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]stri
 			Type:         locType,
 		}
 
-		imp, sk, errResp := r.ImportLocationsFromJSON([]requests.LocationImportRow{rowReq})
+		imp, sk, errResp := r.ImportLocationsFromJSON(tenantID, []requests.LocationImportRow{rowReq})
 		imported = append(imported, imp...)
 		skipped = append(skipped, sk...)
 		if errResp != nil {
@@ -236,7 +242,7 @@ func (r *LocationsRepository) ImportLocationsFromExcel(fileBytes []byte) ([]stri
 	return imported, skipped, nil
 }
 
-func (r *LocationsRepository) ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+func (r *LocationsRepository) ImportLocationsFromJSON(tenantID string, rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
 	imported := []string{}
 	skipped := []string{}
 
@@ -264,7 +270,7 @@ func (r *LocationsRepository) ImportLocationsFromJSON(rows []requests.LocationIm
 		}
 
 		loc := &requests.Location{LocationCode: code, Description: descPtr, Zone: zonePtr, Type: locType}
-		resp := r.CreateLocation(loc)
+		resp := r.CreateLocation(tenantID, loc)
 		if resp != nil {
 			return imported, skipped, &responses.InternalResponse{
 				Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled,
@@ -276,7 +282,7 @@ func (r *LocationsRepository) ImportLocationsFromJSON(rows []requests.LocationIm
 	return imported, skipped, nil
 }
 
-func (r *LocationsRepository) ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+func (r *LocationsRepository) ValidateImportRows(tenantID string, rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
 	results := make([]responses.LocationValidationResult, 0, len(rows))
 	seenCodes := make(map[string]bool)
 
@@ -307,9 +313,9 @@ func (r *LocationsRepository) ValidateImportRows(rows []requests.LocationImportR
 		}
 		seenCodes[strings.ToLower(code)] = true
 
-		// Exact code match in DB
+		// Exact code match in DB (tenant-scoped — codes are unique per tenant after migration 000032).
 		var existing database.Location
-		if err := r.DB.Where("location_code = ?", code).First(&existing).Error; err == nil {
+		if err := r.DB.Where("location_code = ? AND tenant_id = ?", code, tenantID).First(&existing).Error; err == nil {
 			result.Status = responses.LocationStatusExists
 			result.ExistingLocation = &responses.LocationValidationMatch{
 				ID:           existing.ID,
@@ -335,7 +341,7 @@ func (r *LocationsRepository) ValidateImportRows(rows []requests.LocationImportR
 				keyword = keyword[:20]
 			}
 			var similar []database.Location
-			r.DB.Where("LOWER(description) LIKE LOWER(?) AND location_code != ?", "%"+keyword+"%", code).Limit(3).Find(&similar)
+			r.DB.Where("LOWER(description) LIKE LOWER(?) AND location_code != ? AND tenant_id = ?", "%"+keyword+"%", code, tenantID).Limit(3).Find(&similar)
 			if len(similar) > 0 {
 				result.Status = responses.LocationStatusSimilar
 				for _, s := range similar {
@@ -357,8 +363,8 @@ func (r *LocationsRepository) ValidateImportRows(rows []requests.LocationImportR
 	return results, nil
 }
 
-func (l *LocationsRepository) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {
-	locations, errResp := l.GetAllLocations()
+func (l *LocationsRepository) ExportLocationsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	locations, errResp := l.GetAllLocations(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}

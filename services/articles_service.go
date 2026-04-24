@@ -17,8 +17,12 @@ type categoryLookupForArticles interface {
 }
 
 // locationLookupForArticles is a narrow read-only interface for location validation.
+//
+// S3.5 W2-A: signature widened to accept tenantID — matches the tenant-scoped
+// LocationsRepository introduced in W2-A. Callers pass ArticlesService.TenantID
+// (which controllers populate from Config.TenantID).
 type locationLookupForArticles interface {
-	GetLocationByID(id string) (*database.Location, *responses.InternalResponse)
+	GetLocationByID(tenantID, id string) (*database.Location, *responses.InternalResponse)
 }
 
 // ArticlesService — S3.5 W1: every public method now requires a tenantID. Controllers
@@ -28,6 +32,9 @@ type ArticlesService struct {
 	Repository     ports.ArticlesRepository
 	CategoriesRepo categoryLookupForArticles // optional: validate category_id on create/update
 	LocationsRepo  locationLookupForArticles // optional: validate default_location_id
+	// S3.5 W2-A: TenantID forwarded to LocationsRepo when validating default_location_id.
+	// Controllers populate it from Config.TenantID; the JWT-claim source is W3.
+	TenantID string
 }
 
 func NewArticlesService(repo ports.ArticlesRepository) *ArticlesService {
@@ -99,7 +106,7 @@ func (s *ArticlesService) EnrichArticle(art *database.Article) *responses.Articl
 		}
 	}
 	if art.DefaultLocationID != nil && s.LocationsRepo != nil {
-		loc, _ := s.LocationsRepo.GetLocationByID(*art.DefaultLocationID)
+		loc, _ := s.LocationsRepo.GetLocationByID(s.TenantID, *art.DefaultLocationID)
 		if loc != nil {
 			r.DefaultLocation = &responses.EmbeddedLocation{ID: loc.ID, Code: loc.LocationCode}
 		}
@@ -224,7 +231,7 @@ func (s *ArticlesService) validateArticleFields(data *requests.Article) *respons
 		}
 	}
 	if data.DefaultLocationID != nil && *data.DefaultLocationID != "" && s.LocationsRepo != nil {
-		loc, resp := s.LocationsRepo.GetLocationByID(*data.DefaultLocationID)
+		loc, resp := s.LocationsRepo.GetLocationByID(s.TenantID, *data.DefaultLocationID)
 		if resp != nil || loc == nil {
 			return &responses.InternalResponse{
 				Message:    "default_location_id inválido: ubicación no encontrada",

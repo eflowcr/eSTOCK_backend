@@ -15,6 +15,9 @@ import (
 
 // LocationsRepositorySQLC implements ports.LocationsRepository using sqlc for CRUD.
 // Excel import/export are delegated to the GORM fallback repo.
+//
+// S3.5 W2-A: every method is tenant-scoped — the SQL queries enforce
+// WHERE tenant_id = $N and INSERT INTO ... (..., tenant_id) VALUES (..., $N).
 type LocationsRepositorySQLC struct {
 	queries *sqlc.Queries
 	gorm    *LocationsRepository
@@ -27,28 +30,36 @@ func NewLocationsRepositorySQLC(queries *sqlc.Queries, gorm *LocationsRepository
 
 var _ ports.LocationsRepository = (*LocationsRepositorySQLC)(nil)
 
-func (r *LocationsRepositorySQLC) GetAllLocations() ([]database.Location, *responses.InternalResponse) {
+func (r *LocationsRepositorySQLC) GetAllLocations(tenantID string) ([]database.Location, *responses.InternalResponse) {
 	ctx := context.Background()
-	list, err := r.queries.ListLocations(ctx)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	list, err := r.queries.ListLocationsByTenant(ctx, tid)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener las ubicaciones", Handled: false}
 	}
 	out := make([]database.Location, len(list))
 	for i, loc := range list {
-		out[i] = locationRowToDatabase(loc.ID, loc.LocationCode, loc.Description, loc.Zone, loc.Type, loc.IsActive, loc.IsWayOut, loc.CreatedAt, loc.UpdatedAt)
+		out[i] = locationRowToDatabase(loc.ID, loc.LocationCode, loc.Description, loc.Zone, loc.Type, loc.IsActive, loc.IsWayOut, loc.CreatedAt, loc.UpdatedAt, loc.TenantID)
 	}
 	return out, nil
 }
 
-func (r *LocationsRepositorySQLC) GetLocationByID(id string) (*database.Location, *responses.InternalResponse) {
+func (r *LocationsRepositorySQLC) GetLocationByID(tenantID, id string) (*database.Location, *responses.InternalResponse) {
 	ctx := context.Background()
-	loc, err := r.queries.GetLocationByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	loc, err := r.queries.GetLocationByIDForTenant(ctx, sqlc.GetLocationByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Try as location_code for backward compatibility
-			loc2, err2 := r.queries.GetLocationByLocationCode(ctx, id)
+			// Backward-compat fallback: caller may have passed a location_code.
+			loc2, err2 := r.queries.GetLocationByLocationCodeForTenant(ctx, sqlc.GetLocationByLocationCodeForTenantParams{LocationCode: id, TenantID: tid})
 			if err2 == nil {
-				l := locationRowToDatabase(loc2.ID, loc2.LocationCode, loc2.Description, loc2.Zone, loc2.Type, loc2.IsActive, loc2.IsWayOut, loc2.CreatedAt, loc2.UpdatedAt)
+				l := locationRowToDatabase(loc2.ID, loc2.LocationCode, loc2.Description, loc2.Zone, loc2.Type, loc2.IsActive, loc2.IsWayOut, loc2.CreatedAt, loc2.UpdatedAt, loc2.TenantID)
 				return &l, nil
 			}
 			if errors.Is(err2, pgx.ErrNoRows) {
@@ -61,13 +72,17 @@ func (r *LocationsRepositorySQLC) GetLocationByID(id string) (*database.Location
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener la ubicación", Handled: false}
 	}
-	l := locationRowToDatabase(loc.ID, loc.LocationCode, loc.Description, loc.Zone, loc.Type, loc.IsActive, loc.IsWayOut, loc.CreatedAt, loc.UpdatedAt)
+	l := locationRowToDatabase(loc.ID, loc.LocationCode, loc.Description, loc.Zone, loc.Type, loc.IsActive, loc.IsWayOut, loc.CreatedAt, loc.UpdatedAt, loc.TenantID)
 	return &l, nil
 }
 
-func (r *LocationsRepositorySQLC) CreateLocation(input *requests.Location) *responses.InternalResponse {
+func (r *LocationsRepositorySQLC) CreateLocation(tenantID string, input *requests.Location) *responses.InternalResponse {
 	ctx := context.Background()
-	exists, err := r.queries.LocationExistsByLocationCode(ctx, input.LocationCode)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	exists, err := r.queries.LocationExistsByLocationCodeForTenant(ctx, sqlc.LocationExistsByLocationCodeForTenantParams{LocationCode: input.LocationCode, TenantID: tid})
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al verificar la existencia de la ubicación", Handled: false}
 	}
@@ -84,6 +99,7 @@ func (r *LocationsRepositorySQLC) CreateLocation(input *requests.Location) *resp
 		Type:         input.Type,
 		IsActive:     true,
 		IsWayOut:     input.IsWayOut,
+		TenantID:     tid,
 	}
 	_, err = r.queries.CreateLocation(ctx, arg)
 	if err != nil {
@@ -92,9 +108,13 @@ func (r *LocationsRepositorySQLC) CreateLocation(input *requests.Location) *resp
 	return nil
 }
 
-func (r *LocationsRepositorySQLC) UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse {
+func (r *LocationsRepositorySQLC) UpdateLocation(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
 	ctx := context.Background()
-	loc, err := r.queries.GetLocationByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	loc, err := r.queries.GetLocationByIDForTenant(ctx, sqlc.GetLocationByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -124,7 +144,7 @@ func (r *LocationsRepositorySQLC) UpdateLocation(id string, data map[string]inte
 	if v, ok := data["is_way_out"].(bool); ok {
 		loc.IsWayOut = v
 	}
-	arg := sqlc.UpdateLocationParams{
+	arg := sqlc.UpdateLocationForTenantParams{
 		ID:           loc.ID,
 		LocationCode: loc.LocationCode,
 		Description:  loc.Description,
@@ -132,17 +152,22 @@ func (r *LocationsRepositorySQLC) UpdateLocation(id string, data map[string]inte
 		Type:         loc.Type,
 		IsActive:     loc.IsActive,
 		IsWayOut:     loc.IsWayOut,
+		TenantID:     tid,
 	}
-	_, err = r.queries.UpdateLocation(ctx, arg)
+	_, err = r.queries.UpdateLocationForTenant(ctx, arg)
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al actualizar la ubicación", Handled: false}
 	}
 	return nil
 }
 
-func (r *LocationsRepositorySQLC) DeleteLocation(id string) *responses.InternalResponse {
+func (r *LocationsRepositorySQLC) DeleteLocation(tenantID, id string) *responses.InternalResponse {
 	ctx := context.Background()
-	_, err := r.queries.GetLocationByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	_, err = r.queries.GetLocationByIDForTenant(ctx, sqlc.GetLocationByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -153,31 +178,32 @@ func (r *LocationsRepositorySQLC) DeleteLocation(id string) *responses.InternalR
 		}
 		return &responses.InternalResponse{Error: err, Message: "Error al obtener la ubicación", Handled: false}
 	}
-	if err := r.queries.DeleteLocation(ctx, id); err != nil {
+	if err := r.queries.DeleteLocationForTenant(ctx, sqlc.DeleteLocationForTenantParams{ID: id, TenantID: tid}); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al eliminar la ubicación", Handled: false}
 	}
 	return nil
 }
 
-func (r *LocationsRepositorySQLC) ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
-	return r.gorm.ImportLocationsFromExcel(fileBytes)
+func (r *LocationsRepositorySQLC) ImportLocationsFromExcel(tenantID string, fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
+	return r.gorm.ImportLocationsFromExcel(tenantID, fileBytes)
 }
 
-func (r *LocationsRepositorySQLC) ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
-	return r.gorm.ImportLocationsFromJSON(rows)
+func (r *LocationsRepositorySQLC) ImportLocationsFromJSON(tenantID string, rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+	return r.gorm.ImportLocationsFromJSON(tenantID, rows)
 }
 
-func (r *LocationsRepositorySQLC) ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
-	return r.gorm.ValidateImportRows(rows)
+func (r *LocationsRepositorySQLC) ValidateImportRows(tenantID string, rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+	return r.gorm.ValidateImportRows(tenantID, rows)
 }
 
-func (r *LocationsRepositorySQLC) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {
-	return r.gorm.ExportLocationsToExcel()
+func (r *LocationsRepositorySQLC) ExportLocationsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return r.gorm.ExportLocationsToExcel(tenantID)
 }
 
-func locationRowToDatabase(id, locationCode string, description, zone pgtype.Text, locType string, isActive, isWayOut bool, createdAt, updatedAt pgtype.Timestamp) database.Location {
+func locationRowToDatabase(id, locationCode string, description, zone pgtype.Text, locType string, isActive, isWayOut bool, createdAt, updatedAt pgtype.Timestamp, tenantID pgtype.UUID) database.Location {
 	return database.Location{
 		ID:           id,
+		TenantID:     pgUUIDToString(tenantID),
 		LocationCode: locationCode,
 		Description:  pgTextToPtrString(description),
 		Zone:         pgTextToPtrString(zone),

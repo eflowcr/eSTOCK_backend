@@ -28,6 +28,7 @@ type Querier interface {
 	// Clients CRUD for sqlc
 	// Schema: db/migrations/000018_sprint_s2.up.sql (clients table)
 	CreateClient(ctx context.Context, arg CreateClientParams) (Client, error)
+	// S3.5 W2-A: tenant_id is required and provided by the controller layer.
 	CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error)
 	CreateLocationType(ctx context.Context, arg CreateLocationTypeParams) (LocationType, error)
 	CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error)
@@ -40,7 +41,8 @@ type Querier interface {
 	DeleteAdjustmentReasonCode(ctx context.Context, id string) error
 	// Tenant guard prevents cross-tenant delete.
 	DeleteArticle(ctx context.Context, arg DeleteArticleParams) error
-	DeleteLocation(ctx context.Context, id string) error
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+	DeleteLocationForTenant(ctx context.Context, arg DeleteLocationForTenantParams) error
 	DeleteLocationType(ctx context.Context, id string) error
 	// Tenant guard prevents cross-tenant deletes (S3.5 W2-B).
 	DeleteLot(ctx context.Context, arg DeleteLotParams) error
@@ -67,8 +69,10 @@ type Querier interface {
 	// HR1-M3: tenant_id guard prevents cross-tenant client enumeration via HTTP.
 	GetClientByIDForTenant(ctx context.Context, arg GetClientByIDForTenantParams) (Client, error)
 	GetClientByTenantAndCode(ctx context.Context, arg GetClientByTenantAndCodeParams) (Client, error)
-	GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error)
-	GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error)
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+	GetLocationByIDForTenant(ctx context.Context, arg GetLocationByIDForTenantParams) (GetLocationByIDForTenantRow, error)
+	// S3.5 W2-A: tenant_id guard. Used as fallback by ID lookup when caller passed a code.
+	GetLocationByLocationCodeForTenant(ctx context.Context, arg GetLocationByLocationCodeForTenantParams) (GetLocationByLocationCodeForTenantRow, error)
 	GetLocationTypeByCode(ctx context.Context, code string) (LocationType, error)
 	GetLocationTypeByID(ctx context.Context, id string) (LocationType, error)
 	// Internal use only: no tenant filter. Use GetLotByIDForTenant for HTTP callers.
@@ -123,8 +127,10 @@ type Querier interface {
 	ListLocationTypes(ctx context.Context) ([]LocationType, error)
 	ListLocationTypesAdmin(ctx context.Context) ([]LocationType, error)
 	// Locations CRUD for sqlc
-	// Schema: db/migrations (locations table)
-	ListLocations(ctx context.Context) ([]ListLocationsRow, error)
+	// Schema: db/migrations (locations table; tenant_id added in 000032).
+	// All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant location enumeration.
+	ListLocationsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListLocationsByTenantRow, error)
 	// Lots CRUD for sqlc
 	// Schema: db/migrations (lots table; tenant_id added in 000030)
 	// S3.5 W2-B: every public query is tenant-scoped. Internal helpers (GetLotByID) keep
@@ -165,7 +171,8 @@ type Querier interface {
 	// Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
 	ListStockTransfers(ctx context.Context) ([]ListStockTransfersRow, error)
 	ListStockTransfersByStatus(ctx context.Context, status string) ([]ListStockTransfersByStatusRow, error)
-	LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error)
+	// S3.5 W2-A: tenant_id guard. Used by Create to enforce per-tenant unique location_code.
+	LocationExistsByLocationCodeForTenant(ctx context.Context, arg LocationExistsByLocationCodeForTenantParams) (bool, error)
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
 	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
@@ -178,7 +185,8 @@ type Querier interface {
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	// HR1-M3: tenant_id guard prevents cross-tenant update.
 	UpdateClient(ctx context.Context, arg UpdateClientParams) (Client, error)
-	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error)
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant update.
+	UpdateLocationForTenant(ctx context.Context, arg UpdateLocationForTenantParams) (UpdateLocationForTenantRow, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
 	// Tenant guard prevents cross-tenant updates (S3.5 W2-B).
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)

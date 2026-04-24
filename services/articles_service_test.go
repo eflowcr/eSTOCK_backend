@@ -258,7 +258,9 @@ type mockLocationRepo struct {
 	locations map[string]*database.Location
 }
 
-func (m *mockLocationRepo) GetLocationByID(id string) (*database.Location, *responses.InternalResponse) {
+// S3.5 W2-A: signature widened to accept tenantID. Articles-side tenant
+// plumbing is W1 territory; this mock ignores the tenantID parameter.
+func (m *mockLocationRepo) GetLocationByID(_ string, id string) (*database.Location, *responses.InternalResponse) {
 	if loc, ok := m.locations[id]; ok {
 		return loc, nil
 	}

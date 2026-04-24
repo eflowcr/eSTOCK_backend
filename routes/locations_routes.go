@@ -17,7 +17,8 @@ var _ ports.LocationsRepository = (*repositories.LocationsRepositorySQLC)(nil)
 
 func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	_, locationService := wire.NewLocations(db, pool)
-	locationController := controllers.NewLocationsController(*locationService)
+	// S3.5 W2-A: pass tenantID from configuration so all CRUD is tenant-scoped.
+	locationController := controllers.NewLocationsController(*locationService, config.TenantID)
 
 	route := router.Group("/locations")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
@@ -29,7 +30,7 @@ func RegisterLocationRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 
 		route.GET("/", read, locationController.GetAllLocations)
 		if pool != nil {
-			cfg := tools.LocationsTableConfig()
+			cfg := tools.LocationsTableConfig(config.TenantID)
 			route.GET("/table", read, tools.GenericListHandler(pool, cfg))
 			route.GET("/table/export", read, tools.GenericExportHandler(pool, cfg, "locations.csv"))
 		}

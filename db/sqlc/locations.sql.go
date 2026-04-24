@@ -12,9 +12,9 @@ import (
 )
 
 const createLocation = `-- name: CreateLocation :one
-INSERT INTO locations (location_code, description, zone, type, is_active, is_way_out)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+INSERT INTO locations (location_code, description, zone, type, is_active, is_way_out, tenant_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 `
 
 type CreateLocationParams struct {
@@ -24,6 +24,7 @@ type CreateLocationParams struct {
 	Type         string      `json:"type"`
 	IsActive     bool        `json:"is_active"`
 	IsWayOut     bool        `json:"is_way_out"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 type CreateLocationRow struct {
@@ -36,8 +37,10 @@ type CreateLocationRow struct {
 	IsWayOut     bool             `json:"is_way_out"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
+// S3.5 W2-A: tenant_id is required and provided by the controller layer.
 func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error) {
 	row := q.db.QueryRow(ctx, createLocation,
 		arg.LocationCode,
@@ -46,6 +49,7 @@ func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) 
 		arg.Type,
 		arg.IsActive,
 		arg.IsWayOut,
+		arg.TenantID,
 	)
 	var i CreateLocationRow
 	err := row.Scan(
@@ -58,27 +62,39 @@ func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) 
 		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
-const deleteLocation = `-- name: DeleteLocation :exec
-DELETE FROM locations WHERE id = $1
+const deleteLocationForTenant = `-- name: DeleteLocationForTenant :exec
+DELETE FROM locations WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) DeleteLocation(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteLocation, id)
+type DeleteLocationForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+func (q *Queries) DeleteLocationForTenant(ctx context.Context, arg DeleteLocationForTenantParams) error {
+	_, err := q.db.Exec(ctx, deleteLocationForTenant, arg.ID, arg.TenantID)
 	return err
 }
 
-const getLocationByID = `-- name: GetLocationByID :one
-SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+const getLocationByIDForTenant = `-- name: GetLocationByIDForTenant :one
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 FROM locations
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1
 `
 
-type GetLocationByIDRow struct {
+type GetLocationByIDForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetLocationByIDForTenantRow struct {
 	ID           string           `json:"id"`
 	LocationCode string           `json:"location_code"`
 	Description  pgtype.Text      `json:"description"`
@@ -88,11 +104,13 @@ type GetLocationByIDRow struct {
 	IsWayOut     bool             `json:"is_way_out"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
-func (q *Queries) GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error) {
-	row := q.db.QueryRow(ctx, getLocationByID, id)
-	var i GetLocationByIDRow
+// S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+func (q *Queries) GetLocationByIDForTenant(ctx context.Context, arg GetLocationByIDForTenantParams) (GetLocationByIDForTenantRow, error) {
+	row := q.db.QueryRow(ctx, getLocationByIDForTenant, arg.ID, arg.TenantID)
+	var i GetLocationByIDForTenantRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -103,18 +121,24 @@ func (q *Queries) GetLocationByID(ctx context.Context, id string) (GetLocationBy
 		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
-const getLocationByLocationCode = `-- name: GetLocationByLocationCode :one
-SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+const getLocationByLocationCodeForTenant = `-- name: GetLocationByLocationCodeForTenant :one
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 FROM locations
-WHERE location_code = $1
+WHERE location_code = $1 AND tenant_id = $2
 LIMIT 1
 `
 
-type GetLocationByLocationCodeRow struct {
+type GetLocationByLocationCodeForTenantParams struct {
+	LocationCode string      `json:"location_code"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+type GetLocationByLocationCodeForTenantRow struct {
 	ID           string           `json:"id"`
 	LocationCode string           `json:"location_code"`
 	Description  pgtype.Text      `json:"description"`
@@ -124,11 +148,13 @@ type GetLocationByLocationCodeRow struct {
 	IsWayOut     bool             `json:"is_way_out"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
-func (q *Queries) GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error) {
-	row := q.db.QueryRow(ctx, getLocationByLocationCode, locationCode)
-	var i GetLocationByLocationCodeRow
+// S3.5 W2-A: tenant_id guard. Used as fallback by ID lookup when caller passed a code.
+func (q *Queries) GetLocationByLocationCodeForTenant(ctx context.Context, arg GetLocationByLocationCodeForTenantParams) (GetLocationByLocationCodeForTenantRow, error) {
+	row := q.db.QueryRow(ctx, getLocationByLocationCodeForTenant, arg.LocationCode, arg.TenantID)
+	var i GetLocationByLocationCodeForTenantRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -139,18 +165,20 @@ func (q *Queries) GetLocationByLocationCode(ctx context.Context, locationCode st
 		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
-const listLocations = `-- name: ListLocations :many
+const listLocationsByTenant = `-- name: ListLocationsByTenant :many
 
-SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 FROM locations
+WHERE tenant_id = $1
 ORDER BY created_at ASC
 `
 
-type ListLocationsRow struct {
+type ListLocationsByTenantRow struct {
 	ID           string           `json:"id"`
 	LocationCode string           `json:"location_code"`
 	Description  pgtype.Text      `json:"description"`
@@ -160,19 +188,22 @@ type ListLocationsRow struct {
 	IsWayOut     bool             `json:"is_way_out"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
 // Locations CRUD for sqlc
-// Schema: db/migrations (locations table)
-func (q *Queries) ListLocations(ctx context.Context) ([]ListLocationsRow, error) {
-	rows, err := q.db.Query(ctx, listLocations)
+// Schema: db/migrations (locations table; tenant_id added in 000032).
+// All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
+// S3.5 W2-A: tenant_id guard prevents cross-tenant location enumeration.
+func (q *Queries) ListLocationsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListLocationsByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listLocationsByTenant, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListLocationsRow{}
+	items := []ListLocationsByTenantRow{}
 	for rows.Next() {
-		var i ListLocationsRow
+		var i ListLocationsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.LocationCode,
@@ -183,6 +214,7 @@ func (q *Queries) ListLocations(ctx context.Context) ([]ListLocationsRow, error)
 			&i.IsWayOut,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -194,18 +226,26 @@ func (q *Queries) ListLocations(ctx context.Context) ([]ListLocationsRow, error)
 	return items, nil
 }
 
-const locationExistsByLocationCode = `-- name: LocationExistsByLocationCode :one
-SELECT EXISTS(SELECT 1 FROM locations WHERE location_code = $1) AS exists
+const locationExistsByLocationCodeForTenant = `-- name: LocationExistsByLocationCodeForTenant :one
+SELECT EXISTS(
+  SELECT 1 FROM locations WHERE location_code = $1 AND tenant_id = $2
+) AS exists
 `
 
-func (q *Queries) LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error) {
-	row := q.db.QueryRow(ctx, locationExistsByLocationCode, locationCode)
+type LocationExistsByLocationCodeForTenantParams struct {
+	LocationCode string      `json:"location_code"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// S3.5 W2-A: tenant_id guard. Used by Create to enforce per-tenant unique location_code.
+func (q *Queries) LocationExistsByLocationCodeForTenant(ctx context.Context, arg LocationExistsByLocationCodeForTenantParams) (bool, error) {
+	row := q.db.QueryRow(ctx, locationExistsByLocationCodeForTenant, arg.LocationCode, arg.TenantID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
-const updateLocation = `-- name: UpdateLocation :one
+const updateLocationForTenant = `-- name: UpdateLocationForTenant :one
 UPDATE locations
 SET
     location_code = $2,
@@ -215,11 +255,11 @@ SET
     is_active = $6,
     is_way_out = $7,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
-RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+WHERE id = $1 AND tenant_id = $8
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 `
 
-type UpdateLocationParams struct {
+type UpdateLocationForTenantParams struct {
 	ID           string      `json:"id"`
 	LocationCode string      `json:"location_code"`
 	Description  pgtype.Text `json:"description"`
@@ -227,9 +267,10 @@ type UpdateLocationParams struct {
 	Type         string      `json:"type"`
 	IsActive     bool        `json:"is_active"`
 	IsWayOut     bool        `json:"is_way_out"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
-type UpdateLocationRow struct {
+type UpdateLocationForTenantRow struct {
 	ID           string           `json:"id"`
 	LocationCode string           `json:"location_code"`
 	Description  pgtype.Text      `json:"description"`
@@ -239,10 +280,12 @@ type UpdateLocationRow struct {
 	IsWayOut     bool             `json:"is_way_out"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error) {
-	row := q.db.QueryRow(ctx, updateLocation,
+// S3.5 W2-A: tenant_id guard prevents cross-tenant update.
+func (q *Queries) UpdateLocationForTenant(ctx context.Context, arg UpdateLocationForTenantParams) (UpdateLocationForTenantRow, error) {
+	row := q.db.QueryRow(ctx, updateLocationForTenant,
 		arg.ID,
 		arg.LocationCode,
 		arg.Description,
@@ -250,8 +293,9 @@ func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) 
 		arg.Type,
 		arg.IsActive,
 		arg.IsWayOut,
+		arg.TenantID,
 	)
-	var i UpdateLocationRow
+	var i UpdateLocationForTenantRow
 	err := row.Scan(
 		&i.ID,
 		&i.LocationCode,
@@ -262,6 +306,7 @@ func (q *Queries) UpdateLocation(ctx context.Context, arg UpdateLocationParams) 
 		&i.IsWayOut,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }

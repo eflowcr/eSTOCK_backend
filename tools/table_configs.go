@@ -52,7 +52,12 @@ func sanitizeUUID(s string) string {
 }
 
 // LocationsTableConfig returns the generic table configuration for locations.
-func LocationsTableConfig() TableConfig {
+//
+// S3.5 W2-A: tenantID is baked into DefaultWhere so the generic /table and
+// /table/export endpoints filter by tenant. The literal cast is safe because
+// tenantID comes from server-side configuration (configuration.Config.TenantID),
+// never from user input.
+func LocationsTableConfig(tenantID string) TableConfig {
 	return TableConfig{
 		EntityName: "ubicaciones",
 		FromClause: "locations l",
@@ -65,11 +70,11 @@ func LocationsTableConfig() TableConfig {
 			"is_active":     "l.is_active",
 			"created_at":    "l.created_at",
 		},
-		SearchFields: []string{"l.location_code", "l.description", "l.zone"},
-		DefaultWhere: "",
-		SelectFields: "l.id, l.location_code, l.description, l.zone, l.type, l.is_active, l.created_at",
-		CSVFields:    []string{"id", "location_code", "description", "zone", "type", "is_active", "created_at"},
-		CSVHeaders:   []string{"ID", "Código", "Descripción", "Zona", "Tipo", "Activo", "Creado en"},
+		SearchFields:   []string{"l.location_code", "l.description", "l.zone"},
+		DefaultWhere:   "l.tenant_id = '" + tenantID + "'::uuid",
+		SelectFields:   "l.id, l.location_code, l.description, l.zone, l.type, l.is_active, l.created_at",
+		CSVFields:      []string{"id", "location_code", "description", "zone", "type", "is_active", "created_at"},
+		CSVHeaders:     []string{"ID", "Código", "Descripción", "Zona", "Tipo", "Activo", "Creado en"},
 		DefaultSortBy:  "created_at",
 		DefaultSortDir: "desc",
 	}
