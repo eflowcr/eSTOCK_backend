@@ -65,5 +65,8 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	// S3-W5-B: Stripe Billing
 	RegisterBillingRoutes(api, db, config, notifSvc, rolesRepo)
 
+	// S3-W5-A: Public SaaS self-service signup (no auth required)
+	RegisterSignupRoutes(api, db, config)
+
 	RegisterDocsRoutes(r)
 }
