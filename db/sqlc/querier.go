@@ -35,6 +35,7 @@ type Querier interface {
 	CreatePresentation(ctx context.Context, arg CreatePresentationParams) (Presentation, error)
 	CreatePresentationConversion(ctx context.Context, arg CreatePresentationConversionParams) (PresentationConversion, error)
 	CreatePresentationType(ctx context.Context, arg CreatePresentationTypeParams) (PresentationType, error)
+	// S3.5 W2-A: tenant_id is required and provided by the controller layer.
 	CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error)
 	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (CreateStockTransferRow, error)
 	CreateStockTransferLine(ctx context.Context, arg CreateStockTransferLineParams) (StockTransferLine, error)
@@ -49,7 +50,8 @@ type Querier interface {
 	DeletePresentation(ctx context.Context, presentationID string) error
 	DeletePresentationConversion(ctx context.Context, id string) error
 	DeletePresentationType(ctx context.Context, id string) error
-	DeleteSerial(ctx context.Context, id string) error
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+	DeleteSerialForTenant(ctx context.Context, arg DeleteSerialForTenantParams) error
 	DeleteStockTransfer(ctx context.Context, id string) error
 	DeleteStockTransferLine(ctx context.Context, id string) error
 	DeleteStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) error
@@ -89,8 +91,14 @@ type Querier interface {
 	GetRoleByID(ctx context.Context, id string) (Role, error)
 	GetRolePermissions(ctx context.Context, id string) (json.RawMessage, error)
 	// Serials CRUD for sqlc
-	// Schema: db/migrations (serials table)
-	GetSerialByID(ctx context.Context, id string) (Serial, error)
+	// Schema: db/migrations (serials table; tenant_id added in 000033).
+	// All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
+	//
+	// NOTE: ListSerialsBySku (no tenant filter) is defined in db/query/articles/articles.sql
+	// and used internally by article-update warning logic. That query is NOT for HTTP responses.
+	// Use ListSerialsBySkuForTenant for tenant-scoped HTTP endpoints.
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+	GetSerialByIDForTenant(ctx context.Context, arg GetSerialByIDForTenantParams) (Serial, error)
 	// StockSettings CRUD for sqlc
 	// Schema: db/migrations/000018_sprint_s2.up.sql (stock_settings table)
 	GetStockSettings(ctx context.Context, tenantID pgtype.UUID) (StockSetting, error)
@@ -164,9 +172,14 @@ type Querier interface {
 	// Schema: db/migrations (presentations table)
 	ListPresentations(ctx context.Context) ([]Presentation, error)
 	ListRoles(ctx context.Context) ([]Role, error)
-	// Serials by SKU (for UpdateArticle warnings) — internal, no tenant filter (serials
-	// table not yet tenant-scoped; tracked in S3.5 W2).
+	// Serials by SKU (for UpdateArticle warnings) — internal helper, intentionally
+	// not tenant-filtered (called from already tenant-scoped article controllers).
+	// S3.5 W2-A: tenant_id added to SELECT so the row type matches sqlc.Serial after
+	// migration 000033 added the column. Without it sqlc emits a per-query Row struct
+	// and the sqlcSerialToDatabase helper stops compiling.
 	ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error)
+	// S3.5 W2-A: tenant_id guard. Replaces global ListSerialsBySku for HTTP responses.
+	ListSerialsBySkuForTenant(ctx context.Context, arg ListSerialsBySkuForTenantParams) ([]Serial, error)
 	ListStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) ([]StockTransferLine, error)
 	// Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
 	ListStockTransfers(ctx context.Context) ([]ListStockTransfersRow, error)
@@ -194,7 +207,8 @@ type Querier interface {
 	UpdatePresentationConversion(ctx context.Context, arg UpdatePresentationConversionParams) (PresentationConversion, error)
 	UpdatePresentationType(ctx context.Context, arg UpdatePresentationTypeParams) (PresentationType, error)
 	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) (Role, error)
-	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error)
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant update.
+	UpdateSerialForTenant(ctx context.Context, arg UpdateSerialForTenantParams) (Serial, error)
 	UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (UpdateStockTransferRow, error)
 	UpdateStockTransferLine(ctx context.Context, arg UpdateStockTransferLineParams) (StockTransferLine, error)
 	UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (UpdateStockTransferStatusRow, error)

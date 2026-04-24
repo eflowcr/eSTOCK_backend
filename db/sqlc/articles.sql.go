@@ -741,13 +741,16 @@ func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) 
 }
 
 const listSerialsBySku = `-- name: ListSerialsBySku :many
-SELECT id, serial_number, sku, status, created_at, updated_at
+SELECT id, serial_number, sku, status, created_at, updated_at, tenant_id
 FROM serials
 WHERE sku = $1
 `
 
-// Serials by SKU (for UpdateArticle warnings) — internal, no tenant filter (serials
-// table not yet tenant-scoped; tracked in S3.5 W2).
+// Serials by SKU (for UpdateArticle warnings) — internal helper, intentionally
+// not tenant-filtered (called from already tenant-scoped article controllers).
+// S3.5 W2-A: tenant_id added to SELECT so the row type matches sqlc.Serial after
+// migration 000033 added the column. Without it sqlc emits a per-query Row struct
+// and the sqlcSerialToDatabase helper stops compiling.
 func (q *Queries) ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error) {
 	rows, err := q.db.Query(ctx, listSerialsBySku, sku)
 	if err != nil {
@@ -764,6 +767,7 @@ func (q *Queries) ListSerialsBySku(ctx context.Context, sku string) ([]Serial, e
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}

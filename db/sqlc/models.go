@@ -205,6 +205,7 @@ type InventoryLot struct {
 	Quantity    pgtype.Numeric   `json:"quantity"`
 	Location    string           `json:"location"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	TenantID    pgtype.UUID      `json:"tenant_id"`
 }
 
 type InventoryMovement struct {
@@ -456,6 +457,7 @@ type Serial struct {
 	Status       string           `json:"status"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
 // Sessions table for managing user authentication sessions
