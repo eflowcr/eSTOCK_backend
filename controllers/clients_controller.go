@@ -31,7 +31,7 @@ func (c *ClientsController) List(ctx *gin.Context) {
 		search = &s
 	}
 
-	clients, resp := c.Service.List(c.TenantID, clientType, isActive, search)
+	clients, resp := c.Service.List(c.resolveTenantID(ctx), clientType, isActive, search)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListClients", "list_clients", resp)
 		return
@@ -45,7 +45,7 @@ func (c *ClientsController) GetByID(ctx *gin.Context) {
 		return
 	}
 	// HR1-M3: use tenant-scoped lookup to prevent cross-tenant client enumeration.
-	client, resp := c.Service.GetByIDForTenant(id, c.TenantID)
+	client, resp := c.Service.GetByIDForTenant(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetClientByID", "get_client", resp)
 		return
@@ -70,7 +70,7 @@ func (c *ClientsController) Create(ctx *gin.Context) {
 		createdBy = &uid
 	}
 
-	client, resp := c.Service.Create(c.TenantID, &req, createdBy)
+	client, resp := c.Service.Create(c.resolveTenantID(ctx), &req, createdBy)
 	if resp != nil {
 		writeErrorResponse(ctx, "CreateClient", "create_client", resp)
 		return
@@ -94,7 +94,7 @@ func (c *ClientsController) Update(ctx *gin.Context) {
 	}
 
 	// HR1-M3: tenantID is already threaded through Update.
-	client, resp := c.Service.Update(id, &req, c.TenantID)
+	client, resp := c.Service.Update(id, &req, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdateClient", "update_client", resp)
 		return
@@ -108,9 +108,15 @@ func (c *ClientsController) SoftDelete(ctx *gin.Context) {
 		return
 	}
 	// HR1-M3: pass tenantID to prevent cross-tenant soft-delete.
-	if resp := c.Service.SoftDelete(id, c.TenantID); resp != nil {
+	if resp := c.Service.SoftDelete(id, c.resolveTenantID(ctx)); resp != nil {
 		writeErrorResponse(ctx, "DeleteClient", "delete_client", resp)
 		return
 	}
 	tools.ResponseOK(ctx, "DeleteClient", "Cliente eliminado", "delete_client", nil, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *ClientsController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

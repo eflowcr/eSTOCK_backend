@@ -29,7 +29,7 @@ func (c *ReceivingTasksController) WithTenantID(tenantID string) *ReceivingTasks
 }
 
 func (c *ReceivingTasksController) GetAllReceivingTasks(ctx *gin.Context) {
-	tasks, response := c.Service.ListByTenant(c.TenantID)
+	tasks, response := c.Service.ListByTenant(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllReceivingTasks", "get_all_receiving_tasks", response)
@@ -81,7 +81,7 @@ func (c *ReceivingTasksController) CreateReceivingTask(ctx *gin.Context) {
 		tools.ResponseUnauthorized(ctx, "GetUserId", "Token inválido", "invalid_token")
 		return
 	}
-	response := c.Service.CreateReceivingTask(userId, c.TenantID, &request)
+	response := c.Service.CreateReceivingTask(userId, c.resolveTenantID(ctx), &request)
 
 	if response != nil {
 		writeErrorResponse(ctx, "CreateReceivingTask", "create_receiving_task", response)
@@ -139,7 +139,7 @@ func (c *ReceivingTasksController) ImportReceivingTaskFromExcel(ctx *gin.Context
 		return
 	}
 
-	response := c.Service.ImportReceivingTaskFromExcel(userId, c.TenantID, fileBytes)
+	response := c.Service.ImportReceivingTaskFromExcel(userId, c.resolveTenantID(ctx), fileBytes)
 	if response != nil {
 		writeErrorResponse(ctx, "ImportReceivingTaskFromExcel", "import_receiving_task_from_excel", response)
 		return
@@ -161,7 +161,7 @@ func (c *ReceivingTasksController) DownloadImportTemplate(ctx *gin.Context) {
 }
 
 func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportReceivingTaskToExcel(c.TenantID)
+	fileBytes, response := c.Service.ExportReceivingTaskToExcel(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "ExportReceivingTaskToExcel", "export_receiving_task_to_excel", response)
 		return
@@ -253,4 +253,10 @@ func (c *ReceivingTasksController) LinkSupplier(ctx *gin.Context) {
 	} else {
 		tools.ResponseOK(ctx, "LinkSupplier", "Proveedor vinculado a la tarea", "link_supplier", nil, false, "")
 	}
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *ReceivingTasksController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

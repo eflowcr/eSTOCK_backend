@@ -71,6 +71,22 @@ func TenantIDFromContext(c *gin.Context) string {
 	return s
 }
 
+// ResolveTenantID returns the tenant for this request: JWT claim first, fallback only
+// if the claim is missing. Returns "" iff there is no tenant available — callers MUST
+// then return 401 to avoid leaking another tenant's data via the env var fallback.
+//
+// S3.5 W5.5 (HR-S3.5 C1): every tenant-scoped controller uses this helper to source
+// the tenant from the JWT instead of the env-injected Config.TenantID. The fallback
+// covers system/cron/admin paths that bypass JWTAuthMiddleware (e.g. test rigs that
+// pre-construct a controller with a default tenant); HTTP requests behind
+// JWTAuthMiddleware always get the JWT claim.
+func ResolveTenantID(c *gin.Context, fallback string) string {
+	if t := TenantIDFromContext(c); t != "" {
+		return t
+	}
+	return fallback
+}
+
 func GetUserId(secret string, tokenString string) (string, error) {
 	if len(tokenString) > 7 && strings.HasPrefix(tokenString, "Bearer ") {
 		tokenString = tokenString[7:]

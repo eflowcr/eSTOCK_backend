@@ -12,13 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ArticlesController — S3.5 W1: now carries TenantID injected from Config (env-injected
-// per-deployment). HR-S3-W5 C2 fix; future M2 will source tenantID from JWT claim instead.
+// ArticlesController — S3.5 W5.5 (HR-S3.5 C1): tenant is sourced per-request from the
+// JWT claim (TenantIDFromContext). The TenantID field is kept ONLY as a fallback for
+// system / cron / admin paths that bypass JWTAuthMiddleware and for tests that
+// pre-construct the controller with a default tenant.
 type ArticlesController struct {
 	Service       services.ArticlesService
 	AuditService  *services.AuditService
 	UserPrefsRepo ports.UserPreferencesRepository
-	TenantID      string
+	TenantID      string // fallback for non-JWT callers only
 }
 
 func NewArticlesController(service services.ArticlesService, auditSvc *services.AuditService, userPrefsRepo ports.UserPreferencesRepository, tenantID string) *ArticlesController {
@@ -30,8 +32,14 @@ func NewArticlesController(service services.ArticlesService, auditSvc *services.
 	}
 }
 
+// resolveTenantID returns the JWT tenant claim, falling back to the env-injected default.
+// Returns "" iff neither is set — the caller MUST then 401 to avoid cross-tenant leaks.
+func (c *ArticlesController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
+}
+
 func (c *ArticlesController) GetAllArticles(ctx *gin.Context) {
-	articles, response := c.Service.GetAllArticles(c.TenantID)
+	articles, response := c.Service.GetAllArticles(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllArticles", "get_all_articles", response)
@@ -52,7 +60,7 @@ func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
 		return
 	}
 
-	article, response := c.Service.GetArticleByID(articleID, c.TenantID)
+	article, response := c.Service.GetArticleByID(articleID, c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "GetArticleByID", "get_article_by_id", response)
 		return
@@ -71,7 +79,7 @@ func (c *ArticlesController) GetBySku(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	article, response := c.Service.GetBySku(sku, c.TenantID)
+	article, response := c.Service.GetBySku(sku, c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "GetBySku", "get_by_sku", response)
 		return
@@ -96,7 +104,7 @@ func (c *ArticlesController) CreateArticle(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.CreateArticle(c.TenantID, &articleRequest)
+	response := c.Service.CreateArticle(c.resolveTenantID(ctx), &articleRequest)
 	if response != nil {
 		writeErrorResponse(ctx, "CreateArticle", "create_article", response)
 		return
@@ -120,7 +128,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		return
 	}
 
-	article, _ := c.Service.GetArticleByID(id, c.TenantID)
+	article, _ := c.Service.GetArticleByID(id, c.resolveTenantID(ctx))
 	var req requests.Article
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		tools.ResponseBadRequest(ctx, "UpdateArticle", "Carga útil no válida", "update_article")
@@ -131,7 +139,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		return
 	}
 
-	updatedArticle, errResp, warnings := c.Service.UpdateArticle(id, c.TenantID, &req)
+	updatedArticle, errResp, warnings := c.Service.UpdateArticle(id, c.resolveTenantID(ctx), &req)
 	if errResp != nil {
 		writeErrorResponse(ctx, "UpdateArticle", "update_article", errResp)
 		return
@@ -174,7 +182,7 @@ func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	importedArticles, skippedArticles, errorResponses := c.Service.ImportArticlesFromExcel(c.TenantID, fileBytes)
+	importedArticles, skippedArticles, errorResponses := c.Service.ImportArticlesFromExcel(c.resolveTenantID(ctx), fileBytes)
 	if len(importedArticles) == 0 && len(skippedArticles) == 0 && len(errorResponses) > 0 {
 		resp := errorResponses[0]
 		writeErrorResponse(ctx, "ImportArticlesFromExcel", "import_articles_from_excel", resp)
@@ -201,7 +209,7 @@ func (c *ArticlesController) ValidateImportRows(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_import_rows")
 		return
 	}
-	results, resp := c.Service.ValidateImportRows(c.TenantID, rows)
+	results, resp := c.Service.ValidateImportRows(c.resolveTenantID(ctx), rows)
 	if resp != nil {
 		writeErrorResponse(ctx, "ValidateImportRows", "validate_import_rows", resp)
 		return
@@ -222,7 +230,7 @@ func (c *ArticlesController) ImportArticlesFromJSON(ctx *gin.Context) {
 		return
 	}
 
-	imported, skipped, errorResponses := c.Service.ImportArticlesFromJSON(c.TenantID, rows)
+	imported, skipped, errorResponses := c.Service.ImportArticlesFromJSON(c.resolveTenantID(ctx), rows)
 	tools.ResponseOK(ctx, "ImportArticlesFromJSON", "Importación completada", "import_articles_from_json", gin.H{
 		"successful":   len(imported),
 		"skipped":      len(skipped),
@@ -234,7 +242,7 @@ func (c *ArticlesController) ImportArticlesFromJSON(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) ExportArticlesToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportArticlesToExcel(c.TenantID)
+	fileBytes, response := c.Service.ExportArticlesToExcel(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "ExportArticlesToExcel", "export_articles_to_excel", response)
 		return
@@ -254,7 +262,7 @@ func (c *ArticlesController) DownloadImportTemplate(ctx *gin.Context) {
 		}
 	}
 
-	fileBytes, response := c.Service.GenerateImportTemplate(c.TenantID, lang)
+	fileBytes, response := c.Service.GenerateImportTemplate(c.resolveTenantID(ctx), lang)
 	if response != nil {
 		writeErrorResponse(ctx, "DownloadImportTemplate", "download_articles_import_template", response)
 		return
@@ -271,8 +279,8 @@ func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 		return
 	}
 
-	article, _ := c.Service.GetArticleByID(id, c.TenantID)
-	resp := c.Service.DeleteArticle(id, c.TenantID)
+	article, _ := c.Service.GetArticleByID(id, c.resolveTenantID(ctx))
+	resp := c.Service.DeleteArticle(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "DeleteArticle", "delete_article", resp)
 		return

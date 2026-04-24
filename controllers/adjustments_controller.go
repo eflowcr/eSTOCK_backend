@@ -31,7 +31,7 @@ func (c *AdjustmentsController) WithTenantID(tenantID string) *AdjustmentsContro
 }
 
 func (c *AdjustmentsController) GetAllAdjustments(ctx *gin.Context) {
-	adjustments, response := c.Service.ListByTenant(c.TenantID)
+	adjustments, response := c.Service.ListByTenant(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllAdjustments", "get_all_adjustments", response)
@@ -105,7 +105,7 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 		return
 	}
 
-	created, response := c.Service.CreateAdjustment(userId, c.TenantID, adjustment)
+	created, response := c.Service.CreateAdjustment(userId, c.resolveTenantID(ctx), adjustment)
 	if response != nil {
 		writeErrorResponse(ctx, "CreateAdjustment", "create_adjustment", response)
 		return
@@ -127,7 +127,7 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 }
 
 func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
-	data, response := c.Service.ExportAdjustmentsToExcel(c.TenantID)
+	data, response := c.Service.ExportAdjustmentsToExcel(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "ExportAdjustmentsToExcel", "export_adjustments_to_excel", response)
 		return
@@ -140,4 +140,10 @@ func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
 
 	ctx.Header("Content-Disposition", "attachment; filename=adjustments.xlsx")
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *AdjustmentsController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

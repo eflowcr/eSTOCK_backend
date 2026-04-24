@@ -20,7 +20,7 @@ func NewStockAlertsController(service services.StockAlertsService, tenantID stri
 
 func (c *StockAlertsController) GetAllStockAlerts(ctx *gin.Context) {
 	resolved := ctx.Param("resolved") == "true"
-	stockAlerts, response := c.Service.GetAllStockAlerts(c.TenantID, resolved)
+	stockAlerts, response := c.Service.GetAllStockAlerts(c.resolveTenantID(ctx), resolved)
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllStockAlerts", "get_all_stock_alerts", response)
@@ -36,7 +36,7 @@ func (c *StockAlertsController) GetAllStockAlerts(ctx *gin.Context) {
 }
 
 func (c *StockAlertsController) Analyze(ctx *gin.Context) {
-	responseData, response := c.Service.Analyze(c.TenantID)
+	responseData, response := c.Service.Analyze(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "Analyze", "analyze_stock_alerts", response)
@@ -47,7 +47,7 @@ func (c *StockAlertsController) Analyze(ctx *gin.Context) {
 }
 
 func (c *StockAlertsController) LotExpiration(ctx *gin.Context) {
-	response, errResponse := c.Service.LotExpiration(c.TenantID)
+	response, errResponse := c.Service.LotExpiration(c.resolveTenantID(ctx))
 	if errResponse != nil {
 		writeErrorResponse(ctx, "LotExpiration", "lot_expiration", errResponse)
 		return
@@ -62,7 +62,7 @@ func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.ResolveAlert(c.TenantID, alertID)
+	response := c.Service.ResolveAlert(c.resolveTenantID(ctx), alertID)
 
 	if response != nil {
 		writeErrorResponse(ctx, "ResolveAlert", "resolve_stock_alert", response)
@@ -73,7 +73,7 @@ func (c *StockAlertsController) ResolveAlert(ctx *gin.Context) {
 }
 
 func (c *StockAlertsController) ExportAlertsToExcel(ctx *gin.Context) {
-	data, response := c.Service.ExportAlertsToExcel(c.TenantID)
+	data, response := c.Service.ExportAlertsToExcel(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "ExportAlertsToExcel", "export_stock_alerts_to_excel", response)
@@ -87,4 +87,10 @@ func (c *StockAlertsController) ExportAlertsToExcel(ctx *gin.Context) {
 
 	ctx.Header("Content-Disposition", "attachment; filename=stock_alerts.xlsx")
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *StockAlertsController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }
