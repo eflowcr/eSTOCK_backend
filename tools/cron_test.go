@@ -323,7 +323,9 @@ func TestRunTrialExpirationCheck_SendsReminder7d(t *testing.T) {
 
 	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
 
-	// sendFn is called in a goroutine — give it a moment.
+	// TODO(M4 — S3.5): sendFn is called in a goroutine — 50ms sleep is a flaky timeout.
+	// Fix: make sendFn synchronous in tests (no go func) or use sync.WaitGroup/channel.
+	// Deferred to S3.5 to avoid large test refactor in this wave.
 	time.Sleep(50 * time.Millisecond)
 	mu.Lock()
 	defer mu.Unlock()

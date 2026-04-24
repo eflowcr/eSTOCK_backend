@@ -58,6 +58,8 @@ func (c *BillingController) Checkout(ctx *gin.Context) {
 		tenantEmailStr = c.TenantID + "@tenant.estock.app"
 	}
 
+	// TODO(CS2 — S3.5): third arg is tenantName but passes c.TenantID (a UUID). Stripe dashboard
+	// shows UUID as customer name — unidentifiable. Should use tenant's company name from DB or JWT.
 	customerID, resp := c.Service.GetOrCreateStripeCustomer(c.TenantID, tenantEmailStr, c.TenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "BillingCheckout", "billing_checkout", resp)
@@ -144,11 +146,16 @@ func (c *BillingController) StripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// Idempotency: skip already-processed events.
-	processed, iresp := c.Service.IsWebhookEventProcessed(event.ID)
+	// Idempotency gate: atomically INSERT event_id (PRIMARY KEY). If RowsAffected==0, another
+	// delivery already claimed this event — return 200 immediately without re-processing.
+	// This single round-trip eliminates the TOCTOU race of a separate SELECT + INSERT.
+	alreadyProcessed, iresp := c.Service.AttemptMarkWebhookEventProcessed(event.ID, string(event.Type))
 	if iresp != nil {
-		log.Warn().Err(iresp.Error).Str("event_id", event.ID).Msg("billing webhook: idempotency check failed — processing anyway")
-	} else if processed {
+		log.Error().Err(iresp.Error).Str("event_id", event.ID).Msg("billing webhook: idempotency gate failed — aborting to avoid double-processing")
+		ctx.Status(http.StatusServiceUnavailable)
+		return
+	}
+	if alreadyProcessed {
 		log.Debug().Str("event_id", event.ID).Str("type", string(event.Type)).Msg("billing webhook: duplicate event — skipping")
 		ctx.Status(http.StatusOK)
 		return
@@ -216,10 +223,8 @@ func (c *BillingController) StripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// Mark event as processed (best-effort — don't fail the webhook if this errors).
-	if resp := c.Service.MarkWebhookEventProcessed(event.ID); resp != nil {
-		log.Warn().Err(resp.Error).Str("event_id", event.ID).Msg("billing webhook: failed to mark event as processed")
-	}
+	// Event was marked as processed atomically at the start (AttemptMarkWebhookEventProcessed).
+	// No second write needed here.
 
 	ctx.Status(http.StatusOK)
 }

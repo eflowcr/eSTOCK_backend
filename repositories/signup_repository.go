@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"regexp"
 	"time"
 
@@ -27,6 +28,11 @@ type SignupRepository struct {
 }
 
 // InitiateSignup validates uniqueness, creates a pending signup token, and sends a verification email.
+//
+// TODO(M7 — S3.5): expired signup_tokens (expires_at < NOW(), used_at IS NULL) accumulate indefinitely.
+// Add a CronDispatch cleanup job:
+//   DELETE FROM signup_tokens WHERE expires_at < NOW() - INTERVAL '7 days'
+// Deferred to S3.5; at current signup volume the table won't grow to problematic size in the near term.
 func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.SignupRequest) *responses.InternalResponse {
 	// Extra validation: slug pattern (validator tag handles min/max length but not regex).
 	if !slugRegexp.MatchString(req.TenantSlug) {
@@ -206,18 +212,12 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 			return fmt.Errorf("create admin user: %w", err)
 		}
 
-		// 4. Insert demo_data_seeds record — actual seeding runs async after tx.
-		demoID := uuid.NewString()
-		demo := database.DemoDataSeed{
-			ID:       demoID,
-			TenantID: tenantID,
-			SeedName: tools.FarmaSeedName,
-		}
-		if err := tx.Create(&demo).Error; err != nil {
-			return fmt.Errorf("create demo_data_seed: %w", err)
-		}
+		// CS6 fix: do NOT pre-insert demo_data_seeds here. The placeholder caused SeedFarma's
+		// idempotency guard to find the row and exit immediately — leaving the tenant with an
+		// empty WMS. SeedFarma manages demo_data_seeds entirely (checks at start, inserts on
+		// success). This tx only creates tenant + user + marks token used.
 
-		// 5. Mark signup token as used.
+		// 4. Mark signup token as used.
 		if err := tx.Exec("UPDATE signup_tokens SET used_at = NOW() WHERE id = ?", st.ID).Error; err != nil {
 			return fmt.Errorf("mark token used: %w", err)
 		}
@@ -260,11 +260,16 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 // ─── email template ───────────────────────────────────────────────────────────
 
 func renderSignupVerifyEmail(adminName, companyName, verifyLink string) (htmlBody, textBody string) {
+	// C3 fix: escape user-controlled fields before injecting into HTML to prevent XSS.
+	// verifyLink is a server-constructed URL (not user input), so no escaping needed there.
+	safeAdminName := html.EscapeString(adminName)
+	safeCompanyName := html.EscapeString(companyName)
+
 	text := fmt.Sprintf(
 		"Hola %s,\n\nGracias por registrar %s en eSTOCK.\n\nVerifica tu cuenta aquí: %s\n\nEl enlace expira en 24 horas.\n\neSTOCK Team",
 		adminName, companyName, verifyLink,
 	)
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	htmlStr := fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 12px rgba(32,49,115,0.08);">
@@ -276,6 +281,6 @@ func renderSignupVerifyEmail(adminName, companyName, verifyLink string) (htmlBod
     <a href="%s" style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Verificar cuenta</a>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">Si no solicitaste este registro, puedes ignorar este correo.</p>
   </div>
-</body></html>`, adminName, companyName, verifyLink)
-	return html, text
+</body></html>`, safeAdminName, safeCompanyName, verifyLink)
+	return htmlStr, text
 }

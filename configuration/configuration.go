@@ -140,6 +140,11 @@ func LoadConfig() (Config, error) {
 
 const minJWTSecretLength = 32
 
+// TODO(M6 — S3.5): log a startup warning if any STRIPE_* var is unset when billing routes are
+// registered. Currently billing routes are always registered (activate_routes.go) even when
+// STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are empty — checkout panics or returns cryptic errors.
+// Add: if cfg.StripeSecretKey == "" { log.Warn().Msg("STRIPE_SECRET_KEY not set — billing disabled") }
+// Deferred to S3.5 since current deploy uses env vars; risk is ops error, not code bug.
 func validateRequired(cfg Config) error {
 	if cfg.JWTSecret == "" {
 		return fmt.Errorf("missing required config: JWT_SECRET (or Secret)")

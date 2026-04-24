@@ -69,6 +69,10 @@ func main() {
 	}
 
 	r := gin.New()
+	// TODO(CS5 — S3.5): nil disables X-Forwarded-For trust — correct for direct-deploy but if
+	// app runs behind k3s ingress/LB, rate limiter will see the proxy IP for all requests, effectively
+	// limiting all signups from the same source. Confirm deployment topology and configure trusted
+	// proxy CIDRs (e.g. r.SetTrustedProxies([]string{"10.0.0.0/8"})) before go-live.
 	r.SetTrustedProxies(nil)
 	r.Use(gin.Recovery())
 	r.Use(tools.CORSMiddleware())

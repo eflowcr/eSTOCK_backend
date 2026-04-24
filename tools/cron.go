@@ -268,7 +268,9 @@ func RunTrialExpirationCheck(db *gorm.DB, sendFn func(ctx context.Context, toEma
 
 		for _, t := range tenants {
 			endsAt := t.TrialEndsAt.UTC()
-			// Truncate to whole days so the comparison is stable within any hour of the day.
+			// TODO(CS1 — S3.5): integer truncation means a tenant who signed up at 23:59 with
+			// trial_ends_at 14d later at 23:59 will show daysLeft=6 at midnight on day 7 (only
+			// 23h elapsed). Use math.Round or add +0.5 before int() to fix off-by-one on reminder day.
 			daysLeft := int(endsAt.Sub(now).Hours() / 24)
 
 			switch {
@@ -296,8 +298,42 @@ func RunTrialExpirationCheck(db *gorm.DB, sendFn func(ctx context.Context, toEma
 
 			case daysLeft == 7, daysLeft == 11, daysLeft == 13:
 				templateType := fmt.Sprintf("trial_reminder_%dd", daysLeft)
+
+				// M1 fix: per-day dedup — skip if a reminder with this event_type was already
+				// sent to this tenant in the last 23 hours (cron fires hourly, so without this
+				// a tenant could receive up to 24 reminder emails in a single day).
+				var lastSentCount int64
+				if err := tx.Raw(`
+					SELECT COUNT(*) FROM notifications
+					 WHERE tenant_id = ? AND event_type = ? AND created_at > NOW() - INTERVAL '23 hours'
+				`, t.ID, templateType).Scan(&lastSentCount).Error; err != nil {
+					log.Warn().Err(err).Str("tenant_id", t.ID).Str("event_type", templateType).
+						Msg("cron: trial_reminder dedup check failed — skipping to be safe")
+					continue
+				}
+				if lastSentCount > 0 {
+					log.Debug().Str("tenant_id", t.ID).Str("template", templateType).
+						Msg("cron: trial reminder already sent today — skipping")
+					continue
+				}
+
 				log.Info().Str("tenant_id", t.ID).Str("tenant", t.Name).Int("days_left", daysLeft).
 					Str("template", templateType).Msg("cron: sending trial reminder")
+
+				// Insert notification record inside tx to mark as sent (dedup gate).
+				// title/body are informational only — the actual content is in the email.
+				notifID := fmt.Sprintf("trial-%s-%s", t.ID[:8], templateType)
+				if err := tx.Exec(`
+					INSERT INTO notifications (id, tenant_id, user_id, event_type, title, channels, created_at)
+					VALUES (?, ?, '', ?, ?, 'email', NOW())
+					ON CONFLICT DO NOTHING
+				`, notifID, t.ID, templateType,
+					fmt.Sprintf("Trial reminder: %d días restantes", daysLeft),
+				).Error; err != nil {
+					log.Warn().Err(err).Str("tenant_id", t.ID).Str("template", templateType).
+						Msg("cron: failed to insert trial reminder notification record — skipping email to avoid duplicates")
+					continue
+				}
 
 				if sendFn != nil {
 					capturedEmail := t.Email
