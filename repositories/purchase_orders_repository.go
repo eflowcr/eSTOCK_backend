@@ -292,6 +292,14 @@ func (r *PurchaseOrdersRepository) SoftDelete(id, tenantID string) *responses.In
 		return &responses.InternalResponse{Error: err, Message: "Error al obtener la orden de compra"}
 	}
 
+	if po.Status != "draft" {
+		return &responses.InternalResponse{
+			Message:    "Solo se pueden eliminar órdenes de compra en estado 'draft'",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+
 	now := tools.GetCurrentTime()
 	if err := r.DB.Model(&po).Updates(map[string]interface{}{
 		"deleted_at": now,

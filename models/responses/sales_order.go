@@ -9,7 +9,7 @@ import (
 // SalesOrderResponse is the detailed view of a sales order returned by the API.
 type SalesOrderResponse struct {
 	ID            string                        `json:"id"`
-	TenantID      string                        `json:"tenant_id"`
+	TenantID      string                        `json:"-"`
 	SONumber      string                        `json:"so_number"`
 	CustomerID    string                        `json:"customer_id"`
 	CustomerName  *string                       `json:"customer_name,omitempty"`
