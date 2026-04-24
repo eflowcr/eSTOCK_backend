@@ -93,3 +93,18 @@ func TestAdminCronTrigger_InvalidJob(t *testing.T) {
 	w := performCronRequest("admin", rolesRepo, ctrl.Trigger, "POST", "/admin/cron/trigger", "/admin/cron/trigger?job=foo")
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// TestAdminCronTrigger_TrialExpiration_Admin_Returns500OnNilDB verifies that
+// ?job=trial_expiration with a nil DB results in a 500 (the job errors internally).
+func TestAdminCronTrigger_TrialExpiration_Admin_Returns500OnNilDB(t *testing.T) {
+	rolesRepo := &stubCronRolesRepo{
+		perms: map[string][]byte{
+			"admin": []byte(`{"all":true}`),
+		},
+	}
+	ctrl := &AdminCronController{DB: nil}
+
+	w := performCronRequest("admin", rolesRepo, ctrl.Trigger, "POST", "/admin/cron/trigger", "/admin/cron/trigger?job=trial_expiration")
+	// nil DB → RunTrialExpirationCheck returns "cron: nil db" error → ResponseInternal → 500
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

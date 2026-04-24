@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -140,13 +141,32 @@ func main() {
 			}
 		}
 
+		// S3-W5-C: trialSendFn sends trial lifecycle emails directly via the email sender
+		// (not via in-app notifications) since trial tenants may not have user accounts yet.
+		// Fire-and-forget: errors are logged but never block the cron.
+		var trialSendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error
+		if emailSender := wire.EmailSenderForConfig(config); emailSender != nil {
+			trialSendFn = func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error {
+				subject, htmlBody, textBody := tools.RenderTrialEmail(templateType, tenantName, daysLeft)
+				if err := emailSender.Send(ctx, toEmail, subject, htmlBody, textBody); err != nil {
+					log.Warn().Err(err).
+						Str("email", toEmail).
+						Str("template", templateType).
+						Msg("cron: trial email send failed")
+					return fmt.Errorf("trial email send: %w", err)
+				}
+				log.Info().Str("email", toEmail).Str("template", templateType).Msg("cron: trial email sent")
+				return nil
+			}
+		}
+
 		log.Info().Msg("cron: first run (post-startup)")
-		tools.CronDispatch(db, analyzer, lotNotifyFn, lowStockNotifyFn)
+		tools.CronDispatch(db, analyzer, lotNotifyFn, lowStockNotifyFn, trialSendFn)
 
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			tools.CronDispatch(db, analyzer, lotNotifyFn, lowStockNotifyFn)
+			tools.CronDispatch(db, analyzer, lotNotifyFn, lowStockNotifyFn, trialSendFn)
 		}
 	}()
 

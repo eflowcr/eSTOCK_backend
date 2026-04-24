@@ -139,6 +139,110 @@ func RenderNotificationEmail(eventType, title, body string) (htmlBody, text stri
 	}
 }
 
+// RenderTrialEmail returns (subject, htmlBody, textBody) for trial lifecycle emails.
+// templateType is one of: "trial_reminder_7d", "trial_reminder_11d", "trial_reminder_13d", "trial_expired".
+// tenantName and daysLeft are HTML-escaped before embedding.
+func RenderTrialEmail(templateType, tenantName string, daysLeft int) (subject, htmlBody, textBody string) {
+	switch templateType {
+	case "trial_reminder_13d", "trial_reminder_11d", "trial_reminder_7d":
+		subject = fmt.Sprintf("Tu prueba de eSTOCK vence en %d días", daysLeft)
+		htmlBody = renderTrialReminderHTML(tenantName, daysLeft)
+		textBody = fmt.Sprintf(
+			"Hola %s,\n\nTu período de prueba gratuita de eSTOCK vence en %d día(s).\n\n"+
+				"Para continuar usando eSTOCK sin interrupciones, activa tu suscripción en:\nhttps://app.estock.app/billing\n\n"+
+				"Si tienes alguna duda, escríbenos a soporte@eprac.com.\n\neSTOCK — Sistema de gestión de inventario",
+			tenantName, daysLeft,
+		)
+	case "trial_expired":
+		subject = "Tu prueba de eSTOCK ha expirado"
+		htmlBody = renderTrialExpiredHTML(tenantName)
+		textBody = fmt.Sprintf(
+			"Hola %s,\n\nTu período de prueba gratuita de eSTOCK ha finalizado y tu cuenta ha sido suspendida.\n\n"+
+				"Para reactivar tu cuenta y recuperar acceso completo, visita:\nhttps://app.estock.app/billing\n\n"+
+				"Si necesitas ayuda, contáctanos en soporte@eprac.com.\n\neSTOCK — Sistema de gestión de inventario",
+			tenantName,
+		)
+	default:
+		subject = "Aviso sobre tu cuenta eSTOCK"
+		htmlBody = renderGenericHTML("Aviso sobre tu cuenta eSTOCK", fmt.Sprintf("Hola %s, hay un aviso sobre tu cuenta.", html.EscapeString(tenantName)))
+		textBody = fmt.Sprintf("Hola %s,\n\nHay un aviso sobre tu cuenta de eSTOCK.", tenantName)
+	}
+	return
+}
+
+// renderTrialReminderHTML returns a branded HTML email body for a trial reminder.
+// tenantName is HTML-escaped before use.
+func renderTrialReminderHTML(tenantName string, daysLeft int) string {
+	safeName := html.EscapeString(tenantName)
+	urgencyColor := "#F59E0B" // amber — default
+	urgencyLabel := "Recordatorio de prueba"
+	urgencyBg := "#FEF3C7"
+	urgencyText := "#92400E"
+
+	if daysLeft <= 7 {
+		urgencyColor = "#EF4444" // red — urgent
+		urgencyLabel = "Accion requerida — prueba por vencer"
+		urgencyBg = "#FEE2E2"
+		urgencyText = "#991B1B"
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 12px rgba(32,49,115,0.08);">
+    <div style="background:%s;border-left:4px solid %s;padding:12px 16px;border-radius:4px;margin-bottom:24px;">
+      <strong style="color:%s;">%s</strong>
+    </div>
+    <h1 style="color:#203173;font-family:Montserrat,sans-serif;font-weight:700;margin:0 0 16px;font-size:22px;">Tu prueba vence en %d día(s)</h1>
+    <p style="color:#475569;line-height:1.6;margin:0 0 24px;">
+      Hola <strong>%s</strong>,<br><br>
+      Tu período de prueba gratuita de <strong>eSTOCK</strong> vence en <strong>%d día(s)</strong>.
+      Para continuar usando eSTOCK sin interrupciones, activa tu suscripción ahora.
+    </p>
+    <a href="https://app.estock.app/billing"
+       style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">
+      Activar suscripción
+    </a>
+    <p style="color:#94A3B8;font-size:12px;margin-top:32px;">
+      Si tienes alguna pregunta, escríbenos a <a href="mailto:soporte@eprac.com" style="color:#203173;">soporte@eprac.com</a>.<br>
+      eSTOCK — Sistema de gestión de inventario
+    </p>
+  </div>
+</body></html>`,
+		urgencyBg, urgencyColor, urgencyText, urgencyLabel,
+		daysLeft, safeName, daysLeft,
+	)
+}
+
+// renderTrialExpiredHTML returns a branded HTML email body for trial expiration.
+// tenantName is HTML-escaped before use.
+func renderTrialExpiredHTML(tenantName string) string {
+	safeName := html.EscapeString(tenantName)
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 12px rgba(32,49,115,0.08);">
+    <div style="background:#FEE2E2;border-left:4px solid #EF4444;padding:12px 16px;border-radius:4px;margin-bottom:24px;">
+      <strong style="color:#991B1B;">Cuenta suspendida</strong>
+    </div>
+    <h1 style="color:#203173;font-family:Montserrat,sans-serif;font-weight:700;margin:0 0 16px;font-size:22px;">Tu prueba de eSTOCK ha expirado</h1>
+    <p style="color:#475569;line-height:1.6;margin:0 0 24px;">
+      Hola <strong>%s</strong>,<br><br>
+      Tu período de prueba gratuita de <strong>eSTOCK</strong> ha finalizado y tu cuenta ha sido <strong>suspendida</strong>.
+      Para recuperar acceso completo y reactivar tu cuenta, actualiza tu plan de facturación.
+    </p>
+    <a href="https://app.estock.app/billing"
+       style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">
+      Reactivar cuenta
+    </a>
+    <p style="color:#94A3B8;font-size:12px;margin-top:32px;">
+      ¿Necesitas ayuda? Contáctanos en <a href="mailto:soporte@eprac.com" style="color:#203173;">soporte@eprac.com</a>.<br>
+      eSTOCK — Sistema de gestión de inventario
+    </p>
+  </div>
+</body></html>`, safeName)
+}
+
 func renderResetEmailHTML(userName, resetLink, appName string) string {
 	safeUserName := html.EscapeString(userName)
 	safeAppName := html.EscapeString(appName)
