@@ -64,7 +64,7 @@ func (m *mockReceivingTasksRepo) ImportReceivingTaskFromExcel(userID string, ten
 	return m.importErr
 }
 
-func (m *mockReceivingTasksRepo) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockReceivingTasksRepo) ExportReceivingTaskToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportBytes, m.exportErr
 }
 
@@ -213,7 +213,7 @@ func TestReceivingTasksService_ExportReceivingTaskToExcel_Success(t *testing.T) 
 		exportBytes: []byte("excel-data"),
 	}
 	svc := NewReceivingTasksService(repo)
-	data, errResp := svc.ExportReceivingTaskToExcel()
+	data, errResp := svc.ExportReceivingTaskToExcel("tenant-1")
 	require.Nil(t, errResp)
 	assert.Equal(t, []byte("excel-data"), data)
 }
@@ -227,7 +227,7 @@ func TestReceivingTasksService_ExportReceivingTaskToExcel_Error(t *testing.T) {
 		},
 	}
 	svc := NewReceivingTasksService(repo)
-	data, errResp := svc.ExportReceivingTaskToExcel()
+	data, errResp := svc.ExportReceivingTaskToExcel("tenant-1")
 	require.NotNil(t, errResp)
 	assert.Nil(t, data)
 }
@@ -430,7 +430,7 @@ func (m *mockReceivingTasksRepoCapture) UpdateReceivingTask(id string, data map[
 func (m *mockReceivingTasksRepoCapture) ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	return nil
 }
-func (m *mockReceivingTasksRepoCapture) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockReceivingTasksRepoCapture) ExportReceivingTaskToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return nil, nil
 }
 func (m *mockReceivingTasksRepoCapture) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {

@@ -17,7 +17,7 @@ type AdjustmentsRepository interface {
 	GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse)
 	GetAdjustmentDetails(id string) (*dto.AdjustmentDetails, *responses.InternalResponse)
 	CreateAdjustment(userId string, tenantID string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse)
-	ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse)
+	ExportAdjustmentsToExcel(tenantID string) ([]byte, *responses.InternalResponse)
 	// GetInventoryForAdjustment returns the inventory record for a SKU+location pair.
 	// Used by AdjustmentsService to validate available_qty before decrease/count_reconcile.
 	GetInventoryForAdjustment(sku, location string) (*database.Inventory, *responses.InternalResponse)

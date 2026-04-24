@@ -242,7 +242,7 @@ func (c *PickingTasksController) DownloadImportTemplate(ctx *gin.Context) {
 }
 
 func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportPickingTasksToExcel()
+	fileBytes, response := c.Service.ExportPickingTasksToExcel(c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "ExportPickingTasksToExcel", "export_picking_tasks_to_excel", response)
 		return

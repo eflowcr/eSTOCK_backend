@@ -141,6 +141,6 @@ func (s *AdjustmentsService) CreateAdjustment(userId string, tenantID string, ad
 	return s.Repository.CreateAdjustment(userId, tenantID, req)
 }
 
-func (s *AdjustmentsService) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportAdjustmentsToExcel()
+func (s *AdjustmentsService) ExportAdjustmentsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportAdjustmentsToExcel(tenantID)
 }

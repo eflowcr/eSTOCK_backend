@@ -23,7 +23,7 @@ type PickingTaskRepository interface {
 	// change while task is in_progress, and releases them on cancel (B3b/B3c).
 	UpdatePickingTask(ctx context.Context, id string, data map[string]interface{}, userId string) *responses.InternalResponse
 	ImportPickingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse
-	ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse)
+	ExportPickingTasksToExcel(tenantID string) ([]byte, *responses.InternalResponse)
 	// CompletePickingTask finalises all items using allocations (H5).
 	// The old `location` parameter is removed; locations come from each item's allocations.
 	CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse

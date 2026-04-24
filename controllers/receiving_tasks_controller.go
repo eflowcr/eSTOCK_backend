@@ -161,7 +161,7 @@ func (c *ReceivingTasksController) DownloadImportTemplate(ctx *gin.Context) {
 }
 
 func (c *ReceivingTasksController) ExportReceivingTaskToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportReceivingTaskToExcel()
+	fileBytes, response := c.Service.ExportReceivingTaskToExcel(c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "ExportReceivingTaskToExcel", "export_receiving_task_to_excel", response)
 		return

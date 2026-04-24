@@ -64,7 +64,7 @@ func (m *mockPickingTaskRepoCtrl) ImportPickingTaskFromExcel(userID string, tena
 	return m.importErr
 }
 
-func (m *mockPickingTaskRepoCtrl) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockPickingTaskRepoCtrl) ExportPickingTasksToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportData, m.exportErr
 }
 

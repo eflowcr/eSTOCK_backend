@@ -60,7 +60,7 @@ func (m *mockReceivingTasksRepoCtrl) ImportReceivingTaskFromExcel(userID string,
 	return m.importErr
 }
 
-func (m *mockReceivingTasksRepoCtrl) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockReceivingTasksRepoCtrl) ExportReceivingTaskToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportData, m.exportErr
 }
 

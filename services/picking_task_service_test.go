@@ -70,7 +70,7 @@ func (m *mockPickingTaskRepo) ImportPickingTaskFromExcel(userID string, tenantID
 	return m.importErr
 }
 
-func (m *mockPickingTaskRepo) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockPickingTaskRepo) ExportPickingTasksToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportBytes, m.exportErr
 }
 
@@ -238,7 +238,7 @@ func TestPickingTaskService_ImportPickingTaskFromExcel_Error(t *testing.T) {
 func TestPickingTaskService_ExportPickingTasksToExcel_Success(t *testing.T) {
 	repo := &mockPickingTaskRepo{exportBytes: []byte("excel-data")}
 	svc := NewPickingTaskService(repo)
-	data, errResp := svc.ExportPickingTasksToExcel()
+	data, errResp := svc.ExportPickingTasksToExcel("tenant-1")
 	require.Nil(t, errResp)
 	assert.Equal(t, []byte("excel-data"), data)
 }
@@ -252,7 +252,7 @@ func TestPickingTaskService_ExportPickingTasksToExcel_Error(t *testing.T) {
 		},
 	}
 	svc := NewPickingTaskService(repo)
-	data, errResp := svc.ExportPickingTasksToExcel()
+	data, errResp := svc.ExportPickingTasksToExcel("tenant-1")
 	require.NotNil(t, errResp)
 	assert.Nil(t, data)
 }

@@ -127,7 +127,7 @@ func (c *AdjustmentsController) CreateAdjustment(ctx *gin.Context) {
 }
 
 func (c *AdjustmentsController) ExportAdjustmentsToExcel(ctx *gin.Context) {
-	data, response := c.Service.ExportAdjustmentsToExcel()
+	data, response := c.Service.ExportAdjustmentsToExcel(c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "ExportAdjustmentsToExcel", "export_adjustments_to_excel", response)
 		return

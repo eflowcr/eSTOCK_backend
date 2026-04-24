@@ -456,8 +456,8 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, tenantID string,
 	return created, nil
 }
 
-func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
-	adjustments, errResp := r.GetAllAdjustments()
+func (r *AdjustmentsRepository) ExportAdjustmentsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	adjustments, errResp := r.GetAllForTenant(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}

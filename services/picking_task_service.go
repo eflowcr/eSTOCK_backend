@@ -61,8 +61,8 @@ func (s *PickingTaskService) ImportPickingTaskFromExcel(userID string, tenantID 
 	return s.Repository.ImportPickingTaskFromExcel(userID, tenantID, fileBytes)
 }
 
-func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportPickingTasksToExcel()
+func (s *PickingTaskService) ExportPickingTasksToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportPickingTasksToExcel(tenantID)
 }
 
 func (s *PickingTaskService) CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {

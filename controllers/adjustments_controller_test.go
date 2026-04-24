@@ -57,7 +57,7 @@ func (m *mockAdjustmentsRepoCtrl) CreateAdjustment(userId string, tenantID strin
 	return &database.Adjustment{ID: "new-adj-1", SKU: adjustment.SKU, Location: adjustment.Location, Reason: adjustment.Reason, UserID: userId}, nil
 }
 
-func (m *mockAdjustmentsRepoCtrl) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockAdjustmentsRepoCtrl) ExportAdjustmentsToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportData, m.exportErr
 }
 

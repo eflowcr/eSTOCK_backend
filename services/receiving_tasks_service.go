@@ -65,8 +65,8 @@ func (s *ReceivingTasksService) ImportReceivingTaskFromExcel(userID string, tena
 	return s.Repository.ImportReceivingTaskFromExcel(userID, tenantID, fileBytes)
 }
 
-func (s *ReceivingTasksService) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportReceivingTaskToExcel()
+func (s *ReceivingTasksService) ExportReceivingTaskToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportReceivingTaskToExcel(tenantID)
 }
 
 func (s *ReceivingTasksService) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {

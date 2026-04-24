@@ -704,8 +704,8 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, t
 	}
 }
 
-func (r *ReceivingTasksRepository) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
-	tasks, errResp := r.GetAllReceivingTasks()
+func (r *ReceivingTasksRepository) ExportReceivingTaskToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	tasks, errResp := r.GetAllForTenant(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}

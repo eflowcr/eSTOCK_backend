@@ -1227,8 +1227,8 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, tenant
 	}
 }
 
-func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
-	tasks, errResp := r.GetAllPickingTasks()
+func (r *PickingTaskRepository) ExportPickingTasksToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	tasks, errResp := r.GetAllForTenant(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}

@@ -78,7 +78,7 @@ func (m *mockAdjustmentsRepo) CreateAdjustment(userId string, tenantID string, a
 	return result, nil
 }
 
-func (m *mockAdjustmentsRepo) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockAdjustmentsRepo) ExportAdjustmentsToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportBytes, m.exportErr
 }
 
@@ -311,7 +311,7 @@ func TestAdjustmentsService_CreateAdjustment_ReasonCodeLookupError_ReturnsError(
 func TestAdjustmentsService_ExportAdjustmentsToExcel_Success(t *testing.T) {
 	repo := &mockAdjustmentsRepo{exportBytes: []byte("excel-data")}
 	svc := NewAdjustmentsService(repo, nil)
-	data, errResp := svc.ExportAdjustmentsToExcel()
+	data, errResp := svc.ExportAdjustmentsToExcel("tenant-1")
 	require.Nil(t, errResp)
 	assert.Equal(t, []byte("excel-data"), data)
 }
@@ -325,7 +325,7 @@ func TestAdjustmentsService_ExportAdjustmentsToExcel_Error(t *testing.T) {
 		},
 	}
 	svc := NewAdjustmentsService(repo, nil)
-	data, errResp := svc.ExportAdjustmentsToExcel()
+	data, errResp := svc.ExportAdjustmentsToExcel("tenant-1")
 	require.NotNil(t, errResp)
 	assert.Nil(t, data)
 }

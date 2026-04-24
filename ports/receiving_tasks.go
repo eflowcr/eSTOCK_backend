@@ -17,7 +17,7 @@ type ReceivingTasksRepository interface {
 	CreateReceivingTask(userId string, tenantID string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse
 	UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse
 	ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse
-	ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse)
+	ExportReceivingTaskToExcel(tenantID string) ([]byte, *responses.InternalResponse)
 	CompleteFullTask(id string, location, userId string) *responses.InternalResponse
 	CompleteReceivingLine(id string, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse
 	GenerateImportTemplate(language string) ([]byte, error)
