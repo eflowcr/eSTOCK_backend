@@ -144,8 +144,18 @@ func NewGamification(db *gorm.DB) (ports.GamificationRepository, *services.Gamif
 
 // NewInventory builds InventoryRepository and InventoryService. When pool is non-nil, injects
 // ArticlesRepository so GetPickSuggestionsBySKU sorts by rotation (FIFO/FEFO) then quantity.
+//
+// S3.5 W2-A: tenantID is left empty here to preserve the legacy signature for
+// internal callers (sales orders, backorders) that compose their own inventory
+// repo. Routes that handle live HTTP traffic must use NewInventoryWithConfig.
 func NewInventory(db *gorm.DB, pool *pgxpool.Pool) (ports.InventoryRepository, *services.InventoryService) {
-	r := &repositories.InventoryRepository{DB: db}
+	return NewInventoryWithConfig(db, pool, configuration.Config{})
+}
+
+// NewInventoryWithConfig is identical to NewInventory but stamps the configured
+// tenant_id on every inventory_lots row created via this repository.
+func NewInventoryWithConfig(db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) (ports.InventoryRepository, *services.InventoryService) {
+	r := &repositories.InventoryRepository{DB: db, TenantID: config.TenantID}
 	var articlesRepo ports.ArticlesRepository
 	if pool != nil {
 		articlesRepo, _ = NewArticles(db, pool)

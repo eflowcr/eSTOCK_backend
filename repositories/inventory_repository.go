@@ -18,8 +18,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// InventoryRepository owns inventory + inventory_lots persistence.
+//
+// S3.5 W2-A: TenantID is set at construction via wire and is used to populate
+// the inventory_lots.tenant_id column on every junction insert (the column is
+// NOT NULL after migration 000034). The parent inventory table itself is not
+// yet tenant-scoped — that is a future S3.5 wave (operational tables).
 type InventoryRepository struct {
-	DB *gorm.DB
+	DB       *gorm.DB
+	TenantID string
 }
 
 func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
@@ -365,6 +372,7 @@ func (r *InventoryRepository) CreateInventory(userId string, item *requests.Crea
 					}
 					inventoryLot := &database.InventoryLot{
 						ID:          invLotID,
+						TenantID:    r.TenantID, // S3.5 W2-A: required by NOT NULL after 000034
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    item.Lots[i].Quantity,
@@ -1379,6 +1387,7 @@ func (r *InventoryRepository) CreateInventoryLot(id string, input *requests.Crea
 	}
 	inventoryLot := &database.InventoryLot{
 		ID:          invLotID,
+		TenantID:    r.TenantID, // S3.5 W2-A: required by NOT NULL after 000034
 		InventoryID: id,
 		LotID:       input.LotID,
 		Quantity:    input.Quantity,

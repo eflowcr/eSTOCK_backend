@@ -1085,6 +1085,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 					}
 					inventoryLot := &database.InventoryLot{
 						ID:          invLotID,
+						TenantID:    task.TenantID, // S3.5 W2-A: required by NOT NULL after 000034
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    lotNum.Quantity,
@@ -1544,6 +1545,7 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 				}
 				inventoryLot := &database.InventoryLot{
 					ID:          lineInvLotID,
+					TenantID:    task.TenantID, // S3.5 W2-A: required by NOT NULL after 000034
 					InventoryID: inventory.ID,
 					LotID:       upsertedLot.ID,
 					Quantity:    lotNum.Quantity,

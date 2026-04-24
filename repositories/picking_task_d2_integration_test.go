@@ -179,7 +179,8 @@ func TestPickingD2_CompletePickingLine_WithLot_PopulatesLotID(t *testing.T) {
 	require.NoError(t, db.Raw("SELECT nanoid()").Scan(&ilID).Error)
 	var invID string
 	require.NoError(t, db.Raw("SELECT id FROM inventory WHERE sku = 'SKU-D2LOT' AND location = 'LOC-L'").Scan(&invID).Error)
-	db.Exec(`INSERT INTO inventory_lots (id, inventory_id, lot_id, quantity, location, created_at) VALUES (?, ?, ?, 50, 'LOC-L', NOW())`, ilID, invID, lotID)
+	// S3.5 W2-A: tenant_id NOT NULL after migration 000034 — backfill to default tenant.
+	db.Exec(`INSERT INTO inventory_lots (id, inventory_id, lot_id, quantity, location, created_at, tenant_id) VALUES (?, ?, ?, 50, 'LOC-L', NOW(), '00000000-0000-0000-0000-000000000001'::uuid)`, ilID, invID, lotID)
 
 	lotNum := "LOT-001"
 	items := []requests.PickingTaskItemRequest{
