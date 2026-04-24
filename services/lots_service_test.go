@@ -77,6 +77,10 @@ type mockArticlesRepoForLots struct {
 	rotationStrategy string
 }
 
+// S3.5 W1 — interface bumped to include ForTenant variants. Lots service only
+// reads via GetBySku (legacy non-tenant path; lots/serials still use SKU-only FK
+// resolution until W2 retrofits child tables).
+
 func (m *mockArticlesRepoForLots) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
 	if m == nil {
 		return nil, &responses.InternalResponse{Message: "no repo"}
@@ -84,45 +88,55 @@ func (m *mockArticlesRepoForLots) GetBySku(sku string) (*database.Article, *resp
 	return &database.Article{SKU: sku, RotationStrategy: m.rotationStrategy}, nil
 }
 
+// ── tenant-scoped (no-op) ───────────────────────────────────────────────────
+
+func (m *mockArticlesRepoForLots) GetAllArticlesForTenant(_ string) ([]database.Article, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockArticlesRepoForLots) GetArticleByIDForTenant(_, _ string) (*database.Article, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockArticlesRepoForLots) GetBySkuForTenant(sku, _ string) (*database.Article, *responses.InternalResponse) {
+	return m.GetBySku(sku)
+}
+func (m *mockArticlesRepoForLots) CreateArticleForTenant(_ string, _ *requests.Article) *responses.InternalResponse {
+	return nil
+}
+func (m *mockArticlesRepoForLots) UpdateArticleForTenant(_, _ string, _ *requests.Article) (*database.Article, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockArticlesRepoForLots) DeleteArticleForTenant(_, _ string) *responses.InternalResponse {
+	return nil
+}
+func (m *mockArticlesRepoForLots) ImportArticlesFromExcelForTenant(_ string, _ []byte) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
+}
+func (m *mockArticlesRepoForLots) ImportArticlesFromJSONForTenant(_ string, _ []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
+}
+func (m *mockArticlesRepoForLots) ValidateImportRowsForTenant(_ string, _ []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockArticlesRepoForLots) ExportArticlesToExcelForTenant(_ string) ([]byte, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockArticlesRepoForLots) GenerateImportTemplateForTenant(_, _ string) ([]byte, *responses.InternalResponse) {
+	return nil, nil
+}
+
+// ── legacy non-tenant ───────────────────────────────────────────────────────
+
 func (m *mockArticlesRepoForLots) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
 	return nil, nil
 }
-func (m *mockArticlesRepoForLots) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepoForLots) GetArticleByID(_ string) (*database.Article, *responses.InternalResponse) {
 	return nil, nil
 }
-func (m *mockArticlesRepoForLots) CreateArticle(data *requests.Article) *responses.InternalResponse {
-	return nil
-}
-func (m *mockArticlesRepoForLots) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepoForLots) GetLotsBySKU(_ string) ([]database.Lot, error) {
 	return nil, nil
 }
-func (m *mockArticlesRepoForLots) GetLotsBySKU(sku string) ([]database.Lot, error) {
+func (m *mockArticlesRepoForLots) GetSerialsBySKU(_ string) ([]database.Serial, error) {
 	return nil, nil
-}
-func (m *mockArticlesRepoForLots) GetSerialsBySKU(sku string) ([]database.Serial, error) {
-	return nil, nil
-}
-func (m *mockArticlesRepoForLots) ImportArticlesFromExcel(_ []byte) ([]string, []string, []*responses.InternalResponse) {
-	return nil, nil, nil
-}
-
-func (m *mockArticlesRepoForLots) ImportArticlesFromJSON(_ []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
-	return nil, nil, nil
-}
-func (m *mockArticlesRepoForLots) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
-	return nil, nil
-}
-
-func (m *mockArticlesRepoForLots) GenerateImportTemplate(_ string) ([]byte, *responses.InternalResponse) {
-	return nil, nil
-}
-
-func (m *mockArticlesRepoForLots) ValidateImportRows(_ []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
-	return nil, nil
-}
-
-func (m *mockArticlesRepoForLots) DeleteArticle(id string) *responses.InternalResponse {
-	return nil
 }
 
 func TestLotsService_GetAllLots(t *testing.T) {

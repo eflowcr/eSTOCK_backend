@@ -67,6 +67,7 @@ type Article struct {
 	DefaultLocationID  pgtype.Text    `json:"default_location_id"`
 	ReceivingNotes     pgtype.Text    `json:"receiving_notes"`
 	ShippingNotes      pgtype.Text    `json:"shipping_notes"`
+	TenantID           pgtype.UUID    `json:"tenant_id"`
 }
 
 type ArticleSupplier struct {

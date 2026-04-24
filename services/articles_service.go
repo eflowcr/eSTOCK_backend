@@ -21,10 +21,13 @@ type locationLookupForArticles interface {
 	GetLocationByID(id string) (*database.Location, *responses.InternalResponse)
 }
 
+// ArticlesService — S3.5 W1: every public method now requires a tenantID. Controllers
+// pass it from Config.TenantID (env-injected); a future M2 wave will source it from
+// the JWT claim instead so multi-tenant signup can work end-to-end.
 type ArticlesService struct {
-	Repository    ports.ArticlesRepository
+	Repository     ports.ArticlesRepository
 	CategoriesRepo categoryLookupForArticles // optional: validate category_id on create/update
-	LocationsRepo  locationLookupForArticles  // optional: validate default_location_id
+	LocationsRepo  locationLookupForArticles // optional: validate default_location_id
 }
 
 func NewArticlesService(repo ports.ArticlesRepository) *ArticlesService {
@@ -45,16 +48,16 @@ func (s *ArticlesService) WithLocationsRepo(r locationLookupForArticles) *Articl
 	return s
 }
 
-func (s *ArticlesService) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
-	return s.Repository.GetAllArticles()
+func (s *ArticlesService) GetAllArticles(tenantID string) ([]database.Article, *responses.InternalResponse) {
+	return s.Repository.GetAllArticlesForTenant(tenantID)
 }
 
-func (s *ArticlesService) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
-	return s.Repository.GetArticleByID(id)
+func (s *ArticlesService) GetArticleByID(id, tenantID string) (*database.Article, *responses.InternalResponse) {
+	return s.Repository.GetArticleByIDForTenant(id, tenantID)
 }
 
-func (s *ArticlesService) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
-	return s.Repository.GetBySku(sku)
+func (s *ArticlesService) GetBySku(sku, tenantID string) (*database.Article, *responses.InternalResponse) {
+	return s.Repository.GetBySkuForTenant(sku, tenantID)
 }
 
 // EnrichArticle builds an ArticleResponse with embedded category and default_location objects.
@@ -63,25 +66,25 @@ func (s *ArticlesService) EnrichArticle(art *database.Article) *responses.Articl
 		return nil
 	}
 	r := &responses.ArticleResponse{
-		ID:               art.ID,
-		SKU:              art.SKU,
-		Name:             art.Name,
-		Description:      art.Description,
-		UnitPrice:        art.UnitPrice,
-		Presentation:     art.Presentation,
-		TrackByLot:       art.TrackByLot,
-		TrackBySerial:    art.TrackBySerial,
-		TrackExpiration:  art.TrackExpiration,
-		RotationStrategy: art.RotationStrategy,
-		MinQuantity:      art.MinQuantity,
-		MaxQuantity:      art.MaxQuantity,
-		ImageURL:         art.ImageURL,
-		IsActive:         art.IsActive,
-		CreatedAt:        art.CreatedAt,
-		UpdatedAt:        art.UpdatedAt,
-		CategoryID:       art.CategoryID,
-		ShelfLifeInDays:  art.ShelfLifeInDays,
-		SafetyStock:      art.SafetyStock,
+		ID:                 art.ID,
+		SKU:                art.SKU,
+		Name:               art.Name,
+		Description:        art.Description,
+		UnitPrice:          art.UnitPrice,
+		Presentation:       art.Presentation,
+		TrackByLot:         art.TrackByLot,
+		TrackBySerial:      art.TrackBySerial,
+		TrackExpiration:    art.TrackExpiration,
+		RotationStrategy:   art.RotationStrategy,
+		MinQuantity:        art.MinQuantity,
+		MaxQuantity:        art.MaxQuantity,
+		ImageURL:           art.ImageURL,
+		IsActive:           art.IsActive,
+		CreatedAt:          art.CreatedAt,
+		UpdatedAt:          art.UpdatedAt,
+		CategoryID:         art.CategoryID,
+		ShelfLifeInDays:    art.ShelfLifeInDays,
+		SafetyStock:        art.SafetyStock,
 		BatchNumberSeries:  art.BatchNumberSeries,
 		SerialNumberSeries: art.SerialNumberSeries,
 		MinOrderQty:        art.MinOrderQty,
@@ -104,22 +107,22 @@ func (s *ArticlesService) EnrichArticle(art *database.Article) *responses.Articl
 	return r
 }
 
-func (s *ArticlesService) CreateArticle(article *requests.Article) *responses.InternalResponse {
+func (s *ArticlesService) CreateArticle(tenantID string, article *requests.Article) *responses.InternalResponse {
 	if errResp := s.validateArticleFields(article); errResp != nil {
 		return errResp
 	}
 	if errResp := s.validateRotationStrategy(article.RotationStrategy, article.TrackExpiration); errResp != nil {
 		return errResp
 	}
-	resp := s.Repository.CreateArticle(article)
+	resp := s.Repository.CreateArticleForTenant(tenantID, article)
 	if resp != nil && resp.Error != nil && !resp.Handled {
 		tools.LogServiceError("articles", "CreateArticle", resp.Error, resp.Message)
 	}
 	return resp
 }
 
-func (s *ArticlesService) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse, []map[string]interface{}) {
-	article, errResp := s.Repository.GetArticleByID(id)
+func (s *ArticlesService) UpdateArticle(id, tenantID string, data *requests.Article) (*database.Article, *responses.InternalResponse, []map[string]interface{}) {
+	article, errResp := s.Repository.GetArticleByIDForTenant(id, tenantID)
 	if errResp != nil {
 		return nil, errResp, nil
 	}
@@ -159,32 +162,32 @@ func (s *ArticlesService) UpdateArticle(id string, data *requests.Article) (*dat
 		return nil, errResp, nil
 	}
 
-	updated, errResp := s.Repository.UpdateArticle(id, data)
+	updated, errResp := s.Repository.UpdateArticleForTenant(id, tenantID, data)
 	return updated, errResp, warnings
 }
 
-func (s *ArticlesService) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
-	return s.Repository.ImportArticlesFromExcel(fileBytes)
+func (s *ArticlesService) ImportArticlesFromExcel(tenantID string, fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
+	return s.Repository.ImportArticlesFromExcelForTenant(tenantID, fileBytes)
 }
 
-func (s *ArticlesService) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
-	return s.Repository.ImportArticlesFromJSON(rows)
+func (s *ArticlesService) ImportArticlesFromJSON(tenantID string, rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	return s.Repository.ImportArticlesFromJSONForTenant(tenantID, rows)
 }
 
-func (s *ArticlesService) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportArticlesToExcel()
+func (s *ArticlesService) ExportArticlesToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportArticlesToExcelForTenant(tenantID)
 }
 
-func (s *ArticlesService) ValidateImportRows(rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
-	return s.Repository.ValidateImportRows(rows)
+func (s *ArticlesService) ValidateImportRows(tenantID string, rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	return s.Repository.ValidateImportRowsForTenant(tenantID, rows)
 }
 
-func (s *ArticlesService) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
-	return s.Repository.GenerateImportTemplate(language)
+func (s *ArticlesService) GenerateImportTemplate(tenantID, language string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.GenerateImportTemplateForTenant(tenantID, language)
 }
 
-func (s *ArticlesService) DeleteArticle(id string) *responses.InternalResponse {
-	return s.Repository.DeleteArticle(id)
+func (s *ArticlesService) DeleteArticle(id, tenantID string) *responses.InternalResponse {
+	return s.Repository.DeleteArticleForTenant(id, tenantID)
 }
 
 // validateArticleFields validates the new M2 fields.
