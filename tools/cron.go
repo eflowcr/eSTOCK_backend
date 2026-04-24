@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -213,14 +214,123 @@ func RunLowStockNotifications(db *gorm.DB, notifyFn func(sku, message string) er
 	return nil
 }
 
+// TrialEmailSender is the minimal interface RunTrialExpirationCheck needs from
+// a notifications service. Using an interface avoids an import cycle between
+// tools and services packages.
+type TrialEmailSender interface {
+	SendTrialEmail(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error
+}
+
+// trialTenantRow is the raw DB row selected for each active trial tenant.
+type trialTenantRow struct {
+	ID          string    `gorm:"column:id"`
+	Name        string    `gorm:"column:name"`
+	Email       string    `gorm:"column:email"`
+	TrialEndsAt time.Time `gorm:"column:trial_ends_at"`
+}
+
+// RunTrialExpirationCheck inspects all tenants in 'trial' status and:
+//   - Sends a reminder email at exactly 13, 11, or 7 days remaining.
+//   - Marks the tenant as past_due + deactivates it when trial has expired (daysLeft <= 0).
+//
+// Advisory lock 987654323 (transaction-scoped) ensures only one pod fires per tick.
+// Email sends are fire-and-forget via sendFn — a failure never blocks the cron.
+// sendFn signature: (ctx, toEmail, tenantName, templateType, daysLeft) error
+// templateType is one of: "trial_reminder_7d", "trial_reminder_11d", "trial_reminder_13d", "trial_expired".
+func RunTrialExpirationCheck(db *gorm.DB, sendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error) error {
+	if db == nil {
+		return errors.New("cron: nil db")
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Advisory lock (transaction-scoped) — released automatically on commit/rollback.
+		var locked bool
+		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(987654323)").Scan(&locked).Error; err != nil {
+			return err
+		}
+		if !locked {
+			log.Debug().Msg("trial_expiration: otro pod tiene el lock, skipping")
+			return nil
+		}
+
+		var tenants []trialTenantRow
+		if err := tx.Raw(`
+			SELECT id, name, email, trial_ends_at
+			  FROM tenants
+			 WHERE status = 'trial'
+			   AND deleted_at IS NULL
+		`).Scan(&tenants).Error; err != nil {
+			return fmt.Errorf("trial_expiration: query tenants: %w", err)
+		}
+
+		now := time.Now().UTC()
+		ctx := context.Background()
+
+		for _, t := range tenants {
+			endsAt := t.TrialEndsAt.UTC()
+			// Truncate to whole days so the comparison is stable within any hour of the day.
+			daysLeft := int(endsAt.Sub(now).Hours() / 24)
+
+			switch {
+			case daysLeft <= 0:
+				// Trial expired — mark tenant past_due and deactivate.
+				if err := tx.Exec(`
+					UPDATE tenants
+					   SET status     = 'past_due',
+					       is_active  = false,
+					       updated_at = NOW()
+					 WHERE id = ? AND status = 'trial'
+				`, t.ID).Error; err != nil {
+					log.Error().Err(err).Str("tenant_id", t.ID).Msg("cron: trial_expiration: failed to deactivate tenant")
+					continue
+				}
+				log.Info().Str("tenant_id", t.ID).Str("tenant", t.Name).Msg("cron: trial expired — tenant deactivated")
+
+				if sendFn != nil {
+					go func(email, name string) {
+						if err := sendFn(ctx, email, name, "trial_expired", 0); err != nil {
+							log.Warn().Err(err).Str("email", email).Msg("cron: trial_expired email failed")
+						}
+					}(t.Email, t.Name)
+				}
+
+			case daysLeft == 7, daysLeft == 11, daysLeft == 13:
+				templateType := fmt.Sprintf("trial_reminder_%dd", daysLeft)
+				log.Info().Str("tenant_id", t.ID).Str("tenant", t.Name).Int("days_left", daysLeft).
+					Str("template", templateType).Msg("cron: sending trial reminder")
+
+				if sendFn != nil {
+					capturedEmail := t.Email
+					capturedName := t.Name
+					capturedDays := daysLeft
+					capturedTemplate := templateType
+					go func() {
+						if err := sendFn(ctx, capturedEmail, capturedName, capturedTemplate, capturedDays); err != nil {
+							log.Warn().Err(err).Str("email", capturedEmail).Str("template", capturedTemplate).
+								Msg("cron: trial reminder email failed")
+						}
+					}()
+				}
+
+			default:
+				// Nothing to do for other day counts.
+			}
+		}
+
+		log.Info().Int("tenants_checked", len(tenants)).Msg("cron: trial_expiration check completed")
+		return nil
+	})
+}
+
 // CronDispatch ejecuta todos los jobs del cron en secuencia.
 // Se invoca: una vez al arrancar (tras delay de estabilización) y luego cada hora por el ticker.
 // Los errores se loggean sin parar la ejecución del siguiente job.
 //
-// Callbacks (both optional, pass nil to skip):
+// Callbacks (all optional, pass nil to skip):
 //   - lotNotifyFn: called per expiring lot event (eventType, title, body)
 //   - lowStockNotifyFn: called per unresolved low-stock alert (sku, message)
-func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType, title, body string) error, lowStockNotifyFn func(sku, message string) error) {
+//   - trialSendFn: called per trial tenant requiring a reminder or expiration email
+func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType, title, body string) error, lowStockNotifyFn func(sku, message string) error, trialSendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error) {
 	if err := RunStockAlertAnalysis(db, analyzer); err != nil {
 		log.Error().Err(err).Msg("cron: stock alerts failed")
 	}
@@ -233,6 +343,10 @@ func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType
 	// HR1-M5: wire RunLowStockNotifications so low-stock email alerts are actually sent.
 	if err := RunLowStockNotifications(db, lowStockNotifyFn); err != nil {
 		log.Error().Err(err).Msg("cron: low stock notifications failed")
+	}
+	// S3-W5-C: trial lifecycle reminders + expiration.
+	if err := RunTrialExpirationCheck(db, trialSendFn); err != nil {
+		log.Error().Err(err).Msg("cron: trial expiration check failed")
 	}
 }
 
