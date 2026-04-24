@@ -205,6 +205,7 @@ type InventoryLot struct {
 	Quantity    pgtype.Numeric   `json:"quantity"`
 	Location    string           `json:"location"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	TenantID    pgtype.UUID      `json:"tenant_id"`
 }
 
 type InventoryMovement struct {
@@ -245,7 +246,8 @@ type Location struct {
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	// When true, location is used as dock, loading bay, or exit point in WMS.
-	IsWayOut bool `json:"is_way_out"`
+	IsWayOut bool        `json:"is_way_out"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 // Location type catalog (Pallet, Shelf, Bin, etc.); used by locations.type as code reference
@@ -455,6 +457,7 @@ type Serial struct {
 	Status       string           `json:"status"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
 // Sessions table for managing user authentication sessions

@@ -10,15 +10,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// SerialsRepository is the GORM-backed implementation of ports.SerialsRepository.
+//
+// S3.5 W2-A: every method is tenant-scoped via WHERE tenant_id = ?.
 type SerialsRepository struct {
 	DB *gorm.DB
 }
 
-func (r *SerialsRepository) GetSerialByID(id string) (*database.Serial, *responses.InternalResponse) {
+func (r *SerialsRepository) GetSerialByID(tenantID, id string) (*database.Serial, *responses.InternalResponse) {
 	var serial database.Serial
 
 	err := r.DB.Table(database.Serial{}.TableName()).
-		Where("id = ?", id).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
 		First(&serial).Error
 
 	if err != nil {
@@ -39,11 +42,11 @@ func (r *SerialsRepository) GetSerialByID(id string) (*database.Serial, *respons
 	return &serial, nil
 }
 
-func (r *SerialsRepository) GetSerialsBySKU(sku string) ([]database.Serial, *responses.InternalResponse) {
+func (r *SerialsRepository) GetSerialsBySKU(tenantID, sku string) ([]database.Serial, *responses.InternalResponse) {
 	var serials []database.Serial
 
 	err := r.DB.Table(database.Serial{}.TableName()).
-		Where("sku = ?", sku).
+		Where("sku = ? AND tenant_id = ?", sku, tenantID).
 		Order("created_at DESC").
 		Find(&serials).Error
 
@@ -58,10 +61,11 @@ func (r *SerialsRepository) GetSerialsBySKU(sku string) ([]database.Serial, *res
 	return serials, nil
 }
 
-func (r *SerialsRepository) CreateSerial(data *requests.CreateSerialRequest) *responses.InternalResponse {
+func (r *SerialsRepository) CreateSerial(tenantID string, data *requests.CreateSerialRequest) *responses.InternalResponse {
 	now := tools.GetCurrentTime()
 
 	serial := &database.Serial{
+		TenantID:     tenantID,
 		SerialNumber: data.SerialNumber,
 		SKU:          data.SKU,
 		CreatedAt:    now,
@@ -79,10 +83,10 @@ func (r *SerialsRepository) CreateSerial(data *requests.CreateSerialRequest) *re
 	return nil
 }
 
-func (r *SerialsRepository) UpdateSerial(id string, data map[string]interface{}) *responses.InternalResponse {
+func (r *SerialsRepository) UpdateSerial(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
 	var serial database.Serial
 
-	err := r.DB.First(&serial, "id = ?", id).Error
+	err := r.DB.First(&serial, "id = ? AND tenant_id = ?", id, tenantID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Message:    "Serie no encontrada",
@@ -101,6 +105,7 @@ func (r *SerialsRepository) UpdateSerial(id string, data map[string]interface{})
 	protectedFields := map[string]bool{
 		"id":         true,
 		"created_at": true,
+		"tenant_id":  true, // S3.5 W2-A: tenant_id is immutable after creation.
 	}
 
 	for k := range protectedFields {
@@ -120,8 +125,8 @@ func (r *SerialsRepository) UpdateSerial(id string, data map[string]interface{})
 	return nil
 }
 
-func (r *SerialsRepository) DeleteSerial(id string) *responses.InternalResponse {
-	result := r.DB.Delete(&database.Serial{}, id)
+func (r *SerialsRepository) DeleteSerial(tenantID, id string) *responses.InternalResponse {
+	result := r.DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&database.Serial{})
 	if result.Error != nil {
 		return &responses.InternalResponse{
 			Error:   result.Error,

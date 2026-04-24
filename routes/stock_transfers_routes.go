@@ -27,7 +27,7 @@ func RegisterStockTransfersRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pg
 	if db != nil {
 		locationsRepo, _ := wire.NewLocations(db, pool)
 		if locationsRepo != nil {
-			svc = services.NewStockTransfersServiceWithExecute(transferRepo, locationsRepo, db)
+			svc = services.NewStockTransfersServiceWithExecute(transferRepo, locationsRepo, db, config.TenantID)
 		}
 	}
 	if svc == nil {
