@@ -10,10 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	testTenantA = "00000000-0000-0000-0000-000000000001"
-	testTenantB = "00000000-0000-0000-0000-000000000002"
-)
+// testTenantA / testTenantB are package-level constants from lots_service_test.go (W2-B).
 
 // ── mock ─────────────────────────────────────────────────────────────────────
 //
