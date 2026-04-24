@@ -134,7 +134,8 @@ func (r *NotificationsRepository) GetPreferences(userID string) (map[string]data
 func (r *NotificationsRepository) UpsertPreference(pref *database.NotificationPreference) *responses.InternalResponse {
 	pref.UpdatedAt = time.Now()
 	if err := r.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "event_type"}},
+		// M7: PK now includes tenant_id — ON CONFLICT must match the full composite PK.
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "event_type"}, {Name: "tenant_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"tenant_id", "in_app", "email", "push", "updated_at"}),
 	}).Create(pref).Error; err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error guardando preferencia", Handled: false}

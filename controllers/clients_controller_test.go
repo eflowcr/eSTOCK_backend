@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
@@ -57,6 +58,31 @@ func (m *mockClientsRepo) GetByTenantAndCode(_, code string) (*database.Client, 
 
 func (m *mockClientsRepo) ListByTenant(_ string) ([]database.Client, *responses.InternalResponse) {
 	return m.clients, nil
+}
+
+// ListByTenantFiltered satisfies the updated ports.ClientsRepository interface (M8).
+// The mock applies type/isActive/search filters in-memory to mimic SQL behaviour.
+func (m *mockClientsRepo) ListByTenantFiltered(_ string, clientType *string, isActive *bool, search *string, _ *int32, _ *int32) ([]database.Client, *responses.InternalResponse) {
+	var out []database.Client
+	for _, c := range m.clients {
+		if clientType != nil && c.Type != *clientType {
+			continue
+		}
+		if isActive != nil && c.IsActive != *isActive {
+			continue
+		}
+		if search != nil && *search != "" {
+			q := strings.ToLower(*search)
+			if !strings.Contains(strings.ToLower(c.Name), q) && !strings.Contains(strings.ToLower(c.Code), q) {
+				continue
+			}
+		}
+		out = append(out, c)
+	}
+	if out == nil {
+		out = []database.Client{}
+	}
+	return out, nil
 }
 
 // Update now requires tenantID (HR1-M3). In tests, ignores tenant filter.

@@ -88,8 +88,12 @@ type Querier interface {
 	// Schema: db/migrations (articles, lots, serials tables)
 	ListArticles(ctx context.Context) ([]ListArticlesRow, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
-	ListCategoriesByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Category, error)
-	ListClientsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Client, error)
+	// M8: Push search/is_active filters and pagination to SQL (HR1 deferred).
+	// Pass NULL for any optional param to skip that filter.
+	ListCategoriesByTenant(ctx context.Context, arg ListCategoriesByTenantParams) ([]Category, error)
+	// M8: Push type/is_active/search filters and pagination to SQL (HR1 deferred).
+	// Pass NULL for any optional param to skip that filter.
+	ListClientsByTenant(ctx context.Context, arg ListClientsByTenantParams) ([]Client, error)
 	// Location types CRUD for sqlc. Schema: db/migrations (location_types table)
 	ListLocationTypes(ctx context.Context) ([]LocationType, error)
 	ListLocationTypesAdmin(ctx context.Context) ([]LocationType, error)

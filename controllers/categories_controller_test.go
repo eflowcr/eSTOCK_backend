@@ -44,6 +44,12 @@ func (m *mockCategoriesRepo) ListByTenant(_ string) ([]database.Category, *respo
 	return m.categories, nil
 }
 
+// ListByTenantFiltered satisfies the updated ports.CategoriesRepository interface (M8).
+// The mock ignores filter params and returns all categories.
+func (m *mockCategoriesRepo) ListByTenantFiltered(_ string, _ *bool, _ *string, _ *int32, _ *int32) ([]database.Category, *responses.InternalResponse) {
+	return m.categories, nil
+}
+
 func (m *mockCategoriesRepo) Update(id string, data *requests.UpdateCategoryRequest) (*database.Category, *responses.InternalResponse) {
 	if m.byID != nil {
 		if c, ok := m.byID[id]; ok {

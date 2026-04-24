@@ -24,6 +24,7 @@ type Adjustment struct {
 	UserID             string           `json:"user_id"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	AdjustmentType     string           `json:"adjustment_type"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 }
 
 // Reason codes for stock adjustments; direction determines add (inbound) or subtract (outbound).
@@ -258,6 +259,7 @@ type PickingTask struct {
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 	CompletedAt pgtype.Timestamp `json:"completed_at"`
 	CustomerID  pgtype.Text      `json:"customer_id"`
+	TenantID    pgtype.UUID      `json:"tenant_id"`
 }
 
 type Presentation struct {
@@ -305,6 +307,7 @@ type ReceivingTask struct {
 	TrackingNumber  pgtype.Text      `json:"tracking_number"`
 	ReceptionMethod pgtype.Text      `json:"reception_method"`
 	Incoterms       pgtype.Text      `json:"incoterms"`
+	TenantID        pgtype.UUID      `json:"tenant_id"`
 }
 
 // RBAC roles; name is the stable identifier (Admin, Operator, Viewer).

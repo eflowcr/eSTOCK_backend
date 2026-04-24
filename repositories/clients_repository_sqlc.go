@@ -121,13 +121,29 @@ func (r *ClientsRepositorySQLC) GetByTenantAndCode(tenantID, code string) (*data
 	return &result, nil
 }
 
+// ListByTenant returns all clients for the tenant without any optional filters.
+// Use ListByTenantFiltered for type/is_active/search filtering (M8).
 func (r *ClientsRepositorySQLC) ListByTenant(tenantID string) ([]database.Client, *responses.InternalResponse) {
+	return r.ListByTenantFiltered(tenantID, nil, nil, nil, nil, nil)
+}
+
+// ListByTenantFiltered pushes optional filters to SQL (M8 — HR1 deferred).
+// Pass nil for any param to skip that filter. limit/offset default to 100/0 in SQL.
+func (r *ClientsRepositorySQLC) ListByTenantFiltered(tenantID string, clientType *string, isActive *bool, search *string, limit *int32, offset *int32) ([]database.Client, *responses.InternalResponse) {
 	ctx := context.Background()
 	tid, err := stringToPgUUID(tenantID)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
 	}
-	list, err := r.queries.ListClientsByTenant(ctx, tid)
+	arg := sqlc.ListClientsByTenantParams{
+		TenantID: tid,
+		Type:     ptrStringToPgText(clientType),
+		IsActive: ptrBoolToPgBool(isActive),
+		Search:   ptrStringToPgText(search),
+		Limit:    ptrInt32ToPgInt4(limit),
+		Offset:   ptrInt32ToPgInt4(offset),
+	}
+	list, err := r.queries.ListClientsByTenant(ctx, arg)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al listar clientes", Handled: false}
 	}

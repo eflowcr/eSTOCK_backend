@@ -597,6 +597,22 @@ func pgBoolToPtrBool(b pgtype.Bool) *bool {
 	return &b.Bool
 }
 
+// ptrBoolToPgBool converts *bool to pgtype.Bool (NULL when nil). M8: used for optional SQL filters.
+func ptrBoolToPgBool(b *bool) pgtype.Bool {
+	if b == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *b, Valid: true}
+}
+
+// ptrInt32ToPgInt4 converts *int32 to pgtype.Int4 (NULL when nil). M8: used for LIMIT/OFFSET.
+func ptrInt32ToPgInt4(i *int32) pgtype.Int4 {
+	if i == nil {
+		return pgtype.Int4{}
+	}
+	return pgtype.Int4{Int32: *i, Valid: true}
+}
+
 func pgTimestampToTime(t pgtype.Timestamp) time.Time {
 	if !t.Valid {
 		return tools.GetCurrentTime()
