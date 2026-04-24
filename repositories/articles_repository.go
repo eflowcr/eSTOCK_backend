@@ -14,205 +14,147 @@ import (
 	"gorm.io/gorm"
 )
 
+// ArticlesRepository is the GORM-backed implementation of ports.ArticlesRepository,
+// used as a fallback when no pgxpool is available (e.g. sqlserver). The Postgres
+// production path uses ArticlesRepositorySQLC.
+//
+// S3.5 W1: per-tenant variants added below; legacy non-tenant methods retained as
+// thin wrappers around the global table for internal/cron callers.
 type ArticlesRepository struct {
 	DB *gorm.DB
 }
 
-func (r *ArticlesRepository) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
-	var articles []database.Article
+// ─── tenant-scoped (HTTP-facing) ─────────────────────────────────────────────
 
+func (r *ArticlesRepository) GetAllArticlesForTenant(tenantID string) ([]database.Article, *responses.InternalResponse) {
+	var articles []database.Article
 	err := r.DB.
 		Table(database.Article{}.TableName()).
-		Order("created_at ASC").
+		Where("tenant_id = ?", tenantID).
+		Order("created_at DESC").
 		Find(&articles).Error
-
 	if err != nil {
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al obtener los artículos",
-			Handled: false,
-		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener los artículos", Handled: false}
 	}
-
 	return articles, nil
 }
 
-func (r *ArticlesRepository) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepository) GetArticleByIDForTenant(id, tenantID string) (*database.Article, *responses.InternalResponse) {
 	var article database.Article
-
 	err := r.DB.
 		Table(database.Article{}.TableName()).
-		Where("id = ?", id).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
 		First(&article).Error
-
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, &responses.InternalResponse{
-				Message:    "Artículo no encontrado",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
-			}
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al obtener el artículo",
-			Handled: false,
-		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
 	}
-
 	return &article, nil
 }
 
-func (r *ArticlesRepository) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepository) GetBySkuForTenant(sku, tenantID string) (*database.Article, *responses.InternalResponse) {
 	var article database.Article
-
 	err := r.DB.
 		Table(database.Article{}.TableName()).
-		Where("sku = ?", sku).
+		Where("sku = ? AND tenant_id = ?", sku, tenantID).
 		First(&article).Error
-
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, &responses.InternalResponse{
-				Message:    "Artículo no encontrado",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
-			}
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al obtener el artículo por SKU",
-			Handled: false,
-		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo por SKU", Handled: false}
 	}
-
 	return &article, nil
 }
 
-func (r *ArticlesRepository) CreateArticle(data *requests.Article) *responses.InternalResponse {
+func (r *ArticlesRepository) CreateArticleForTenant(tenantID string, data *requests.Article) *responses.InternalResponse {
 	var existing database.Article
-	err := r.DB.First(&existing, "sku = ?", data.SKU).Error
+	err := r.DB.
+		Where("sku = ? AND tenant_id = ?", data.SKU, tenantID).
+		First(&existing).Error
 	if err == nil {
-		return &responses.InternalResponse{
-			Message:    "Ya existe un artículo con el mismo SKU",
-			Handled:    true,
-			StatusCode: responses.StatusConflict,
-		}
+		return &responses.InternalResponse{Message: "Ya existe un artículo con el mismo SKU", Handled: true, StatusCode: responses.StatusConflict}
 	}
-
 	if err != gorm.ErrRecordNotFound {
-		return &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al verificar el artículo existente",
-			Handled: false,
-		}
+		return &responses.InternalResponse{Error: err, Message: "Error al verificar el artículo existente", Handled: false}
 	}
 
 	var article database.Article
 	tools.CopyStructFields(data, &article)
+	article.TenantID = tenantID
 	article.CreatedAt = tools.GetCurrentTime()
 	article.UpdatedAt = tools.GetCurrentTime()
-
 	if article.IsActive == nil {
 		trueVal := true
 		article.IsActive = &trueVal
 	}
 
-	err = r.DB.Create(&article).Error
-	if err != nil {
-		return &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al crear el artículo",
-			Handled: false,
-		}
+	if err := r.DB.Create(&article).Error; err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Error al crear el artículo", Handled: false}
 	}
-
 	return nil
 }
 
-func (r *ArticlesRepository) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepository) UpdateArticleForTenant(id, tenantID string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
 	var article database.Article
-	err := r.DB.First(&article, id).Error
+	err := r.DB.
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		First(&article).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, &responses.InternalResponse{
-				Message:    "Artículo no encontrado",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
-			}
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al obtener el artículo",
-			Handled: false,
-		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
 	}
 
 	tools.CopyStructFields(data, &article)
+	article.TenantID = tenantID // ensure not overwritten
 	article.UpdatedAt = tools.GetCurrentTime()
 
-	err = r.DB.Save(&article).Error
-	if err != nil {
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al actualizar el artículo",
-			Handled: false,
-		}
+	if err := r.DB.Save(&article).Error; err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al actualizar el artículo", Handled: false}
 	}
-
 	return &article, nil
 }
 
-func (r *ArticlesRepository) GetLotsBySKU(sku string) ([]database.Lot, error) {
-	var lots []database.Lot
-	err := r.DB.Where("sku = ?", sku).Find(&lots).Error
-	return lots, err
+func (r *ArticlesRepository) DeleteArticleForTenant(id, tenantID string) *responses.InternalResponse {
+	err := r.DB.
+		Table(database.Article{}.TableName()).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Delete(&database.Article{}).Error
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Error al eliminar el artículo", Handled: false}
+	}
+	return nil
 }
 
-func (r *ArticlesRepository) GetSerialsBySKU(sku string) ([]database.Serial, error) {
-	var serials []database.Serial
-	err := r.DB.Where("sku = ?", sku).Find(&serials).Error
-	return serials, err
-}
-
-func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
+func (r *ArticlesRepository) ImportArticlesFromExcelForTenant(tenantID string, fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
 	imported := []string{}
 	skipped := []string{}
 	errorsList := []*responses.InternalResponse{}
 
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al abrir el archivo de Excel",
-			Handled: false,
-		})
+		errorsList = append(errorsList, &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo de Excel", Handled: false})
 		return imported, skipped, errorsList
 	}
 
-	// Use first sheet regardless of language-based name ("Artículos", "Articles", "Sheet1")
 	sheets := f.GetSheetList()
 	if len(sheets) == 0 {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Message: "El archivo no contiene hojas de datos",
-			Handled: true,
-		})
+		errorsList = append(errorsList, &responses.InternalResponse{Message: "El archivo no contiene hojas de datos", Handled: true})
 		return imported, skipped, errorsList
 	}
 	sheet := sheets[0]
 
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		errorsList = append(errorsList, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al leer las filas de Excel",
-			Handled: false,
-		})
+		errorsList = append(errorsList, &responses.InternalResponse{Error: err, Message: "Error al leer las filas de Excel", Handled: false})
 		return imported, skipped, errorsList
 	}
 
 	for i, row := range rows {
-		// Skip header, instructions, column-header row, and example row (rows 1-8, index 0-7)
 		if i < 8 {
 			continue
 		}
@@ -222,13 +164,9 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 
 		sku := strings.TrimSpace(row[0])
 		name := strings.TrimSpace(row[1])
-
-		// Skip rows where required fields are empty
 		if sku == "" || name == "" {
 			continue
 		}
-
-		// Detect and skip example row gracefully
 		if strings.EqualFold(sku, "ART-001") {
 			skipped = append(skipped, fmt.Sprintf("Fila %d: fila de ejemplo omitida", i+1))
 			continue
@@ -244,10 +182,7 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 		minQtyStr := strings.TrimSpace(row[9])
 
 		if presentation == "" {
-			errorsList = append(errorsList, &responses.InternalResponse{
-				Message: fmt.Sprintf("Fila %d: presentación requerida", i+1),
-				Handled: true,
-			})
+			errorsList = append(errorsList, &responses.InternalResponse{Message: fmt.Sprintf("Fila %d: presentación requerida", i+1), Handled: true})
 			continue
 		}
 
@@ -300,36 +235,26 @@ func (r *ArticlesRepository) ImportArticlesFromExcel(fileBytes []byte) ([]string
 			ImageURL:         nil,
 		}
 
-		resp := r.CreateArticle(article)
+		resp := r.CreateArticleForTenant(tenantID, article)
 		if resp != nil {
-			errorsList = append(errorsList, &responses.InternalResponse{
-				Error:   resp.Error,
-				Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message),
-				Handled: resp.Handled,
-			})
+			errorsList = append(errorsList, &responses.InternalResponse{Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled})
 			continue
 		}
-
 		imported = append(imported, sku)
 	}
 
 	return imported, skipped, errorsList
 }
 
-// ImportArticlesFromJSON imports articles from a pre-validated JSON payload (used by the frontend preview flow).
-func (r *ArticlesRepository) ValidateImportRows(rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+func (r *ArticlesRepository) ValidateImportRowsForTenant(tenantID string, rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
 	results := make([]responses.ArticleValidationResult, 0, len(rows))
 	seenSKUs := make(map[string]bool)
 
 	for i, row := range rows {
 		sku := strings.TrimSpace(row.SKU)
 		name := strings.TrimSpace(row.Name)
-		result := responses.ArticleValidationResult{
-			RowIndex: i,
-			Row:      row,
-		}
+		result := responses.ArticleValidationResult{RowIndex: i, Row: row}
 
-		// Field validation
 		if sku == "" || name == "" || strings.TrimSpace(row.Presentation) == "" {
 			result.Status = responses.ArticleStatusError
 			result.FieldErrors = map[string]string{}
@@ -346,7 +271,6 @@ func (r *ArticlesRepository) ValidateImportRows(rows []requests.ArticleImportRow
 			continue
 		}
 
-		// Duplicate within batch
 		skuKey := strings.ToLower(sku)
 		if seenSKUs[skuKey] {
 			result.Status = responses.ArticleStatusDuplicate
@@ -355,8 +279,7 @@ func (r *ArticlesRepository) ValidateImportRows(rows []requests.ArticleImportRow
 		}
 		seenSKUs[skuKey] = true
 
-		// Exact SKU match in DB
-		existing, _ := r.GetBySku(sku)
+		existing, _ := r.GetBySkuForTenant(sku, tenantID)
 		if existing != nil {
 			isActive := false
 			if existing.IsActive != nil {
@@ -374,13 +297,13 @@ func (r *ArticlesRepository) ValidateImportRows(rows []requests.ArticleImportRow
 			continue
 		}
 
-		// Similar name check (LIKE search)
 		keyword := name
 		if len(keyword) > 20 {
 			keyword = keyword[:20]
 		}
 		var similar []database.Article
-		r.DB.Where("LOWER(name) LIKE LOWER(?) AND sku != ?", "%"+keyword+"%", sku).Limit(3).Find(&similar)
+		r.DB.Where("LOWER(name) LIKE LOWER(?) AND sku != ? AND tenant_id = ?", "%"+keyword+"%", sku, tenantID).
+			Limit(3).Find(&similar)
 		if len(similar) > 0 {
 			result.Status = responses.ArticleStatusSimilar
 			result.SimilarArticles = make([]responses.ArticleValidationMatch, 0, len(similar))
@@ -404,11 +327,10 @@ func (r *ArticlesRepository) ValidateImportRows(rows []requests.ArticleImportRow
 		result.Status = responses.ArticleStatusNew
 		results = append(results, result)
 	}
-
 	return results, nil
 }
 
-func (r *ArticlesRepository) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+func (r *ArticlesRepository) ImportArticlesFromJSONForTenant(tenantID string, rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
 	imported := []string{}
 	skipped := []string{}
 	errorsList := []*responses.InternalResponse{}
@@ -428,10 +350,7 @@ func (r *ArticlesRepository) ImportArticlesFromJSON(rows []requests.ArticleImpor
 
 		presentation := strings.TrimSpace(row.Presentation)
 		if presentation == "" {
-			errorsList = append(errorsList, &responses.InternalResponse{
-				Message: fmt.Sprintf("Fila %d: presentación requerida", i+1),
-				Handled: true,
-			})
+			errorsList = append(errorsList, &responses.InternalResponse{Message: fmt.Sprintf("Fila %d: presentación requerida", i+1), Handled: true})
 			continue
 		}
 
@@ -474,13 +393,9 @@ func (r *ArticlesRepository) ImportArticlesFromJSON(rows []requests.ArticleImpor
 			MaxQuantity:      maxQty,
 		}
 
-		resp := r.CreateArticle(article)
+		resp := r.CreateArticleForTenant(tenantID, article)
 		if resp != nil {
-			errorsList = append(errorsList, &responses.InternalResponse{
-				Error:   resp.Error,
-				Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message),
-				Handled: resp.Handled,
-			})
+			errorsList = append(errorsList, &responses.InternalResponse{Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled})
 			continue
 		}
 		imported = append(imported, sku)
@@ -489,8 +404,8 @@ func (r *ArticlesRepository) ImportArticlesFromJSON(rows []requests.ArticleImpor
 	return imported, skipped, errorsList
 }
 
-func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
-	articles, errResp := r.GetAllArticles()
+func (r *ArticlesRepository) ExportArticlesToExcelForTenant(tenantID string) ([]byte, *responses.InternalResponse) {
+	articles, errResp := r.GetAllArticlesForTenant(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}
@@ -537,22 +452,85 @@ func (r *ArticlesRepository) ExportArticlesToExcel() ([]byte, *responses.Interna
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		return nil, &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al generar el archivo de Excel",
-			Handled: false,
-		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al generar el archivo de Excel", Handled: false}
 	}
 
 	return buf.Bytes(), nil
 }
 
-func (r *ArticlesRepository) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
+func (r *ArticlesRepository) GenerateImportTemplateForTenant(tenantID, language string) ([]byte, *responses.InternalResponse) {
 	var presentations []string
-	r.DB.Table("articles").Distinct("presentation").Pluck("presentation", &presentations)
+	r.DB.Table("articles").Where("tenant_id = ?", tenantID).Distinct("presentation").Pluck("presentation", &presentations)
 	return buildImportTemplate(presentations, language)
 }
 
+// ─── legacy non-tenant methods ───────────────────────────────────────────────
+//
+// Retained as thin wrappers for internal callers (cron, FK lookups by SKU from
+// inventory/lots/serials rows that don't carry tenant_id yet — see W2). HTTP
+// handlers MUST call the *ForTenant variants instead.
+
+func (r *ArticlesRepository) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
+	var articles []database.Article
+	err := r.DB.Table(database.Article{}.TableName()).Order("created_at ASC").Find(&articles).Error
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener los artículos", Handled: false}
+	}
+	return articles, nil
+}
+
+func (r *ArticlesRepository) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+	var article database.Article
+	err := r.DB.Table(database.Article{}.TableName()).Where("id = ?", id).First(&article).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
+	}
+	return &article, nil
+}
+
+func (r *ArticlesRepository) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
+	var article database.Article
+	err := r.DB.Table(database.Article{}.TableName()).Where("sku = ?", sku).First(&article).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo por SKU", Handled: false}
+	}
+	return &article, nil
+}
+
+func (r *ArticlesRepository) GetLotsBySKU(sku string) ([]database.Lot, error) {
+	var lots []database.Lot
+	err := r.DB.Where("sku = ?", sku).Find(&lots).Error
+	return lots, err
+}
+
+func (r *ArticlesRepository) GetSerialsBySKU(sku string) ([]database.Serial, error) {
+	var serials []database.Serial
+	err := r.DB.Where("sku = ?", sku).Find(&serials).Error
+	return serials, err
+}
+
+func boolToSiNo(value bool) string {
+	if value {
+		return "Sí"
+	}
+	return "No"
+}
+
+func parseBoolCell(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == "si" || s == "sí" || s == "yes" || s == "true" || s == "1"
+}
+
+// buildImportTemplate is shared by both repository implementations to produce the
+// import xlsx template (header + column rows + presentation validations). Lives here
+// because it depends only on excelize + the article template helpers; it has no
+// per-tenant data of its own (the caller supplies the tenant-scoped presentations list).
 func buildImportTemplate(presentations []string, language string) ([]byte, *responses.InternalResponse) {
 	l := getLang(language)
 	dataSheet := l["sheet_data"]
@@ -593,33 +571,4 @@ func buildImportTemplate(presentations []string, language string) ([]byte, *resp
 		}
 	}
 	return buf.Bytes(), nil
-}
-
-func boolToSiNo(value bool) string {
-	if value {
-		return "Sí"
-	}
-	return "No"
-}
-
-func parseBoolCell(s string) bool {
-	s = strings.ToLower(strings.TrimSpace(s))
-	return s == "si" || s == "sí" || s == "yes" || s == "true" || s == "1"
-}
-
-func (r *ArticlesRepository) DeleteArticle(id string) *responses.InternalResponse {
-	err := r.DB.
-		Table(database.Article{}.TableName()).
-		Where("id = ?", id).
-		Delete(&database.Article{}).Error
-
-	if err != nil {
-		return &responses.InternalResponse{
-			Error:   err,
-			Message: "Error al eliminar el artículo",
-			Handled: false,
-		}
-	}
-
-	return nil
 }

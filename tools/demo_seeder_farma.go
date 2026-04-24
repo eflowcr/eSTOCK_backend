@@ -312,13 +312,19 @@ var farmaArticles = []farmaArticle{
 
 // seedArticles inserts articles. locationIDs must be location UUIDs (FK to locations.id).
 //
-// TODO(ARCH BLOCKER — S3.5): articles table has no tenant_id column (global unique on sku).
-// SeedFarma uses WHERE sku=? FirstOrCreate which finds rows from *any* tenant. Tenant 2+ will
-// silently inherit Tenant 1's articles instead of creating their own — data isolation failure.
-// Fix requires: migration adding tenant_id to articles, composite UNIQUE(tenant_id, sku),
-// model update, and all query sites. Tracked as S3.5-articles-tenant-isolation. See:
-// feedback_estock_articles_no_tenant_isolation.md
-func seedArticles(ctx context.Context, tx *gorm.DB, _ string, categoryIDs, locationIDs []string) ([]farmaArticle, error) {
+// S3.5 W1 (HR-S3-W5 C2 fix): articles is now tenant-scoped via composite UNIQUE
+// (tenant_id, sku). FirstOrCreate now scopes by (tenant_id, sku) so each tenant
+// looks up its own row instead of silently inheriting another tenant's article.
+//
+// KNOWN LIMITATION (W1): the legacy global UNIQUE(sku) is still in place to keep
+// 8+ child-table FKs satisfied; this means a SECOND tenant signing up cannot yet
+// register the same demo SKUs — the INSERT will fail. SeedFarma will surface a
+// clear duplicate-key error rather than silently leaking data. The W4 wave will
+// either prefix demo SKUs per-tenant or share a single demo catalog explicitly,
+// once child FKs migrate to composite (tenant_id, sku). For the immediate goal
+// (un-blocking signup for the second G-customer in prod), the operator can pre-
+// migrate them with a custom SKU set OR keep ENABLE_SIGNUP=false until W4 lands.
+func seedArticles(ctx context.Context, tx *gorm.DB, tenantID string, categoryIDs, locationIDs []string) ([]farmaArticle, error) {
 	active := true
 	for _, a := range farmaArticles {
 		shelfDays := a.shelfDays
@@ -328,23 +334,24 @@ func seedArticles(ctx context.Context, tx *gorm.DB, _ string, categoryIDs, locat
 		locID := locationIDs[a.locIndex%len(locationIDs)] // UUID FK — not code
 
 		article := database.Article{
-			ID:              uuid.NewString(),
-			SKU:             a.sku,
-			Name:            a.name,
-			Presentation:    a.pres,
-			UnitPrice:       &price,
-			TrackByLot:      true,
-			TrackExpiration: true,
-			RotationStrategy: "fefo",
-			MinQuantity:     &minQty,
-			IsActive:        &active,
-			CategoryID:      &catID,
+			ID:                uuid.NewString(),
+			TenantID:          tenantID,
+			SKU:               a.sku,
+			Name:              a.name,
+			Presentation:      a.pres,
+			UnitPrice:         &price,
+			TrackByLot:        true,
+			TrackExpiration:   true,
+			RotationStrategy:  "fefo",
+			MinQuantity:       &minQty,
+			IsActive:          &active,
+			CategoryID:        &catID,
 			DefaultLocationID: &locID,
-			ShelfLifeInDays: &shelfDays,
-			SafetyStock:     float64(minQty) / 2,
+			ShelfLifeInDays:   &shelfDays,
+			SafetyStock:       float64(minQty) / 2,
 		}
 		if err := tx.WithContext(ctx).
-			Where("sku = ?", a.sku).
+			Where("tenant_id = ? AND sku = ?", tenantID, a.sku).
 			FirstOrCreate(&article).Error; err != nil {
 			return nil, fmt.Errorf("article %s: %w", a.sku, err)
 		}

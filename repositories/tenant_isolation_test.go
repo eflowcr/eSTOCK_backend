@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
+	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -249,4 +250,143 @@ func TestTenantIsolation_PickingTaskModelHasTenantIDField(t *testing.T) {
 func TestTenantIsolation_ReceivingTaskModelHasTenantIDField(t *testing.T) {
 	rt := database.ReceivingTask{ID: "test", TenantID: testTenantA}
 	assert.Equal(t, testTenantA, rt.TenantID)
+}
+
+// ─── Articles isolation (S3.5 W1 — HR-S3-W5 C2 fix) ──────────────────────────
+
+// seedArticleRow inserts an article row with an explicit tenant_id directly via SQL,
+// bypassing the GORM model so we can exercise the cross-tenant scenarios that the
+// production code is meant to prevent.
+func seedArticleRow(t *testing.T, db *gorm.DB, tenantID, sku, name string) string {
+	t.Helper()
+	id, err := tools.GenerateNanoid(db)
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(`
+		INSERT INTO articles
+			(id, tenant_id, sku, name, presentation, track_by_lot, track_by_serial,
+			 track_expiration, rotation_strategy, is_active, safety_stock, min_order_qty,
+			 created_at, updated_at)
+		VALUES (?, ?::uuid, ?, ?, 'unit', false, false, false, 'fifo', true, 0, 0, NOW(), NOW())`,
+		id, tenantID, sku, name).Error)
+	return id
+}
+
+// TestArticles_TenantIsolation_GetAll_returnsOnlyOwnTenant seeds two tenants
+// then verifies the per-tenant GetAllArticlesForTenant only sees its own rows.
+// Regression guard for HR-S3-W5 C2 — the SeedFarma data leak that motivated
+// this entire sprint must never come back.
+func TestArticles_TenantIsolation_GetAll_returnsOnlyOwnTenant(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	idA1 := seedArticleRow(t, db, testTenantA, "ISO-ART-A1", "Article A1")
+	idA2 := seedArticleRow(t, db, testTenantA, "ISO-ART-A2", "Article A2")
+	idB1 := seedArticleRow(t, db, testTenantB, "ISO-ART-B1", "Article B1")
+
+	repo := &ArticlesRepository{DB: db}
+
+	rowsA, errA := repo.GetAllArticlesForTenant(testTenantA)
+	require.Nil(t, errA)
+	idsA := make([]string, 0, len(rowsA))
+	for _, r := range rowsA {
+		idsA = append(idsA, r.ID)
+		assert.Equal(t, testTenantA, r.TenantID, "GetAllArticlesForTenant(A) must only return tenant A rows")
+	}
+	assert.Contains(t, idsA, idA1)
+	assert.Contains(t, idsA, idA2)
+	assert.NotContains(t, idsA, idB1, "tenant A must not see tenant B's articles")
+
+	rowsB, errB := repo.GetAllArticlesForTenant(testTenantB)
+	require.Nil(t, errB)
+	require.Len(t, rowsB, 1)
+	assert.Equal(t, idB1, rowsB[0].ID)
+	assert.Equal(t, testTenantB, rowsB[0].TenantID)
+}
+
+// TestArticles_TenantIsolation_PerTenantSkuLookup exercises the per-tenant SKU
+// lookup against the new composite (tenant_id, sku) index. Two different SKUs are
+// used per tenant because the W1 migration intentionally retains the legacy
+// global UNIQUE(sku) for FK target preservation — see migration 000029 comments
+// and feedback_estock_articles_no_tenant_isolation.md. Once child-table FKs are
+// retrofitted (future sprint), the global unique can be dropped and the same
+// SKU will be allowed across tenants; that will earn a separate test.
+//
+// What this test PROVES today:
+//   - Per-tenant reads are scoped: tenant A cannot see tenant B's row by SKU even
+//     when both rows exist with the same row id pattern.
+//   - The new composite index enforces uniqueness within a single tenant
+//     (re-inserting (tenantA, "ART-A-001") fails).
+func TestArticles_TenantIsolation_PerTenantSkuLookup(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	const skuA = "ISO-LOOKUP-A-001"
+	const skuB = "ISO-LOOKUP-B-001"
+
+	idA := seedArticleRow(t, db, testTenantA, skuA, "Article A1")
+	idB := seedArticleRow(t, db, testTenantB, skuB, "Article B1")
+
+	repo := &ArticlesRepository{DB: db}
+
+	// Tenant A finds its own row, doesn't see tenant B's.
+	gotA, errA := repo.GetBySkuForTenant(skuA, testTenantA)
+	require.Nil(t, errA)
+	require.NotNil(t, gotA)
+	assert.Equal(t, idA, gotA.ID)
+	assert.Equal(t, testTenantA, gotA.TenantID)
+
+	notFoundA, errNF := repo.GetBySkuForTenant(skuB, testTenantA)
+	require.NotNil(t, errNF, "tenant A must not see tenant B's SKU")
+	assert.Equal(t, responses.StatusNotFound, errNF.StatusCode)
+	assert.Nil(t, notFoundA)
+
+	// Tenant B sees its own.
+	gotB, errB := repo.GetBySkuForTenant(skuB, testTenantB)
+	require.Nil(t, errB)
+	require.NotNil(t, gotB)
+	assert.Equal(t, idB, gotB.ID)
+
+	// Composite unique (tenant_id, sku) enforced: re-inserting the same pair fails.
+	dupErr := db.Exec(`
+		INSERT INTO articles
+			(id, tenant_id, sku, name, presentation, track_by_lot, track_by_serial,
+			 track_expiration, rotation_strategy, is_active, safety_stock, min_order_qty,
+			 created_at, updated_at)
+		VALUES (gen_random_uuid()::text, ?::uuid, ?, 'dup', 'unit', false, false, false,
+			'fifo', true, 0, 0, NOW(), NOW())`,
+		testTenantA, skuA).Error
+	require.Error(t, dupErr, "second insert of the same (tenant_id, sku) must violate articles_tenant_sku_key")
+}
+
+// TestArticles_TenantIsolation_GlobalSkuUniqueStillEnforced documents the W1
+// limitation: the legacy global UNIQUE(sku) is retained as a FK target for the
+// 8+ child tables that reference articles(sku). Two different tenants therefore
+// CANNOT yet share the same SKU. This test asserts the limitation explicitly so
+// any future migration that drops the global unique will need to update this
+// test too — providing a clear paper trail for the structural change.
+func TestArticles_TenantIsolation_GlobalSkuUniqueStillEnforced(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	const sharedSKU = "ISO-GLOBAL-SHARED-001"
+	seedArticleRow(t, db, testTenantA, sharedSKU, "Owned by tenant A")
+
+	// Tenant B cannot register the same SKU until the global unique is dropped.
+	dupErr := db.Exec(`
+		INSERT INTO articles
+			(id, tenant_id, sku, name, presentation, track_by_lot, track_by_serial,
+			 track_expiration, rotation_strategy, is_active, safety_stock, min_order_qty,
+			 created_at, updated_at)
+		VALUES (gen_random_uuid()::text, ?::uuid, ?, 'tenant B copy', 'unit', false, false,
+			false, 'fifo', true, 0, 0, NOW(), NOW())`,
+		testTenantB, sharedSKU).Error
+	require.Error(t, dupErr, "global articles_sku_key intentionally still enforces SKU uniqueness across tenants in W1")
+	assert.Contains(t, dupErr.Error(), "articles_sku_key")
+}
+
+// TestTenantIsolation_ArticleModelHasTenantIDField is a compile-time guard so the
+// TenantID struct field can't be silently removed.
+func TestTenantIsolation_ArticleModelHasTenantIDField(t *testing.T) {
+	a := database.Article{ID: "test", TenantID: testTenantA}
+	assert.Equal(t, testTenantA, a.TenantID)
 }

@@ -12,9 +12,12 @@ import (
 )
 
 type Querier interface {
+	// INTERNAL USE ONLY. Tenant-scoped variant below.
 	ArticleExistsBySku(ctx context.Context, sku string) (bool, error)
+	ArticleExistsBySkuForTenant(ctx context.Context, arg ArticleExistsBySkuForTenantParams) (bool, error)
 	CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error)
 	CreateAdjustmentReasonCode(ctx context.Context, arg CreateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
+	// All inserts now require tenant_id ($1).
 	CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error)
 	// Audit logs: who did what, when, how
 	// Schema: db/migrations (000003_audit_logs_schema)
@@ -35,7 +38,8 @@ type Querier interface {
 	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (CreateStockTransferRow, error)
 	CreateStockTransferLine(ctx context.Context, arg CreateStockTransferLineParams) (StockTransferLine, error)
 	DeleteAdjustmentReasonCode(ctx context.Context, id string) error
-	DeleteArticle(ctx context.Context, id string) error
+	// Tenant guard prevents cross-tenant delete.
+	DeleteArticle(ctx context.Context, arg DeleteArticleParams) error
 	DeleteLocation(ctx context.Context, id string) error
 	DeleteLocationType(ctx context.Context, id string) error
 	DeleteLot(ctx context.Context, id string) error
@@ -48,8 +52,14 @@ type Querier interface {
 	DeleteStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) error
 	GetAdjustmentReasonCodeByCode(ctx context.Context, code string) (AdjustmentReasonCode, error)
 	GetAdjustmentReasonCodeByID(ctx context.Context, id string) (AdjustmentReasonCode, error)
+	// INTERNAL USE ONLY. HTTP handlers must call GetArticleByIDForTenant.
 	GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error)
+	// HR-style tenant guard. Use for HTTP responses to prevent cross-tenant enumeration.
+	GetArticleByIDForTenant(ctx context.Context, arg GetArticleByIDForTenantParams) (GetArticleByIDForTenantRow, error)
+	// INTERNAL USE ONLY (FK lookups, dashboards). HTTP handlers must call GetArticleBySkuForTenant.
 	GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error)
+	// Per-tenant SKU lookup. Hits articles_tenant_sku_key index.
+	GetArticleBySkuForTenant(ctx context.Context, arg GetArticleBySkuForTenantParams) (GetArticleBySkuForTenantRow, error)
 	GetCategoryByID(ctx context.Context, id string) (Category, error)
 	// Internal use only: no tenant filter. Use GetClientByIDForTenant for HTTP responses (HR1-M3).
 	GetClientByID(ctx context.Context, id string) (Client, error)
@@ -84,9 +94,16 @@ type Querier interface {
 	// Adjustment reason codes CRUD for sqlc. Schema: db/migrations (adjustment_reason_codes table)
 	ListAdjustmentReasonCodes(ctx context.Context) ([]AdjustmentReasonCode, error)
 	ListAdjustmentReasonCodesAdmin(ctx context.Context) ([]AdjustmentReasonCode, error)
-	// Articles CRUD and related queries for sqlc
-	// Schema: db/migrations (articles, lots, serials tables)
+	// Articles CRUD and related queries for sqlc.
+	// Schema: db/migrations (articles, lots, serials tables).
+	// S3.5 W1 — every read/write is now tenant-scoped via tenant_id (HR-S3-W5 C2).
+	// The legacy global queries (ListArticles, GetArticleBySku, ArticleExistsBySku) remain
+	// ONLY for internal lookups (FK validation, stock alerts cron, dashboards) where the
+	// caller has no JWT/Config tenant context. HTTP endpoints MUST use the *ForTenant variants.
+	// INTERNAL USE ONLY (cron, FK lookups). HTTP handlers must call ListArticlesForTenant.
 	ListArticles(ctx context.Context) ([]ListArticlesRow, error)
+	// HTTP-facing list. Uses idx_articles_tenant_created (composite covering index).
+	ListArticlesForTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListArticlesForTenantRow, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// M8: Push search/is_active filters and pagination to SQL (HR1 deferred).
 	// Pass NULL for any optional param to skip that filter.
@@ -107,7 +124,8 @@ type Querier interface {
 	// Lots CRUD for sqlc
 	// Schema: db/migrations (lots table)
 	ListLots(ctx context.Context) ([]Lot, error)
-	// Lots by SKU (for UpdateArticle warnings)
+	// Lots by SKU (for UpdateArticle warnings) — internal, no tenant filter (lots table
+	// not yet tenant-scoped; tracked in S3.5 W2).
 	ListLotsBySku(ctx context.Context, sku string) ([]Lot, error)
 	// Presentation conversions CRUD. Schema: db/migrations (presentation_conversions table)
 	ListPresentationConversions(ctx context.Context) ([]PresentationConversion, error)
@@ -119,7 +137,8 @@ type Querier interface {
 	// Schema: db/migrations (presentations table)
 	ListPresentations(ctx context.Context) ([]Presentation, error)
 	ListRoles(ctx context.Context) ([]Role, error)
-	// Serials by SKU (for UpdateArticle warnings)
+	// Serials by SKU (for UpdateArticle warnings) — internal, no tenant filter (serials
+	// table not yet tenant-scoped; tracked in S3.5 W2).
 	ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error)
 	ListStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) ([]StockTransferLine, error)
 	// Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
@@ -133,6 +152,7 @@ type Querier interface {
 	// HR1-M3: tenant_id guard prevents cross-tenant soft-delete.
 	SoftDeleteClient(ctx context.Context, arg SoftDeleteClientParams) error
 	UpdateAdjustmentReasonCode(ctx context.Context, arg UpdateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
+	// Tenant guard via WHERE id = $1 AND tenant_id = $24 — prevents cross-tenant update.
 	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error)
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	// HR1-M3: tenant_id guard prevents cross-tenant update.

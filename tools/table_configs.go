@@ -1,6 +1,11 @@
 package tools
 
 // ArticlesTableConfig returns the generic table configuration for articles.
+//
+// S3.5 W1 — articles is now tenant-scoped (HR-S3-W5 C2). Use ArticlesTableConfigForTenant
+// from HTTP routes; this no-arg variant is kept for back-compat / single-tenant callers
+// and emits a wide-open SELECT (no tenant filter). It MUST NOT be used by tenant-aware
+// HTTP handlers — they will leak data across tenants.
 func ArticlesTableConfig() TableConfig {
 	return TableConfig{
 		EntityName: "artículos",
@@ -13,14 +18,37 @@ func ArticlesTableConfig() TableConfig {
 			"is_active":    "a.is_active",
 			"created_at":   "a.created_at",
 		},
-		SearchFields: []string{"a.sku", "a.name"},
-		DefaultWhere: "",
-		SelectFields: "a.id, a.sku, a.name, a.presentation, a.is_active, a.created_at",
-		CSVFields:    []string{"id", "sku", "name", "presentation", "is_active", "created_at"},
-		CSVHeaders:   []string{"ID", "SKU", "Nombre", "Presentación", "Activo", "Creado en"},
+		SearchFields:   []string{"a.sku", "a.name"},
+		DefaultWhere:   "",
+		SelectFields:   "a.id, a.sku, a.name, a.presentation, a.is_active, a.created_at",
+		CSVFields:      []string{"id", "sku", "name", "presentation", "is_active", "created_at"},
+		CSVHeaders:     []string{"ID", "SKU", "Nombre", "Presentación", "Activo", "Creado en"},
 		DefaultSortBy:  "created_at",
 		DefaultSortDir: "desc",
 	}
+}
+
+// ArticlesTableConfigForTenant returns ArticlesTableConfig with a tenant-scoped
+// DefaultWhere clause baked in. tenantID must be a UUID — the value is sanitised
+// (only [0-9a-f-] kept) before being inlined into the SQL fragment, so it is safe
+// to interpolate without a placeholder. The generic table handler doesn't expose
+// argument injection for DefaultWhere, hence the inline approach.
+func ArticlesTableConfigForTenant(tenantID string) TableConfig {
+	cfg := ArticlesTableConfig()
+	cfg.DefaultWhere = "a.tenant_id = '" + sanitizeUUID(tenantID) + "'::uuid"
+	return cfg
+}
+
+// sanitizeUUID drops any character that isn't valid in a hex/dash UUID. Defensive.
+func sanitizeUUID(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == '-' {
+			out = append(out, c)
+		}
+	}
+	return string(out)
 }
 
 // LocationsTableConfig returns the generic table configuration for locations.

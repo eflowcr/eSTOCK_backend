@@ -22,6 +22,10 @@ func init() {
 
 // ─── mock repo ───────────────────────────────────────────────────────────────
 
+// testTenantIDCtrl is the constant tenant UUID used by controller tests; matches
+// the migration 000029 backfill default.
+const testTenantIDCtrl = "00000000-0000-0000-0000-000000000001"
+
 type mockArticlesRepoCtrl struct {
 	articles  []database.Article
 	byID      map[string]*database.Article
@@ -30,10 +34,12 @@ type mockArticlesRepoCtrl struct {
 	deleteErr *responses.InternalResponse
 }
 
-func (m *mockArticlesRepoCtrl) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
+// ── tenant-scoped (HTTP-facing) ─────────────────────────────────────────────
+
+func (m *mockArticlesRepoCtrl) GetAllArticlesForTenant(_ string) ([]database.Article, *responses.InternalResponse) {
 	return m.articles, nil
 }
-func (m *mockArticlesRepoCtrl) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepoCtrl) GetArticleByIDForTenant(id, _ string) (*database.Article, *responses.InternalResponse) {
 	if m.byID != nil {
 		if a, ok := m.byID[id]; ok {
 			return a, nil
@@ -41,7 +47,7 @@ func (m *mockArticlesRepoCtrl) GetArticleByID(id string) (*database.Article, *re
 	}
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
-func (m *mockArticlesRepoCtrl) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepoCtrl) GetBySkuForTenant(sku, _ string) (*database.Article, *responses.InternalResponse) {
 	if m.bySku != nil {
 		if a, ok := m.bySku[sku]; ok {
 			return a, nil
@@ -49,10 +55,10 @@ func (m *mockArticlesRepoCtrl) GetBySku(sku string) (*database.Article, *respons
 	}
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
-func (m *mockArticlesRepoCtrl) CreateArticle(data *requests.Article) *responses.InternalResponse {
+func (m *mockArticlesRepoCtrl) CreateArticleForTenant(_ string, _ *requests.Article) *responses.InternalResponse {
 	return m.createErr
 }
-func (m *mockArticlesRepoCtrl) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (m *mockArticlesRepoCtrl) UpdateArticleForTenant(id, _ string, _ *requests.Article) (*database.Article, *responses.InternalResponse) {
 	if m.byID != nil {
 		if a, ok := m.byID[id]; ok {
 			return a, nil
@@ -60,32 +66,44 @@ func (m *mockArticlesRepoCtrl) UpdateArticle(id string, data *requests.Article) 
 	}
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
-func (m *mockArticlesRepoCtrl) GetLotsBySKU(sku string) ([]database.Lot, error)     { return nil, nil }
-func (m *mockArticlesRepoCtrl) GetSerialsBySKU(sku string) ([]database.Serial, error) { return nil, nil }
-func (m *mockArticlesRepoCtrl) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
-	return nil, nil, nil
-}
-func (m *mockArticlesRepoCtrl) ImportArticlesFromJSON(_ []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
-	return nil, nil, nil
-}
-func (m *mockArticlesRepoCtrl) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
-	return []byte("xlsx"), nil
-}
-func (m *mockArticlesRepoCtrl) GenerateImportTemplate(_ string) ([]byte, *responses.InternalResponse) {
-	return []byte("tpl"), nil
-}
-func (m *mockArticlesRepoCtrl) ValidateImportRows(_ []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
-	return nil, nil
-}
-func (m *mockArticlesRepoCtrl) DeleteArticle(id string) *responses.InternalResponse {
+func (m *mockArticlesRepoCtrl) DeleteArticleForTenant(_, _ string) *responses.InternalResponse {
 	return m.deleteErr
 }
+func (m *mockArticlesRepoCtrl) ImportArticlesFromExcelForTenant(_ string, _ []byte) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
+}
+func (m *mockArticlesRepoCtrl) ImportArticlesFromJSONForTenant(_ string, _ []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+	return nil, nil, nil
+}
+func (m *mockArticlesRepoCtrl) ValidateImportRowsForTenant(_ string, _ []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockArticlesRepoCtrl) ExportArticlesToExcelForTenant(_ string) ([]byte, *responses.InternalResponse) {
+	return []byte("xlsx"), nil
+}
+func (m *mockArticlesRepoCtrl) GenerateImportTemplateForTenant(_, _ string) ([]byte, *responses.InternalResponse) {
+	return []byte("tpl"), nil
+}
+
+// ── legacy (non-tenant) ─────────────────────────────────────────────────────
+
+func (m *mockArticlesRepoCtrl) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
+	return m.articles, nil
+}
+func (m *mockArticlesRepoCtrl) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+	return m.GetArticleByIDForTenant(id, "")
+}
+func (m *mockArticlesRepoCtrl) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
+	return m.GetBySkuForTenant(sku, "")
+}
+func (m *mockArticlesRepoCtrl) GetLotsBySKU(_ string) ([]database.Lot, error)       { return nil, nil }
+func (m *mockArticlesRepoCtrl) GetSerialsBySKU(_ string) ([]database.Serial, error) { return nil, nil }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func newArticlesController(repo *mockArticlesRepoCtrl) *ArticlesController {
 	svc := services.NewArticlesService(repo)
-	return NewArticlesController(*svc, nil, nil)
+	return NewArticlesController(*svc, nil, nil, testTenantIDCtrl)
 }
 
 func performRequest(handler gin.HandlerFunc, method, path string, body interface{}, params gin.Params) *httptest.ResponseRecorder {

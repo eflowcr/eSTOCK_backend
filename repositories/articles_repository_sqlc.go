@@ -21,6 +21,12 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// defaultTenantUUID matches the backfill default in 000019/000023/000029 migrations.
+// Used by the legacy non-tenant repo methods so existing internal callers (cron jobs,
+// integration tests) keep working without an immediate refactor. New HTTP-facing code
+// MUST use the *ForTenant variants with a real tenantID.
+const defaultTenantUUID = "00000000-0000-0000-0000-000000000001"
+
 // ArticlesRepositorySQLC implements ports.ArticlesRepository using sqlc-generated queries.
 type ArticlesRepositorySQLC struct {
 	queries *sqlc.Queries
@@ -34,17 +40,23 @@ func NewArticlesRepositorySQLC(queries *sqlc.Queries) *ArticlesRepositorySQLC {
 // Ensure ArticlesRepositorySQLC implements ports.ArticlesRepository at compile time.
 var _ ports.ArticlesRepository = (*ArticlesRepositorySQLC)(nil)
 
-func (r *ArticlesRepositorySQLC) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
+// ─── tenant-scoped (HTTP-facing) ─────────────────────────────────────────────
+
+func (r *ArticlesRepositorySQLC) GetAllArticlesForTenant(tenantID string) ([]database.Article, *responses.InternalResponse) {
 	ctx := context.Background()
-	list, err := r.queries.ListArticles(ctx)
+	tid, err := stringToPgUUID(tenantID)
 	if err != nil {
-		tools.LogRepoError("articles", "ListArticles", err, "Error al obtener los artículos")
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	list, err := r.queries.ListArticlesForTenant(ctx, tid)
+	if err != nil {
+		tools.LogRepoError("articles", "ListArticlesForTenant", err, "Error al obtener los artículos")
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener los artículos", Handled: false}
 	}
 	out := make([]database.Article, len(list))
 	for i, a := range list {
 		out[i] = articleRowToDatabase(articleRowData{
-			ID: a.ID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+			ID: a.ID, TenantID: a.TenantID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
 			Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
 			TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
 			MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
@@ -58,22 +70,22 @@ func (r *ArticlesRepositorySQLC) GetAllArticles() ([]database.Article, *response
 	return out, nil
 }
 
-func (r *ArticlesRepositorySQLC) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) GetArticleByIDForTenant(id, tenantID string) (*database.Article, *responses.InternalResponse) {
 	ctx := context.Background()
-	a, err := r.queries.GetArticleByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	a, err := r.queries.GetArticleByIDForTenant(ctx, sqlc.GetArticleByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &responses.InternalResponse{
-				Message:    "Artículo no encontrado",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
-			}
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
-		tools.LogRepoError("articles", "GetArticleByID", err, "Error al obtener el artículo")
+		tools.LogRepoError("articles", "GetArticleByIDForTenant", err, "Error al obtener el artículo")
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
 	}
 	art := articleRowToDatabase(articleRowData{
-		ID: a.ID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+		ID: a.ID, TenantID: a.TenantID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
 		Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
 		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
 		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
@@ -86,22 +98,22 @@ func (r *ArticlesRepositorySQLC) GetArticleByID(id string) (*database.Article, *
 	return &art, nil
 }
 
-func (r *ArticlesRepositorySQLC) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) GetBySkuForTenant(sku, tenantID string) (*database.Article, *responses.InternalResponse) {
 	ctx := context.Background()
-	a, err := r.queries.GetArticleBySku(ctx, sku)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	a, err := r.queries.GetArticleBySkuForTenant(ctx, sqlc.GetArticleBySkuForTenantParams{Sku: sku, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &responses.InternalResponse{
-				Message:    "Artículo no encontrado",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
-			}
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
-		tools.LogRepoError("articles", "GetBySku", err, "Error al obtener el artículo por SKU")
+		tools.LogRepoError("articles", "GetBySkuForTenant", err, "Error al obtener el artículo por SKU")
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo por SKU", Handled: false}
 	}
 	art := articleRowToDatabase(articleRowData{
-		ID: a.ID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+		ID: a.ID, TenantID: a.TenantID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
 		Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
 		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
 		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
@@ -114,19 +126,20 @@ func (r *ArticlesRepositorySQLC) GetBySku(sku string) (*database.Article, *respo
 	return &art, nil
 }
 
-func (r *ArticlesRepositorySQLC) CreateArticle(data *requests.Article) *responses.InternalResponse {
+func (r *ArticlesRepositorySQLC) CreateArticleForTenant(tenantID string, data *requests.Article) *responses.InternalResponse {
 	ctx := context.Background()
-	exists, err := r.queries.ArticleExistsBySku(ctx, data.SKU)
+	tid, err := stringToPgUUID(tenantID)
 	if err != nil {
-		tools.LogRepoError("articles", "CreateArticle", err, "Error al verificar el artículo existente")
+		return &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+
+	exists, err := r.queries.ArticleExistsBySkuForTenant(ctx, sqlc.ArticleExistsBySkuForTenantParams{Sku: data.SKU, TenantID: tid})
+	if err != nil {
+		tools.LogRepoError("articles", "CreateArticleForTenant", err, "Error al verificar el artículo existente")
 		return &responses.InternalResponse{Error: err, Message: "Error al verificar el artículo existente", Handled: false}
 	}
 	if exists {
-		return &responses.InternalResponse{
-			Message:    "Ya existe un artículo con el mismo SKU",
-			Handled:    true,
-			StatusCode: responses.StatusConflict,
-		}
+		return &responses.InternalResponse{Message: "Ya existe un artículo con el mismo SKU", Handled: true, StatusCode: responses.StatusConflict}
 	}
 
 	rotationStrategy := strings.TrimSpace(strings.ToLower(data.RotationStrategy))
@@ -135,6 +148,7 @@ func (r *ArticlesRepositorySQLC) CreateArticle(data *requests.Article) *response
 	}
 
 	arg := sqlc.CreateArticleParams{
+		TenantID:           tid,
 		Sku:                data.SKU,
 		Name:               data.Name,
 		Description:        ptrStringToPgText(data.Description),
@@ -162,27 +176,24 @@ func (r *ArticlesRepositorySQLC) CreateArticle(data *requests.Article) *response
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return &responses.InternalResponse{
-				Message:    "Ya existe un artículo con el mismo SKU",
-				Handled:    true,
-				StatusCode: responses.StatusConflict,
-			}
+			return &responses.InternalResponse{Message: "Ya existe un artículo con el mismo SKU", Handled: true, StatusCode: responses.StatusConflict}
 		}
 		return &responses.InternalResponse{Error: err, Message: "Error al crear el artículo", Handled: false}
 	}
 	return nil
 }
 
-func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) UpdateArticleForTenant(id, tenantID string, data *requests.Article) (*database.Article, *responses.InternalResponse) {
 	ctx := context.Background()
-	existing, err := r.queries.GetArticleByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	// Tenant-scoped existence check.
+	existing, err := r.queries.GetArticleByIDForTenant(ctx, sqlc.GetArticleByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &responses.InternalResponse{
-				Message:    "Artículo no encontrado",
-				Handled:    true,
-				StatusCode: responses.StatusNotFound,
-			}
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
 	}
@@ -194,6 +205,7 @@ func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article
 
 	arg := sqlc.UpdateArticleParams{
 		ID:                 existing.ID,
+		TenantID:           tid,
 		Sku:                data.SKU,
 		Name:               data.Name,
 		Description:        ptrStringToPgText(data.Description),
@@ -223,7 +235,7 @@ func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al actualizar el artículo", Handled: false}
 	}
 	art := articleRowToDatabase(articleRowData{
-		ID: updated.ID, Sku: updated.Sku, Name: updated.Name, Description: updated.Description, UnitPrice: updated.UnitPrice,
+		ID: updated.ID, TenantID: updated.TenantID, Sku: updated.Sku, Name: updated.Name, Description: updated.Description, UnitPrice: updated.UnitPrice,
 		Presentation: updated.Presentation, TrackByLot: updated.TrackByLot, TrackBySerial: updated.TrackBySerial,
 		TrackExpiration: updated.TrackExpiration, RotationStrategy: updated.RotationStrategy,
 		MinQuantity: updated.MinQuantity, MaxQuantity: updated.MaxQuantity, ImageUrl: updated.ImageUrl,
@@ -236,43 +248,20 @@ func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article
 	return &art, nil
 }
 
-func (r *ArticlesRepositorySQLC) GetLotsBySKU(sku string) ([]database.Lot, error) {
+func (r *ArticlesRepositorySQLC) DeleteArticleForTenant(id, tenantID string) *responses.InternalResponse {
 	ctx := context.Background()
-	list, err := r.queries.ListLotsBySku(ctx, sku)
+	tid, err := stringToPgUUID(tenantID)
 	if err != nil {
-		return nil, err
+		return &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
 	}
-	out := make([]database.Lot, len(list))
-	for i, l := range list {
-		out[i] = sqlcLotToDatabase(l)
-	}
-	return out, nil
-}
-
-func (r *ArticlesRepositorySQLC) GetSerialsBySKU(sku string) ([]database.Serial, error) {
-	ctx := context.Background()
-	list, err := r.queries.ListSerialsBySku(ctx, sku)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]database.Serial, len(list))
-	for i, s := range list {
-		out[i] = sqlcSerialToDatabase(s)
-	}
-	return out, nil
-}
-
-func (r *ArticlesRepositorySQLC) DeleteArticle(id string) *responses.InternalResponse {
-	ctx := context.Background()
-	err := r.queries.DeleteArticle(ctx, id)
-	if err != nil {
-		tools.LogRepoError("articles", "DeleteArticle", err, "Error al eliminar el artículo")
+	if err := r.queries.DeleteArticle(ctx, sqlc.DeleteArticleParams{ID: id, TenantID: tid}); err != nil {
+		tools.LogRepoError("articles", "DeleteArticleForTenant", err, "Error al eliminar el artículo")
 		return &responses.InternalResponse{Error: err, Message: "Error al eliminar el artículo", Handled: false}
 	}
 	return nil
 }
 
-func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) ImportArticlesFromExcelForTenant(tenantID string, fileBytes []byte) ([]string, []string, []*responses.InternalResponse) {
 	imported, skipped, errs := []string{}, []string{}, []*responses.InternalResponse{}
 
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
@@ -316,7 +305,7 @@ func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]st
 		if len(row) > 10 {
 			rowReq.RotationStrategy = strings.TrimSpace(row[10])
 		}
-		imp, sk, rowErrs := r.ImportArticlesFromJSON([]requests.ArticleImportRow{rowReq})
+		imp, sk, rowErrs := r.ImportArticlesFromJSONForTenant(tenantID, []requests.ArticleImportRow{rowReq})
 		imported = append(imported, imp...)
 		skipped = append(skipped, sk...)
 		errs = append(errs, rowErrs...)
@@ -324,7 +313,7 @@ func (r *ArticlesRepositorySQLC) ImportArticlesFromExcel(fileBytes []byte) ([]st
 	return imported, skipped, errs
 }
 
-func (r *ArticlesRepositorySQLC) ImportArticlesFromJSON(rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
+func (r *ArticlesRepositorySQLC) ImportArticlesFromJSONForTenant(tenantID string, rows []requests.ArticleImportRow) ([]string, []string, []*responses.InternalResponse) {
 	imported, skipped, errs := []string{}, []string{}, []*responses.InternalResponse{}
 	for i, row := range rows {
 		sku := strings.TrimSpace(row.SKU)
@@ -369,7 +358,7 @@ func (r *ArticlesRepositorySQLC) ImportArticlesFromJSON(rows []requests.ArticleI
 			TrackExpiration: parseBoolCell(row.TrackExpiration), RotationStrategy: rs,
 			MinQuantity: minQty, MaxQuantity: maxQty,
 		}
-		resp := r.CreateArticle(article)
+		resp := r.CreateArticleForTenant(tenantID, article)
 		if resp != nil {
 			errs = append(errs, &responses.InternalResponse{Error: resp.Error, Message: fmt.Sprintf("Fila %d: %s", i+1, resp.Message), Handled: resp.Handled})
 			continue
@@ -379,8 +368,108 @@ func (r *ArticlesRepositorySQLC) ImportArticlesFromJSON(rows []requests.ArticleI
 	return imported, skipped, errs
 }
 
-func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.InternalResponse) {
-	articles, errResp := r.GetAllArticles()
+func (r *ArticlesRepositorySQLC) ValidateImportRowsForTenant(tenantID string, rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
+	results := make([]responses.ArticleValidationResult, 0, len(rows))
+	seenSKUs := make(map[string]bool)
+
+	// Load only this tenant's articles for in-memory similarity check.
+	allArticles, errResp := r.GetAllArticlesForTenant(tenantID)
+	if errResp != nil {
+		return nil, errResp
+	}
+
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+
+	for i, row := range rows {
+		sku := strings.TrimSpace(row.SKU)
+		name := strings.TrimSpace(row.Name)
+		result := responses.ArticleValidationResult{RowIndex: i, Row: row}
+
+		// Field validation
+		if sku == "" || name == "" || strings.TrimSpace(row.Presentation) == "" {
+			result.Status = responses.ArticleStatusError
+			result.FieldErrors = map[string]string{}
+			if sku == "" {
+				result.FieldErrors["sku"] = "SKU requerido"
+			}
+			if name == "" {
+				result.FieldErrors["name"] = "Nombre requerido"
+			}
+			if strings.TrimSpace(row.Presentation) == "" {
+				result.FieldErrors["presentation"] = "Presentación requerida"
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Duplicate within batch
+		skuKey := strings.ToLower(sku)
+		if seenSKUs[skuKey] {
+			result.Status = responses.ArticleStatusDuplicate
+			results = append(results, result)
+			continue
+		}
+		seenSKUs[skuKey] = true
+
+		// Exact SKU match within tenant.
+		ctx := context.Background()
+		existing, err := r.queries.GetArticleBySkuForTenant(ctx, sqlc.GetArticleBySkuForTenantParams{Sku: sku, TenantID: tid})
+		if err == nil {
+			isActive := false
+			if existing.IsActive.Valid {
+				isActive = existing.IsActive.Bool
+			}
+			result.Status = responses.ArticleStatusExists
+			result.ExistingArticle = &responses.ArticleValidationMatch{
+				ID: existing.ID, SKU: existing.Sku, Name: existing.Name,
+				Presentation: existing.Presentation, IsActive: isActive,
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// In-memory similarity check (per-tenant subset).
+		keyword := strings.ToLower(name)
+		if len(keyword) > 20 {
+			keyword = keyword[:20]
+		}
+		var matches []responses.ArticleValidationMatch
+		for _, a := range allArticles {
+			if strings.EqualFold(a.SKU, sku) {
+				continue
+			}
+			if strings.Contains(strings.ToLower(a.Name), keyword) {
+				isActive := false
+				if a.IsActive != nil {
+					isActive = *a.IsActive
+				}
+				matches = append(matches, responses.ArticleValidationMatch{
+					ID: a.ID, SKU: a.SKU, Name: a.Name,
+					Presentation: a.Presentation, IsActive: isActive,
+				})
+				if len(matches) == 3 {
+					break
+				}
+			}
+		}
+		if len(matches) > 0 {
+			result.Status = responses.ArticleStatusSimilar
+			result.SimilarArticles = matches
+			results = append(results, result)
+			continue
+		}
+
+		result.Status = responses.ArticleStatusNew
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func (r *ArticlesRepositorySQLC) ExportArticlesToExcelForTenant(tenantID string) ([]byte, *responses.InternalResponse) {
+	articles, errResp := r.GetAllArticlesForTenant(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}
@@ -435,11 +524,133 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 	return buf.Bytes(), nil
 }
 
-// --- mapping helpers ---
+func (r *ArticlesRepositorySQLC) GenerateImportTemplateForTenant(tenantID, language string) ([]byte, *responses.InternalResponse) {
+	articles, errResp := r.GetAllArticlesForTenant(tenantID)
+	if errResp != nil {
+		return nil, errResp
+	}
+	var presentations []string
+	for _, a := range articles {
+		presentations = append(presentations, a.Presentation)
+	}
+	return buildImportTemplate(presentations, language)
+}
 
-// articleRowData holds the common shape of sqlc article row types (ListArticlesRow, GetArticleByIDRow, GetArticleBySkuRow, UpdateArticleRow).
+// ─── legacy non-tenant methods ───────────────────────────────────────────────
+//
+// These remain as thin convenience wrappers for internal callers (cron jobs,
+// FK lookups from inventory rows, dashboards). They MUST NOT be called from
+// HTTP handlers — those go through *ForTenant instead. The legacy GetAll/GetByID/
+// GetBySku still query across tenants (matching their pre-S3.5 behaviour) so that
+// inventory/lots/serials lookups (which carry SKU only, not tenant_id) keep
+// working until W2 retrofits child tables with tenant_id.
+
+func (r *ArticlesRepositorySQLC) GetAllArticles() ([]database.Article, *responses.InternalResponse) {
+	ctx := context.Background()
+	list, err := r.queries.ListArticles(ctx)
+	if err != nil {
+		tools.LogRepoError("articles", "ListArticles", err, "Error al obtener los artículos")
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener los artículos", Handled: false}
+	}
+	out := make([]database.Article, len(list))
+	for i, a := range list {
+		out[i] = articleRowToDatabase(articleRowData{
+			ID: a.ID, TenantID: a.TenantID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+			Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
+			TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
+			MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
+			IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+			CategoryID: a.CategoryID, ShelfLifeInDays: a.ShelfLifeInDays, SafetyStock: a.SafetyStock,
+			BatchNumberSeries: a.BatchNumberSeries, SerialNumberSeries: a.SerialNumberSeries,
+			MinOrderQty: a.MinOrderQty, DefaultLocationID: a.DefaultLocationID,
+			ReceivingNotes: a.ReceivingNotes, ShippingNotes: a.ShippingNotes,
+		})
+	}
+	return out, nil
+}
+
+func (r *ArticlesRepositorySQLC) GetArticleByID(id string) (*database.Article, *responses.InternalResponse) {
+	ctx := context.Background()
+	a, err := r.queries.GetArticleByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+		}
+		tools.LogRepoError("articles", "GetArticleByID", err, "Error al obtener el artículo")
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo", Handled: false}
+	}
+	art := articleRowToDatabase(articleRowData{
+		ID: a.ID, TenantID: a.TenantID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+		Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
+		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
+		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
+		IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CategoryID: a.CategoryID, ShelfLifeInDays: a.ShelfLifeInDays, SafetyStock: a.SafetyStock,
+		BatchNumberSeries: a.BatchNumberSeries, SerialNumberSeries: a.SerialNumberSeries,
+		MinOrderQty: a.MinOrderQty, DefaultLocationID: a.DefaultLocationID,
+		ReceivingNotes: a.ReceivingNotes, ShippingNotes: a.ShippingNotes,
+	})
+	return &art, nil
+}
+
+func (r *ArticlesRepositorySQLC) GetBySku(sku string) (*database.Article, *responses.InternalResponse) {
+	ctx := context.Background()
+	a, err := r.queries.GetArticleBySku(ctx, sku)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &responses.InternalResponse{Message: "Artículo no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+		}
+		tools.LogRepoError("articles", "GetBySku", err, "Error al obtener el artículo por SKU")
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el artículo por SKU", Handled: false}
+	}
+	art := articleRowToDatabase(articleRowData{
+		ID: a.ID, TenantID: a.TenantID, Sku: a.Sku, Name: a.Name, Description: a.Description, UnitPrice: a.UnitPrice,
+		Presentation: a.Presentation, TrackByLot: a.TrackByLot, TrackBySerial: a.TrackBySerial,
+		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
+		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
+		IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CategoryID: a.CategoryID, ShelfLifeInDays: a.ShelfLifeInDays, SafetyStock: a.SafetyStock,
+		BatchNumberSeries: a.BatchNumberSeries, SerialNumberSeries: a.SerialNumberSeries,
+		MinOrderQty: a.MinOrderQty, DefaultLocationID: a.DefaultLocationID,
+		ReceivingNotes: a.ReceivingNotes, ShippingNotes: a.ShippingNotes,
+	})
+	return &art, nil
+}
+
+func (r *ArticlesRepositorySQLC) GetLotsBySKU(sku string) ([]database.Lot, error) {
+	ctx := context.Background()
+	list, err := r.queries.ListLotsBySku(ctx, sku)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]database.Lot, len(list))
+	for i, l := range list {
+		out[i] = sqlcLotToDatabase(l)
+	}
+	return out, nil
+}
+
+func (r *ArticlesRepositorySQLC) GetSerialsBySKU(sku string) ([]database.Serial, error) {
+	ctx := context.Background()
+	list, err := r.queries.ListSerialsBySku(ctx, sku)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]database.Serial, len(list))
+	for i, s := range list {
+		out[i] = sqlcSerialToDatabase(s)
+	}
+	return out, nil
+}
+
+// ─── mapping helpers ─────────────────────────────────────────────────────────
+
+// articleRowData holds the common shape of sqlc article row types
+// (ListArticlesRow, ListArticlesForTenantRow, GetArticleByIDRow, GetArticleByIDForTenantRow,
+// GetArticleBySkuRow, GetArticleBySkuForTenantRow, UpdateArticleRow, CreateArticleRow).
 type articleRowData struct {
 	ID                 string
+	TenantID           pgtype.UUID
 	Sku                string
 	Name               string
 	Description        pgtype.Text
@@ -473,6 +684,7 @@ func articleRowToDatabase(a articleRowData) database.Article {
 	}
 	return database.Article{
 		ID:                 a.ID,
+		TenantID:           pgUUIDToString(a.TenantID),
 		SKU:                a.Sku,
 		Name:               a.Name,
 		Description:        pgTextToPtrString(a.Description),
@@ -643,96 +855,4 @@ func ptrStringToPgDate(s *string) pgtype.Date {
 		return pgtype.Date{}
 	}
 	return pgtype.Date{Time: t, Valid: true}
-}
-
-
-func (r *ArticlesRepositorySQLC) ValidateImportRows(rows []requests.ArticleImportRow) ([]responses.ArticleValidationResult, *responses.InternalResponse) {
-	results := make([]responses.ArticleValidationResult, 0, len(rows))
-	seenSKUs := make(map[string]bool)
-
-	// Load all articles once for in-memory similarity check
-	allArticles, errResp := r.GetAllArticles()
-	if errResp != nil {
-		return nil, errResp
-	}
-
-	for i, row := range rows {
-		sku := strings.TrimSpace(row.SKU)
-		name := strings.TrimSpace(row.Name)
-		result := responses.ArticleValidationResult{RowIndex: i, Row: row}
-
-		// Field validation
-		if sku == "" || name == "" || strings.TrimSpace(row.Presentation) == "" {
-			result.Status = responses.ArticleStatusError
-			result.FieldErrors = map[string]string{}
-			if sku == "" { result.FieldErrors["sku"] = "SKU requerido" }
-			if name == "" { result.FieldErrors["name"] = "Nombre requerido" }
-			if strings.TrimSpace(row.Presentation) == "" { result.FieldErrors["presentation"] = "Presentación requerida" }
-			results = append(results, result)
-			continue
-		}
-
-		// Duplicate within batch
-		skuKey := strings.ToLower(sku)
-		if seenSKUs[skuKey] {
-			result.Status = responses.ArticleStatusDuplicate
-			results = append(results, result)
-			continue
-		}
-		seenSKUs[skuKey] = true
-
-		// Exact SKU match
-		ctx := context.Background()
-		existing, err := r.queries.GetArticleBySku(ctx, sku)
-		if err == nil {
-			isActive := false
-			if existing.IsActive.Valid { isActive = existing.IsActive.Bool }
-			result.Status = responses.ArticleStatusExists
-			result.ExistingArticle = &responses.ArticleValidationMatch{
-				ID: existing.ID, SKU: existing.Sku, Name: existing.Name,
-				Presentation: existing.Presentation, IsActive: isActive,
-			}
-			results = append(results, result)
-			continue
-		}
-
-		// In-memory similarity check
-		keyword := strings.ToLower(name)
-		if len(keyword) > 20 { keyword = keyword[:20] }
-		var matches []responses.ArticleValidationMatch
-		for _, a := range allArticles {
-			if strings.ToLower(a.SKU) == strings.ToLower(sku) { continue }
-			if strings.Contains(strings.ToLower(a.Name), keyword) {
-				isActive := false
-				if a.IsActive != nil { isActive = *a.IsActive }
-				matches = append(matches, responses.ArticleValidationMatch{
-					ID: a.ID, SKU: a.SKU, Name: a.Name,
-					Presentation: a.Presentation, IsActive: isActive,
-				})
-				if len(matches) == 3 { break }
-			}
-		}
-		if len(matches) > 0 {
-			result.Status = responses.ArticleStatusSimilar
-			result.SimilarArticles = matches
-			results = append(results, result)
-			continue
-		}
-
-		result.Status = responses.ArticleStatusNew
-		results = append(results, result)
-	}
-	return results, nil
-}
-
-func (r *ArticlesRepositorySQLC) GenerateImportTemplate(language string) ([]byte, *responses.InternalResponse) {
-	articles, errResp := r.GetAllArticles()
-	if errResp != nil {
-		return nil, errResp
-	}
-	var presentations []string
-	for _, a := range articles {
-		presentations = append(presentations, a.Presentation)
-	}
-	return buildImportTemplate(presentations, language)
 }

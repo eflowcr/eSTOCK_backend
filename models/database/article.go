@@ -6,6 +6,11 @@ import (
 
 type Article struct {
 	ID               string    `gorm:"column:id;primaryKey" json:"id"`
+	// TenantID was added in S3.5 W1 (migration 000029). Articles are now scoped per tenant
+	// via the composite UNIQUE(tenant_id, sku) index. The legacy global UNIQUE(sku) is
+	// preserved as a FK target for inventory/article_suppliers/po_items/etc; it will be
+	// retired in a future sprint once those child FKs are migrated to composite.
+	TenantID         string    `gorm:"column:tenant_id;type:uuid;not null" json:"-"`
 	SKU              string    `gorm:"column:sku;unique" json:"sku"`
 	Name             string    `gorm:"column:name" json:"name"`
 	Description      *string   `gorm:"column:description" json:"description"`

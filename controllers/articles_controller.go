@@ -12,22 +12,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ArticlesController — S3.5 W1: now carries TenantID injected from Config (env-injected
+// per-deployment). HR-S3-W5 C2 fix; future M2 will source tenantID from JWT claim instead.
 type ArticlesController struct {
 	Service       services.ArticlesService
 	AuditService  *services.AuditService
 	UserPrefsRepo ports.UserPreferencesRepository
+	TenantID      string
 }
 
-func NewArticlesController(service services.ArticlesService, auditSvc *services.AuditService, userPrefsRepo ports.UserPreferencesRepository) *ArticlesController {
+func NewArticlesController(service services.ArticlesService, auditSvc *services.AuditService, userPrefsRepo ports.UserPreferencesRepository, tenantID string) *ArticlesController {
 	return &ArticlesController{
 		Service:       service,
 		AuditService:  auditSvc,
 		UserPrefsRepo: userPrefsRepo,
+		TenantID:      tenantID,
 	}
 }
 
 func (c *ArticlesController) GetAllArticles(ctx *gin.Context) {
-	articles, response := c.Service.GetAllArticles()
+	articles, response := c.Service.GetAllArticles(c.TenantID)
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllArticles", "get_all_articles", response)
@@ -48,7 +52,7 @@ func (c *ArticlesController) GetArticleByID(ctx *gin.Context) {
 		return
 	}
 
-	article, response := c.Service.GetArticleByID(articleID)
+	article, response := c.Service.GetArticleByID(articleID, c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "GetArticleByID", "get_article_by_id", response)
 		return
@@ -67,7 +71,7 @@ func (c *ArticlesController) GetBySku(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	article, response := c.Service.GetBySku(sku)
+	article, response := c.Service.GetBySku(sku, c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "GetBySku", "get_by_sku", response)
 		return
@@ -92,7 +96,7 @@ func (c *ArticlesController) CreateArticle(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.CreateArticle(&articleRequest)
+	response := c.Service.CreateArticle(c.TenantID, &articleRequest)
 	if response != nil {
 		writeErrorResponse(ctx, "CreateArticle", "create_article", response)
 		return
@@ -116,7 +120,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		return
 	}
 
-	article, _ := c.Service.GetArticleByID(id)
+	article, _ := c.Service.GetArticleByID(id, c.TenantID)
 	var req requests.Article
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		tools.ResponseBadRequest(ctx, "UpdateArticle", "Carga útil no válida", "update_article")
@@ -127,7 +131,7 @@ func (c *ArticlesController) UpdateArticle(ctx *gin.Context) {
 		return
 	}
 
-	updatedArticle, errResp, warnings := c.Service.UpdateArticle(id, &req)
+	updatedArticle, errResp, warnings := c.Service.UpdateArticle(id, c.TenantID, &req)
 	if errResp != nil {
 		writeErrorResponse(ctx, "UpdateArticle", "update_article", errResp)
 		return
@@ -170,7 +174,7 @@ func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	importedArticles, skippedArticles, errorResponses := c.Service.ImportArticlesFromExcel(fileBytes)
+	importedArticles, skippedArticles, errorResponses := c.Service.ImportArticlesFromExcel(c.TenantID, fileBytes)
 	if len(importedArticles) == 0 && len(skippedArticles) == 0 && len(errorResponses) > 0 {
 		resp := errorResponses[0]
 		writeErrorResponse(ctx, "ImportArticlesFromExcel", "import_articles_from_excel", resp)
@@ -178,12 +182,12 @@ func (c *ArticlesController) ImportArticlesFromExcel(ctx *gin.Context) {
 	}
 
 	tools.ResponseOK(ctx, "ImportArticlesFromExcel", "Artículos importados con éxito", "import_articles_from_excel", gin.H{
-		"successful": len(importedArticles),
-		"skipped":    len(skippedArticles),
-		"failed":     len(errorResponses),
-		"imported":   importedArticles,
+		"successful":   len(importedArticles),
+		"skipped":      len(skippedArticles),
+		"failed":       len(errorResponses),
+		"imported":     importedArticles,
 		"skipped_rows": skippedArticles,
-		"errors":     errorResponses,
+		"errors":       errorResponses,
 	}, false, "")
 }
 
@@ -197,7 +201,7 @@ func (c *ArticlesController) ValidateImportRows(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_import_rows")
 		return
 	}
-	results, resp := c.Service.ValidateImportRows(rows)
+	results, resp := c.Service.ValidateImportRows(c.TenantID, rows)
 	if resp != nil {
 		writeErrorResponse(ctx, "ValidateImportRows", "validate_import_rows", resp)
 		return
@@ -218,7 +222,7 @@ func (c *ArticlesController) ImportArticlesFromJSON(ctx *gin.Context) {
 		return
 	}
 
-	imported, skipped, errorResponses := c.Service.ImportArticlesFromJSON(rows)
+	imported, skipped, errorResponses := c.Service.ImportArticlesFromJSON(c.TenantID, rows)
 	tools.ResponseOK(ctx, "ImportArticlesFromJSON", "Importación completada", "import_articles_from_json", gin.H{
 		"successful":   len(imported),
 		"skipped":      len(skipped),
@@ -230,7 +234,7 @@ func (c *ArticlesController) ImportArticlesFromJSON(ctx *gin.Context) {
 }
 
 func (c *ArticlesController) ExportArticlesToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportArticlesToExcel()
+	fileBytes, response := c.Service.ExportArticlesToExcel(c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "ExportArticlesToExcel", "export_articles_to_excel", response)
 		return
@@ -250,7 +254,7 @@ func (c *ArticlesController) DownloadImportTemplate(ctx *gin.Context) {
 		}
 	}
 
-	fileBytes, response := c.Service.GenerateImportTemplate(lang)
+	fileBytes, response := c.Service.GenerateImportTemplate(c.TenantID, lang)
 	if response != nil {
 		writeErrorResponse(ctx, "DownloadImportTemplate", "download_articles_import_template", response)
 		return
@@ -267,8 +271,8 @@ func (c *ArticlesController) DeleteArticle(ctx *gin.Context) {
 		return
 	}
 
-	article, _ := c.Service.GetArticleByID(id)
-	resp := c.Service.DeleteArticle(id)
+	article, _ := c.Service.GetArticleByID(id, c.TenantID)
+	resp := c.Service.DeleteArticle(id, c.TenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "DeleteArticle", "delete_article", resp)
 		return
