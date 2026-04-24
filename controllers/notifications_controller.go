@@ -31,7 +31,7 @@ func (c *NotificationsController) List(ctx *gin.Context) {
 
 	params := ports.ListNotificationsParams{
 		UserID:   uid,
-		TenantID: c.tenantID,
+		TenantID: c.resolveTenantID(ctx),
 		Limit:    20,
 	}
 
@@ -91,7 +91,7 @@ func (c *NotificationsController) MarkAllRead(ctx *gin.Context) {
 	userID, _ := ctx.Get(tools.ContextKeyUserID)
 	uid, _ := userID.(string)
 
-	if resp := c.repo.MarkAllRead(uid, c.tenantID); resp != nil {
+	if resp := c.repo.MarkAllRead(uid, c.resolveTenantID(ctx)); resp != nil {
 		writeErrorResponse(ctx, "MarkAllNotificationsRead", "mark_all_notifications_read", resp)
 		return
 	}
@@ -102,7 +102,7 @@ func (c *NotificationsController) CountUnread(ctx *gin.Context) {
 	userID, _ := ctx.Get(tools.ContextKeyUserID)
 	uid, _ := userID.(string)
 
-	count, resp := c.repo.CountUnread(uid, c.tenantID)
+	count, resp := c.repo.CountUnread(uid, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "CountUnreadNotifications", "count_unread", resp)
 		return
@@ -115,7 +115,7 @@ func (c *NotificationsController) GetPreferences(ctx *gin.Context) {
 	userID, _ := ctx.Get(tools.ContextKeyUserID)
 	uid, _ := userID.(string)
 
-	prefs, resp := c.repo.ListPreferences(uid, c.tenantID)
+	prefs, resp := c.repo.ListPreferences(uid, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetNotificationPreferences", "get_notification_preferences", resp)
 		return
@@ -158,7 +158,7 @@ func (c *NotificationsController) UpsertPreferences(ctx *gin.Context) {
 		pref := &database.NotificationPreference{
 			UserID:    uid,
 			EventType: item.EventType,
-			TenantID:  c.tenantID,
+			TenantID:  c.resolveTenantID(ctx),
 			InApp:     true,
 			Email:     true,
 			Push:      false,
@@ -182,3 +182,9 @@ func (c *NotificationsController) UpsertPreferences(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "UpsertNotificationPreferences", "Preferencias guardadas", "upsert_notification_preferences", nil, false, "")
 }
 
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The tenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *NotificationsController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.tenantID)
+}

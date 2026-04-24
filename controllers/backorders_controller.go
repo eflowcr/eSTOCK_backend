@@ -42,7 +42,7 @@ func (c *BackordersController) List(ctx *gin.Context) {
 		}
 	}
 
-	result, resp := c.Service.List(c.TenantID, status, soID, page, limit)
+	result, resp := c.Service.List(c.resolveTenantID(ctx), status, soID, page, limit)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListBackorders", "list_backorders", resp)
 		return
@@ -57,7 +57,7 @@ func (c *BackordersController) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	bo, resp := c.Service.GetByID(id, c.TenantID)
+	bo, resp := c.Service.GetByID(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetBackorder", "get_backorder", resp)
 		return
@@ -75,10 +75,16 @@ func (c *BackordersController) Fulfill(ctx *gin.Context) {
 
 	userID := ctx.GetString(tools.ContextKeyUserID)
 
-	result, resp := c.Service.Fulfill(id, c.TenantID, userID)
+	result, resp := c.Service.Fulfill(id, c.resolveTenantID(ctx), userID)
 	if resp != nil {
 		writeErrorResponse(ctx, "FulfillBackorder", "fulfill_backorder", resp)
 		return
 	}
 	tools.ResponseCreated(ctx, "FulfillBackorder", "Tarea de picking creada para fulfilliar backorder", "fulfill_backorder", result, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *BackordersController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

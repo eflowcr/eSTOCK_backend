@@ -4,6 +4,7 @@ import "time"
 
 type User struct {
 	ID                string     `gorm:"column:id;primaryKey" json:"id"`
+	TenantID          string     `gorm:"column:tenant_id;type:uuid;not null" json:"-"` // S3.5 W5.5 (HR C2): per-user tenant scope; stamped into JWT at login
 	Name              string     `gorm:"column:name;not null" json:"name"`
 	Email             string     `gorm:"column:email" json:"email"`
 	FirstName         string     `gorm:"column:first_name" json:"first_name"`

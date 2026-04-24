@@ -98,49 +98,47 @@ func main() {
 			return nil
 		}
 
-		// lotNotifyFn notifies all admin users for expiring lots.
-		// TODO S3: per-tenant cron iteration when multi-tenant signup is live.
-		// Current behavior: queries admins globally across all tenants (safe for single-tenant S1/S2).
-		var lotNotifyFn func(eventType, title, body string) error
+		// S3.5 W5.5 (HR-S3.5 C3): notify only the admins of the tenant whose lot is
+		// expiring. Pre-W5.5 the closure queried admins globally, so a tenant 2 expiring
+		// lot would email tenant 1 admins. The cron helper now passes tenantID per call.
+		var lotNotifyFn func(tenantID, eventType, title, body string) error
 		if notifSvc != nil {
-			lotNotifyFn = func(eventType, title, body string) error {
+			lotNotifyFn = func(tenantID, eventType, title, body string) error {
 				var adminIDs []string
 				if err := db.Table("users").
 					Joins("JOIN roles ON users.role_id = roles.id").
-					Where("LOWER(roles.name) = 'admin' AND users.is_active = true AND users.deleted_at IS NULL").
+					Where("users.tenant_id = ? AND LOWER(roles.name) = 'admin' AND users.is_active = true AND users.deleted_at IS NULL", tenantID).
 					Pluck("users.id", &adminIDs).Error; err != nil {
-					log.Warn().Err(err).Msg("cron: query admins for lot expiration notify failed")
+					log.Warn().Err(err).Str("tenant_id", tenantID).Msg("cron: query admins for lot expiration notify failed")
 					return nil
 				}
 				ctx := context.Background()
 				for _, uid := range adminIDs {
 					if err := notifSvc.Send(ctx, uid, eventType, title, body, "lot", ""); err != nil {
-						log.Warn().Err(err).Str("user_id", uid).Msg("cron: lot expiration notify send failed")
+						log.Warn().Err(err).Str("tenant_id", tenantID).Str("user_id", uid).Msg("cron: lot expiration notify send failed")
 					}
 				}
 				return nil
 			}
 		}
 
-		// HR1-M5: lowStockNotifyFn notifies all admin users for unresolved low-stock alerts.
-		// TODO S3: per-tenant cron iteration when multi-tenant signup is live.
-		// Current behavior: queries admins globally across all tenants (safe for single-tenant S1/S2).
-		var lowStockNotifyFn func(sku, message string) error
+		// S3.5 W5.5 (HR-S3.5 C3): same per-tenant scoping for low-stock alerts.
+		var lowStockNotifyFn func(tenantID, sku, message string) error
 		if notifSvc != nil {
-			lowStockNotifyFn = func(sku, message string) error {
+			lowStockNotifyFn = func(tenantID, sku, message string) error {
 				var adminIDs []string
 				if err := db.Table("users").
 					Joins("JOIN roles ON users.role_id = roles.id").
-					Where("LOWER(roles.name) = 'admin' AND users.is_active = true AND users.deleted_at IS NULL").
+					Where("users.tenant_id = ? AND LOWER(roles.name) = 'admin' AND users.is_active = true AND users.deleted_at IS NULL", tenantID).
 					Pluck("users.id", &adminIDs).Error; err != nil {
-					log.Warn().Err(err).Msg("cron: query admins for low_stock notify failed")
+					log.Warn().Err(err).Str("tenant_id", tenantID).Msg("cron: query admins for low_stock notify failed")
 					return nil
 				}
 				title := "Alerta: stock bajo — " + sku
 				ctx := context.Background()
 				for _, uid := range adminIDs {
 					if err := notifSvc.Send(ctx, uid, "low_stock", title, message, "stock_alert", sku); err != nil {
-						log.Warn().Err(err).Str("sku", sku).Str("user_id", uid).Msg("cron: low_stock notify send failed")
+						log.Warn().Err(err).Str("tenant_id", tenantID).Str("sku", sku).Str("user_id", uid).Msg("cron: low_stock notify send failed")
 					}
 				}
 				return nil

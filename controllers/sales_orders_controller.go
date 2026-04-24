@@ -46,7 +46,7 @@ func (c *SalesOrdersController) List(ctx *gin.Context) {
 		dateTo = &v
 	}
 
-	result, resp := c.Service.List(c.TenantID, status, customerID, search, dateFrom, dateTo, page, limit)
+	result, resp := c.Service.List(c.resolveTenantID(ctx), status, customerID, search, dateFrom, dateTo, page, limit)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListSalesOrders", "list_sales_orders", resp)
 		return
@@ -60,7 +60,7 @@ func (c *SalesOrdersController) GetByID(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	so, resp := c.Service.GetByID(id, c.TenantID)
+	so, resp := c.Service.GetByID(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetSalesOrder", "get_sales_order", resp)
 		return
@@ -86,7 +86,7 @@ func (c *SalesOrdersController) Create(ctx *gin.Context) {
 		return
 	}
 
-	so, resp := c.Service.Create(c.TenantID, userID, &req)
+	so, resp := c.Service.Create(c.resolveTenantID(ctx), userID, &req)
 	if resp != nil {
 		writeErrorResponse(ctx, "CreateSalesOrder", "create_sales_order", resp)
 		return
@@ -110,7 +110,7 @@ func (c *SalesOrdersController) Update(ctx *gin.Context) {
 		return
 	}
 
-	so, resp := c.Service.Update(id, c.TenantID, &req)
+	so, resp := c.Service.Update(id, c.resolveTenantID(ctx), &req)
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdateSalesOrder", "update_sales_order", resp)
 		return
@@ -124,7 +124,7 @@ func (c *SalesOrdersController) SoftDelete(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if resp := c.Service.SoftDelete(id, c.TenantID); resp != nil {
+	if resp := c.Service.SoftDelete(id, c.resolveTenantID(ctx)); resp != nil {
 		writeErrorResponse(ctx, "DeleteSalesOrder", "delete_sales_order", resp)
 		return
 	}
@@ -147,7 +147,7 @@ func (c *SalesOrdersController) Submit(ctx *gin.Context) {
 		return
 	}
 
-	result, resp := c.Service.Submit(id, c.TenantID, userID)
+	result, resp := c.Service.Submit(id, c.resolveTenantID(ctx), userID)
 	if resp != nil {
 		writeErrorResponse(ctx, "SubmitSalesOrder", "submit_sales_order", resp)
 		return
@@ -167,9 +167,15 @@ func (c *SalesOrdersController) Cancel(ctx *gin.Context) {
 		return
 	}
 
-	if resp := c.Service.Cancel(id, c.TenantID, userID); resp != nil {
+	if resp := c.Service.Cancel(id, c.resolveTenantID(ctx), userID); resp != nil {
 		writeErrorResponse(ctx, "CancelSalesOrder", "cancel_sales_order", resp)
 		return
 	}
 	tools.ResponseOK(ctx, "CancelSalesOrder", "Orden de venta cancelada", "cancel_sales_order", nil, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *SalesOrdersController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

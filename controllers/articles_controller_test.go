@@ -11,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,6 +124,34 @@ func performRequest(handler gin.HandlerFunc, method, path string, body interface
 	c.Request = req
 	if params != nil {
 		c.Params = params
+	}
+	handler(c)
+	return w
+}
+
+// performRequestWithTenant is like performRequest but seeds the JWT-derived tenant
+// context the way JWTAuthMiddleware would. S3.5 W5.5 (HR-S3.5 C1/C2): controllers
+// resolve tenant from gin.Context, so unit tests must inject it explicitly.
+func performRequestWithTenant(handler gin.HandlerFunc, method, path string, body interface{}, params gin.Params, tenantID string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	var reqBody *bytes.Buffer
+	if body != nil {
+		b, _ := json.Marshal(body)
+		reqBody = bytes.NewBuffer(b)
+	} else {
+		reqBody = bytes.NewBuffer(nil)
+	}
+	req, _ := http.NewRequest(method, path, reqBody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	c.Request = req
+	if params != nil {
+		c.Params = params
+	}
+	if tenantID != "" {
+		c.Set(tools.ContextKeyTenantID, tenantID)
 	}
 	handler(c)
 	return w

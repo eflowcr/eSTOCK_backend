@@ -64,7 +64,16 @@ func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.Int
 	return &user, nil
 }
 
-func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalResponse {
+// CreateUser creates a new user in the given tenant. tenantID MUST be non-empty —
+// callers (controllers) source it from the JWT (TenantIDFromContext). S3.5 W5.5 (HR-S3.5 C2).
+func (u *UsersRepository) CreateUser(tenantID string, user *requests.User) *responses.InternalResponse {
+	if tenantID == "" {
+		return &responses.InternalResponse{
+			Message:    "tenant_id requerido",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
 	var count int64
 	err := u.DB.Model(&database.User{}).Where("email = ?", user.Email).Count(&count).Error
 	if err != nil {
@@ -95,6 +104,7 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 
 	var newUser database.User
 	tools.CopyStructFields(user, &newUser)
+	newUser.TenantID = tenantID // S3.5 W5.5 — stamp tenant scope from JWT-sourced caller arg
 	if newUser.RoleID == "" {
 		newUser.RoleID = "Operator"
 	}
@@ -242,7 +252,7 @@ func (u *UsersRepository) DeleteUser(id string) *responses.InternalResponse {
 	return nil
 }
 
-func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (u *UsersRepository) ImportUsersFromExcel(tenantID string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
 	imported := []string{}
 	errorsList := []*responses.InternalResponse{}
 
@@ -295,7 +305,7 @@ func (u *UsersRepository) ImportUsersFromExcel(fileBytes []byte) ([]string, []*r
 			RoleID:    roleID,
 		}
 
-		resp := u.CreateUser(user)
+		resp := u.CreateUser(tenantID, user)
 		if resp != nil {
 			errorsList = append(errorsList, &responses.InternalResponse{
 				Error:   resp.Error,

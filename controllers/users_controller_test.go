@@ -36,7 +36,7 @@ func (m *mockUsersRepoCtrl) GetUserByID(id string) (*database.User, *responses.I
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockUsersRepoCtrl) CreateUser(user *requests.User) *responses.InternalResponse {
+func (m *mockUsersRepoCtrl) CreateUser(_ string, user *requests.User) *responses.InternalResponse {
 	return m.createErr
 }
 
@@ -48,7 +48,7 @@ func (m *mockUsersRepoCtrl) DeleteUser(id string) *responses.InternalResponse {
 	return m.deleteErr
 }
 
-func (m *mockUsersRepoCtrl) ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (m *mockUsersRepoCtrl) ImportUsersFromExcel(_ string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
 	return []string{"user1"}, nil
 }
 
@@ -115,7 +115,7 @@ func TestUsersController_CreateUser_Success(t *testing.T) {
 		Password:  &pw,
 		RoleID:    "role-1",
 	}
-	w := performRequest(ctrl.CreateUser, "POST", "/users", body, nil)
+	w := performRequestWithTenant(ctrl.CreateUser, "POST", "/users", body, nil, "tenant-1")
 	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
@@ -142,7 +142,7 @@ func TestUsersController_CreateUser_Conflict(t *testing.T) {
 		Password:  &pw,
 		RoleID:    "role-1",
 	}
-	w := performRequest(ctrl.CreateUser, "POST", "/users", body, nil)
+	w := performRequestWithTenant(ctrl.CreateUser, "POST", "/users", body, nil, "tenant-1")
 	assert.Equal(t, http.StatusConflict, w.Code)
 }
 

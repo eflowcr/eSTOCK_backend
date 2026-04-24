@@ -50,7 +50,7 @@ func (c *DeliveryNotesController) List(ctx *gin.Context) {
 		}
 	}
 
-	result, resp := c.Service.List(c.TenantID, customerID, soNumber, from, to, page, limit)
+	result, resp := c.Service.List(c.resolveTenantID(ctx), customerID, soNumber, from, to, page, limit)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListDeliveryNotes", "list_delivery_notes", resp)
 		return
@@ -65,7 +65,7 @@ func (c *DeliveryNotesController) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	dn, resp := c.Service.GetByID(id, c.TenantID)
+	dn, resp := c.Service.GetByID(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetDeliveryNote", "get_delivery_note", resp)
 		return
@@ -82,7 +82,7 @@ func (c *DeliveryNotesController) DownloadPDF(ctx *gin.Context) {
 	}
 
 	// Verify DN exists and belongs to tenant.
-	dnNumber, resp := c.Service.GetDNNumber(id, c.TenantID)
+	dnNumber, resp := c.Service.GetDNNumber(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "DownloadDNPDF", "download_dn_pdf", resp)
 		return
@@ -102,4 +102,10 @@ func (c *DeliveryNotesController) DownloadPDF(ctx *gin.Context) {
 	ctx.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	ctx.Header("Content-Type", "application/pdf")
 	ctx.File(pdfPath)
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *DeliveryNotesController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

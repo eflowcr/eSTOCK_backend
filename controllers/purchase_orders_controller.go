@@ -37,7 +37,7 @@ func (c *PurchaseOrdersController) Create(ctx *gin.Context) {
 
 	userID := ctx.GetString(tools.ContextKeyUserID)
 
-	po, resp := c.Service.Create(c.TenantID, userID, &req)
+	po, resp := c.Service.Create(c.resolveTenantID(ctx), userID, &req)
 	if resp != nil {
 		writeErrorResponse(ctx, "CreatePurchaseOrder", "create_purchase_order", resp)
 		return
@@ -78,7 +78,7 @@ func (c *PurchaseOrdersController) List(ctx *gin.Context) {
 		}
 	}
 
-	pos, resp := c.Service.List(c.TenantID, status, supplierID, search, from, to, limit, offset)
+	pos, resp := c.Service.List(c.resolveTenantID(ctx), status, supplierID, search, from, to, limit, offset)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListPurchaseOrders", "list_purchase_orders", resp)
 		return
@@ -93,7 +93,7 @@ func (c *PurchaseOrdersController) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	po, resp := c.Service.GetByID(id, c.TenantID)
+	po, resp := c.Service.GetByID(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetPurchaseOrder", "get_purchase_order", resp)
 		return
@@ -118,7 +118,7 @@ func (c *PurchaseOrdersController) Update(ctx *gin.Context) {
 		return
 	}
 
-	po, resp := c.Service.Update(id, c.TenantID, &req)
+	po, resp := c.Service.Update(id, c.resolveTenantID(ctx), &req)
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdatePurchaseOrder", "update_purchase_order", resp)
 		return
@@ -133,7 +133,7 @@ func (c *PurchaseOrdersController) Delete(ctx *gin.Context) {
 		return
 	}
 
-	if resp := c.Service.SoftDelete(id, c.TenantID); resp != nil {
+	if resp := c.Service.SoftDelete(id, c.resolveTenantID(ctx)); resp != nil {
 		writeErrorResponse(ctx, "DeletePurchaseOrder", "delete_purchase_order", resp)
 		return
 	}
@@ -153,7 +153,7 @@ func (c *PurchaseOrdersController) Submit(ctx *gin.Context) {
 
 	userID := ctx.GetString(tools.ContextKeyUserID)
 
-	po, newRTID, resp := c.Service.Submit(id, c.TenantID, userID)
+	po, newRTID, resp := c.Service.Submit(id, c.resolveTenantID(ctx), userID)
 	if resp != nil {
 		writeErrorResponse(ctx, "SubmitPurchaseOrder", "submit_purchase_order", resp)
 		return
@@ -177,10 +177,16 @@ func (c *PurchaseOrdersController) Cancel(ctx *gin.Context) {
 		return
 	}
 
-	po, resp := c.Service.Cancel(id, c.TenantID)
+	po, resp := c.Service.Cancel(id, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "CancelPurchaseOrder", "cancel_purchase_order", resp)
 		return
 	}
 	tools.ResponseOK(ctx, "CancelPurchaseOrder", "Orden de compra cancelada", "cancel_purchase_order", po, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *PurchaseOrdersController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

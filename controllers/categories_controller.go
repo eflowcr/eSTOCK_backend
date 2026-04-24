@@ -44,7 +44,7 @@ func (c *CategoriesController) List(ctx *gin.Context) {
 		}
 	}
 
-	categories, resp := c.Service.ListByTenantFiltered(c.TenantID, isActive, search, limit, offset)
+	categories, resp := c.Service.ListByTenantFiltered(c.resolveTenantID(ctx), isActive, search, limit, offset)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListCategories", "list_categories", resp)
 		return
@@ -53,7 +53,7 @@ func (c *CategoriesController) List(ctx *gin.Context) {
 }
 
 func (c *CategoriesController) GetTree(ctx *gin.Context) {
-	tree, resp := c.Service.GetTree(c.TenantID)
+	tree, resp := c.Service.GetTree(c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetCategoriesTree", "get_categories_tree", resp)
 		return
@@ -85,7 +85,7 @@ func (c *CategoriesController) Create(ctx *gin.Context) {
 		return
 	}
 
-	cat, resp := c.Service.Create(c.TenantID, &req)
+	cat, resp := c.Service.Create(c.resolveTenantID(ctx), &req)
 	if resp != nil {
 		writeErrorResponse(ctx, "CreateCategory", "create_category", resp)
 		return
@@ -108,7 +108,7 @@ func (c *CategoriesController) Update(ctx *gin.Context) {
 		return
 	}
 
-	cat, resp := c.Service.Update(id, &req, c.TenantID)
+	cat, resp := c.Service.Update(id, &req, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdateCategory", "update_category", resp)
 		return
@@ -126,4 +126,10 @@ func (c *CategoriesController) SoftDelete(ctx *gin.Context) {
 		return
 	}
 	tools.ResponseOK(ctx, "DeleteCategory", "Categoría eliminada", "delete_category", nil, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *CategoriesController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }
