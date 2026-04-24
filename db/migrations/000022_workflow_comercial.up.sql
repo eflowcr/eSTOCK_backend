@@ -29,10 +29,10 @@ CREATE TABLE purchase_orders (
   tenant_id         UUID NOT NULL,
   po_number         TEXT NOT NULL,                     -- e.g., "PO-2026-0001"
   supplier_id       TEXT NOT NULL REFERENCES clients(id),
-  status            TEXT NOT NULL DEFAULT 'draft',     -- draft|submitted|partial|completed|cancelled
+  status            TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','partial','completed','cancelled')),
   expected_date     DATE,
   notes             TEXT,
-  created_by        TEXT REFERENCES users(id),
+  created_by        TEXT REFERENCES users(id) ON DELETE SET NULL,
   submitted_at      TIMESTAMPTZ,
   completed_at      TIMESTAMPTZ,
   cancelled_at      TIMESTAMPTZ,
@@ -69,10 +69,10 @@ CREATE TABLE sales_orders (
   tenant_id       UUID NOT NULL,
   so_number       TEXT NOT NULL,                       -- e.g., "SO-2026-0001"
   customer_id     TEXT NOT NULL REFERENCES clients(id),
-  status          TEXT NOT NULL DEFAULT 'draft',       -- draft|submitted|partial|completed|cancelled
+  status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','partial','completed','cancelled')),
   expected_date   DATE,
   notes           TEXT,
-  created_by      TEXT REFERENCES users(id),
+  created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
   submitted_at    TIMESTAMPTZ,
   completed_at    TIMESTAMPTZ,
   cancelled_at    TIMESTAMPTZ,
@@ -139,13 +139,20 @@ CREATE TABLE backorders (
   tenant_id                UUID NOT NULL,
   original_sales_order_id  TEXT NOT NULL REFERENCES sales_orders(id),
   article_sku              TEXT NOT NULL REFERENCES articles(sku),
-  remaining_qty            NUMERIC(12,3) NOT NULL CHECK (remaining_qty > 0),
-  status                   TEXT NOT NULL DEFAULT 'pending',  -- pending|fulfilled|cancelled
+  remaining_qty            NUMERIC(12,3) NOT NULL CHECK (remaining_qty >= 0),
+  status                   TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','fulfilled','cancelled')),
   generated_picking_task_id TEXT REFERENCES picking_tasks(id),
   fulfilled_at             TIMESTAMPTZ,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT chk_no_recursive_backorder CHECK (true)  -- enforced at app level: max depth 1
+  -- Max backorder depth=1 enforced at application level (services/backorders_service.go)
+  -- Document only — no DB-level constraint possible without recursive CTE in CHECK
 );
 CREATE INDEX idx_backorders_tenant_status ON backorders(tenant_id, status);
 CREATE INDEX idx_backorders_so ON backorders(original_sales_order_id);
+
+-- Composite (tenant_id, created_at DESC) indexes for default list-sort queries
+CREATE INDEX idx_po_tenant_created ON purchase_orders(tenant_id, created_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX idx_so_tenant_created ON sales_orders(tenant_id, created_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX idx_dn_tenant_created ON delivery_notes(tenant_id, created_at DESC);
+CREATE INDEX idx_backorders_tenant_created ON backorders(tenant_id, created_at DESC);

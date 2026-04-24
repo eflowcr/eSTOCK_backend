@@ -3,6 +3,12 @@
 -- Drop in reverse FK dependency order
 -- ============================================================
 
+-- Drop composite list-sort indexes (added by HR-S3-W1 fixes)
+DROP INDEX IF EXISTS idx_po_tenant_created;
+DROP INDEX IF EXISTS idx_so_tenant_created;
+DROP INDEX IF EXISTS idx_dn_tenant_created;
+DROP INDEX IF EXISTS idx_backorders_tenant_created;
+
 -- Backorders (ref sales_orders, articles, picking_tasks)
 DROP TABLE IF EXISTS backorders;
 

@@ -3,6 +3,13 @@
 -- trial state, signup tokens, demo data tracking
 -- Migration 000023
 -- ============================================================
+-- TODO(ARCH1 — S3 deuda): purchase_orders, sales_orders, delivery_notes, backorders
+-- all have tenant_id UUID NOT NULL but NO FK to tenants(id) because 000022 runs before
+-- this migration creates the tenants table. To add FK enforcement, a follow-up migration
+-- should run ALTER TABLE ... ADD CONSTRAINT fk_*_tenant FOREIGN KEY (tenant_id)
+-- REFERENCES tenants(id) for each commercial table. Until then, tenant isolation is
+-- enforced at application level via Config.TenantID. Tracked as S3 architectural debt.
+-- ============================================================
 
 -- Tabla tenants (antes solo era UUID en otras tablas)
 CREATE TABLE tenants (
@@ -10,7 +17,7 @@ CREATE TABLE tenants (
   name            TEXT NOT NULL,
   slug            TEXT NOT NULL UNIQUE,                 -- subdomain key
   email           TEXT NOT NULL,                        -- admin contact
-  status          TEXT NOT NULL DEFAULT 'trial',        -- trial|active|past_due|cancelled|suspended
+  status          TEXT NOT NULL DEFAULT 'trial' CHECK (status IN ('trial','active','past_due','cancelled','suspended')),
   signup_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   trial_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   trial_ends_at   TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '14 days'),
@@ -42,8 +49,8 @@ CREATE TABLE subscriptions (
   tenant_id                UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   stripe_subscription_id   TEXT UNIQUE,
   stripe_customer_id       TEXT,
-  plan                     TEXT NOT NULL,                -- trial|starter|pro|enterprise
-  status                   TEXT NOT NULL,                -- active|past_due|cancelled|incomplete|trialing
+  plan                     TEXT NOT NULL CHECK (plan IN ('trial','starter','pro','enterprise')),
+  status                   TEXT NOT NULL CHECK (status IN ('active','past_due','cancelled','incomplete','trialing')),
   current_period_start     TIMESTAMPTZ,
   current_period_end       TIMESTAMPTZ,
   cancel_at_period_end     BOOLEAN NOT NULL DEFAULT false,
@@ -54,6 +61,10 @@ CREATE TABLE subscriptions (
 );
 CREATE INDEX idx_subscriptions_tenant ON subscriptions(tenant_id);
 CREATE INDEX idx_subscriptions_status ON subscriptions(status);
+-- Prevent duplicate "live" subscriptions per tenant (Stripe can have cancelled/incomplete coexisting)
+CREATE UNIQUE INDEX uq_subscriptions_tenant_active
+  ON subscriptions(tenant_id)
+  WHERE status IN ('active','trialing','past_due');
 
 -- Signup tokens (for email verification on self-service signup)
 CREATE TABLE signup_tokens (
@@ -66,7 +77,9 @@ CREATE TABLE signup_tokens (
   used_at         TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_signup_tokens_token ON signup_tokens(token) WHERE used_at IS NULL;
+-- Partial index on active tokens (token UNIQUE constraint handles general lookups;
+-- this partial index speeds up verification queries: WHERE token=$1 AND expires_at>NOW() AND used_at IS NULL)
+CREATE INDEX idx_signup_tokens_active_token ON signup_tokens(token, expires_at) WHERE used_at IS NULL;
 CREATE INDEX idx_signup_tokens_email ON signup_tokens(email);
 
 -- Demo data seeds — tracks what was seeded per tenant
