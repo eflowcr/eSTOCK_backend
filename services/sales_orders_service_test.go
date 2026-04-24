@@ -52,8 +52,8 @@ func (m *mockSalesOrdersRepo) Submit(_ string, _ string, _ string) (*responses.S
 func (m *mockSalesOrdersRepo) Cancel(_ string, _ string, _ string) *responses.InternalResponse {
 	return m.cancelErr
 }
-func (m *mockSalesOrdersRepo) UpdatePickedQty(_ string, _ map[string]float64) *responses.InternalResponse {
-	return m.updatePickErr
+func (m *mockSalesOrdersRepo) UpdatePickedQty(_ string, _ map[string]float64) (string, *responses.InternalResponse) {
+	return "", m.updatePickErr
 }
 
 // mockClientRepo for customer validation.
@@ -301,7 +301,7 @@ func TestSalesOrdersService_UpdatePickedQty_OK(t *testing.T) {
 	repo := &mockSalesOrdersRepo{}
 	svc := NewSalesOrdersService(repo)
 
-	resp := svc.UpdatePickedQty("so-1", map[string]float64{"SKU-A": 10, "SKU-B": 3})
+	_, resp := svc.UpdatePickedQty("so-1", map[string]float64{"SKU-A": 10, "SKU-B": 3})
 	require.Nil(t, resp)
 }
 

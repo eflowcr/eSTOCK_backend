@@ -58,5 +58,9 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	// S3-W2-B: Sales Orders
 	RegisterSalesOrdersRoutes(api, db, config, rolesRepo)
 
+	// S3-W3-A: Delivery Notes + Backorders
+	RegisterDeliveryNotesRoutes(api, db, config, rolesRepo)
+	RegisterBackordersRoutes(api, db, config, rolesRepo)
+
 	RegisterDocsRoutes(r)
 }

@@ -664,7 +664,11 @@ func (r *SalesOrdersRepository) Cancel(id, tenantID, userID string) *responses.I
 // SO3 — Picking auto-link: UpdatePickedQty
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (r *SalesOrdersRepository) UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) *responses.InternalResponse {
+// UpdatePickedQty updates sales_order_items.picked_qty and advances SO status.
+// Returns the new SO status ('completed' | 'partial' | '') so CompletePickingTask can trigger DN/BO.
+func (r *SalesOrdersRepository) UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) (string, *responses.InternalResponse) {
+	var finalStatus string
+
 	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
 		var soItems []database.SalesOrderItem
 		if err := tx.Where("sales_order_id = ?", salesOrderID).Find(&soItems).Error; err != nil {
@@ -695,9 +699,8 @@ func (r *SalesOrdersRepository) UpdatePickedQty(salesOrderID string, pickedPerSK
 			return nil // nothing changed
 		}
 
-		var newStatus string
 		if allFulfilled {
-			newStatus = "completed"
+			finalStatus = "completed"
 			if err := tx.Exec(`
 				UPDATE sales_orders SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = ?`,
 				salesOrderID,
@@ -705,24 +708,22 @@ func (r *SalesOrdersRepository) UpdatePickedQty(salesOrderID string, pickedPerSK
 				return fmt.Errorf("complete so: %w", err)
 			}
 		} else {
-			newStatus = "partial"
-			_ = newStatus
+			finalStatus = "partial"
 			if err := tx.Exec(`
 				UPDATE sales_orders SET status = 'partial', updated_at = NOW() WHERE id = ?`,
 				salesOrderID,
 			).Error; err != nil {
 				return fmt.Errorf("partial so: %w", err)
 			}
-			// TODO W3 Track A: trigger Delivery Note generation for partial fulfillment.
 		}
 
 		return nil
 	})
 
 	if txErr != nil {
-		return &responses.InternalResponse{Error: txErr, Message: "Error al actualizar cantidades pickeadas"}
+		return "", &responses.InternalResponse{Error: txErr, Message: "Error al actualizar cantidades pickeadas"}
 	}
-	return nil
+	return finalStatus, nil
 }
 
 // min64 returns the smaller of two float64 values.

@@ -119,7 +119,7 @@ func (s *SalesOrdersService) Cancel(id, tenantID, userID string) *responses.Inte
 // SO3 — Picking auto-link (called indirectly via PickingTaskRepository)
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (s *SalesOrdersService) UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) *responses.InternalResponse {
+func (s *SalesOrdersService) UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) (string, *responses.InternalResponse) {
 	return s.Repository.UpdatePickedQty(salesOrderID, pickedPerSKU)
 }
 

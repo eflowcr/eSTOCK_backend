@@ -21,16 +21,25 @@ import (
 
 // SOPickedQtyUpdater is a narrow interface for updating SO picked quantities after picking (SO3).
 // Implemented by SalesOrdersRepository; defined here to avoid import cycle.
+// Returns the new SO status ('completed' or 'partial') so CompletePickingTask can trigger DN/BO generation.
 type SOPickedQtyUpdater interface {
-	UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) *responses.InternalResponse
+	UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) (string, *responses.InternalResponse)
+}
+
+// DNPDFGenerator is a narrow interface for async PDF generation (DN2).
+// Allows PickingTaskRepository to trigger PDF creation without importing the services package directly.
+type DNPDFGenerator interface {
+	GeneratePDFAsync(dnID, tenantID string)
 }
 
 type PickingTaskRepository struct {
 	DB               *gorm.DB
-	AuditService     *services.AuditService     // injected via wire for audit logging
+	AuditService     *services.AuditService        // injected via wire for audit logging
 	NotificationsSvc *services.NotificationsService // optional: emit task events
 	// S3-W2-B SO3: optional auto-link to update sales order after picking completion.
 	SORepository SOPickedQtyUpdater
+	// S3-W3-A DN2: optional async PDF generator for delivery notes.
+	DNPDFGen DNPDFGenerator
 }
 
 // validPickingTransitions declares the allowed status transitions.
@@ -892,6 +901,17 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 	// SO3: captured for post-tx SO update.
 	var linkedSOID string
 	var soPickedPerSKU map[string]float64
+	// DN1/BO1: captured for post-tx delivery note + backorder generation.
+	var taskTenantID string
+	var taskCustomerID string
+	var sourceBackorderID *string // set when task was created from a backorder (max depth=1 guard)
+	type pickedItemSnapshot struct {
+		SKU        string
+		Qty        float64
+		LotNumbers []string
+	}
+	var pickedItems []pickedItemSnapshot
+	var soItems []database.SalesOrderItem // loaded for BO1 computation
 
 	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
 		var task database.PickingTask
@@ -918,6 +938,10 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 		}
 
 		hasDifferences := false
+		// perSKULots collects lot numbers picked per SKU for DN snapshot.
+		perSKULots := make(map[string][]string)
+		perSKUPickedQty := make(map[string]float64)
+
 		for _, item := range items {
 			for _, alloc := range item.Allocations {
 				pickedQty := alloc.Quantity
@@ -958,6 +982,8 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 						UPDATE lots SET quantity = GREATEST(0, quantity - ?), updated_at = NOW()
 						 WHERE sku = ? AND lot_number = ?
 					`, pickedQty, item.SKU, *alloc.LotNumber)
+
+					perSKULots[item.SKU] = append(perSKULots[item.SKU], *alloc.LotNumber)
 				}
 
 				// Resolve lot_id if allocation references a lot.
@@ -997,6 +1023,8 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 				if err := tx.Create(mov).Error; err != nil {
 					return fmt.Errorf("create outbound movement %s @ %s: %w", item.SKU, alloc.Location, err)
 				}
+
+				perSKUPickedQty[item.SKU] += pickedQty
 			}
 		}
 
@@ -1027,6 +1055,31 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 			}
 		}
 
+		// DN1/BO1 — capture context for post-tx generation.
+		taskTenantID = task.TenantID
+		if task.CustomerID != nil {
+			taskCustomerID = *task.CustomerID
+		}
+		sourceBackorderID = task.SourceBackorderID
+
+		// Build picked item snapshots for DN creation.
+		for sku, qty := range perSKUPickedQty {
+			if qty > 0 {
+				pickedItems = append(pickedItems, pickedItemSnapshot{
+					SKU:        sku,
+					Qty:        qty,
+					LotNumbers: perSKULots[sku],
+				})
+			}
+		}
+
+		// Load SO items for BO1 backorder computation (need expected vs picked).
+		if linkedSOID != "" && task.SourceBackorderID == nil {
+			if err := tx.Where("sales_order_id = ?", linkedSOID).Find(&soItems).Error; err != nil {
+				return fmt.Errorf("load so items for BO1: %w", err)
+			}
+		}
+
 		return nil
 	})
 
@@ -1042,10 +1095,83 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 	}
 
 	// SO3 — post-commit: update sales order picked quantities (outside the picking tx to avoid deadlock).
+	var newSOStatus string
 	if linkedSOID != "" && r.SORepository != nil && len(soPickedPerSKU) > 0 {
-		// Fire-and-forget: picking is already committed; SO status update is best-effort here.
-		// A failed SO update does not roll back the completed picking.
-		r.SORepository.UpdatePickedQty(linkedSOID, soPickedPerSKU) //nolint:errcheck
+		// Returns new SO status ('completed' | 'partial') — used for DN1/BO1 routing.
+		newSOStatus, _ = r.SORepository.UpdatePickedQty(linkedSOID, soPickedPerSKU) //nolint:errcheck
+	}
+
+	// DN1 — generate delivery note when SO has been advanced (completed or partial).
+	if linkedSOID != "" && taskTenantID != "" && (newSOStatus == "completed" || newSOStatus == "partial") {
+		dnParams := DNCreationParams{
+			TenantID:      taskTenantID,
+			SalesOrderID:  linkedSOID,
+			PickingTaskID: id,
+			CustomerID:    taskCustomerID,
+		}
+		for _, pi := range pickedItems {
+			dnParams.Items = append(dnParams.Items, DNItemCreationParam{
+				ArticleSKU: pi.SKU,
+				Qty:        pi.Qty,
+				LotNumbers: pi.LotNumbers,
+			})
+		}
+		if len(dnParams.Items) > 0 {
+			// Use a new standalone transaction for DN creation (picking is committed).
+			dnTx := r.DB.Begin()
+			if dnTx.Error == nil {
+				if dnID, err := CreateDeliveryNote(dnTx, dnParams); err != nil {
+					dnTx.Rollback()
+					// Log but don't fail — picking is already committed.
+					fmt.Printf("[WARN] CompletePickingTask: failed to create delivery note for picking %s: %v\n", id, err)
+				} else {
+					dnTx.Commit()
+					// DN2 — async PDF generation (fire-and-forget via injected generator).
+					if r.DNPDFGen != nil {
+						go r.DNPDFGen.GeneratePDFAsync(dnID, taskTenantID)
+					}
+				}
+			}
+		}
+	}
+
+	// BO1 — generate backorders for partial SO (only when NOT sourced from backorder — max depth=1).
+	if newSOStatus == "partial" && sourceBackorderID == nil && len(soItems) > 0 {
+		// Compute remaining per SKU (expected - totalPicked including this picking).
+		// soPickedPerSKU contains the qty picked THIS time; we need to compare against expected.
+		// But UpdatePickedQty already updated picked_qty in DB. Reload from soItems as baseline + this batch.
+		boParams := make([]BackorderCreationParam, 0)
+		for _, soItem := range soItems {
+			totalPicked := soItem.PickedQty + soPickedPerSKU[soItem.ArticleSKU]
+			if totalPicked < soItem.ExpectedQty {
+				remaining := soItem.ExpectedQty - totalPicked
+				boParams = append(boParams, BackorderCreationParam{
+					TenantID:             taskTenantID,
+					OriginalSalesOrderID: linkedSOID,
+					ArticleSKU:           soItem.ArticleSKU,
+					RemainingQty:         remaining,
+				})
+			}
+		}
+		if len(boParams) > 0 {
+			boTx := r.DB.Begin()
+			if boTx.Error == nil {
+				if err := CreateBackorders(boTx, boParams); err != nil {
+					boTx.Rollback()
+					fmt.Printf("[WARN] CompletePickingTask: failed to create backorders for SO %s: %v\n", linkedSOID, err)
+				} else {
+					boTx.Commit()
+				}
+			}
+		}
+	}
+
+	// BO2 follow-up — if this picking was sourced from a backorder, update its remaining qty.
+	if sourceBackorderID != nil && len(soPickedPerSKU) > 0 {
+		if err := UpdateFulfilledBackorder(r.DB, *sourceBackorderID, soPickedPerSKU); err != nil {
+			// Log only — picking is committed.
+			fmt.Printf("[WARN] CompletePickingTask: failed to update backorder %s: %v\n", *sourceBackorderID, err)
+		}
 	}
 
 	// Emit task_completed notification to the assigned operator (fire-and-forget).

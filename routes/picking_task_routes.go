@@ -17,9 +17,9 @@ var _ ports.PickingTaskRepository = (*repositories.PickingTaskRepository)(nil)
 
 func RegisterPickingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, auditSvc *services.AuditService, notifSvc *services.NotificationsService, pool *pgxpool.Pool, rolesRepo ports.RolesRepository) {
 	_, clientsSvc := wire.NewClients(pool)
-	// SO3 — inject SalesOrdersRepository so CompletePickingTask can update SO picked quantities.
+	// SO3+DN1+BO1 — inject SalesOrdersRepository + DN PDF generator.
 	soRepo, _ := wire.NewSalesOrders(db, config)
-	_, pickingTasksService := wire.NewPickingTask(db, auditSvc, notifSvc, soRepo)
+	_, pickingTasksService := wire.NewPickingTaskWithDN(db, auditSvc, notifSvc, soRepo)
 	if clientsSvc != nil {
 		pickingTasksService.WithClientsService(clientsSvc)
 	}
