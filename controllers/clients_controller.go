@@ -44,7 +44,8 @@ func (c *ClientsController) GetByID(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	client, resp := c.Service.GetByID(id)
+	// HR1-M3: use tenant-scoped lookup to prevent cross-tenant client enumeration.
+	client, resp := c.Service.GetByIDForTenant(id, c.TenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "GetClientByID", "get_client", resp)
 		return
@@ -92,6 +93,7 @@ func (c *ClientsController) Update(ctx *gin.Context) {
 		return
 	}
 
+	// HR1-M3: tenantID is already threaded through Update.
 	client, resp := c.Service.Update(id, &req, c.TenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdateClient", "update_client", resp)
@@ -105,7 +107,8 @@ func (c *ClientsController) SoftDelete(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if resp := c.Service.SoftDelete(id); resp != nil {
+	// HR1-M3: pass tenantID to prevent cross-tenant soft-delete.
+	if resp := c.Service.SoftDelete(id, c.TenantID); resp != nil {
 		writeErrorResponse(ctx, "DeleteClient", "delete_client", resp)
 		return
 	}

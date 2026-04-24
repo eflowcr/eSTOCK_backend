@@ -73,8 +73,42 @@ SELECT id, tenant_id, type, code, name, email, phone, address, tax_id, notes, is
 FROM clients WHERE id = $1
 `
 
+// Internal use only: no tenant filter. Use GetClientByIDForTenant for HTTP responses (HR1-M3).
 func (q *Queries) GetClientByID(ctx context.Context, id string) (Client, error) {
 	row := q.db.QueryRow(ctx, getClientByID, id)
+	var i Client
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Type,
+		&i.Code,
+		&i.Name,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.TaxID,
+		&i.Notes,
+		&i.IsActive,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getClientByIDForTenant = `-- name: GetClientByIDForTenant :one
+SELECT id, tenant_id, type, code, name, email, phone, address, tax_id, notes, is_active, created_by, created_at, updated_at
+FROM clients WHERE id = $1 AND tenant_id = $2
+`
+
+type GetClientByIDForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// HR1-M3: tenant_id guard prevents cross-tenant client enumeration via HTTP.
+func (q *Queries) GetClientByIDForTenant(ctx context.Context, arg GetClientByIDForTenantParams) (Client, error) {
+	row := q.db.QueryRow(ctx, getClientByIDForTenant, arg.ID, arg.TenantID)
 	var i Client
 	err := row.Scan(
 		&i.ID,
@@ -168,33 +202,41 @@ func (q *Queries) ListClientsByTenant(ctx context.Context, tenantID pgtype.UUID)
 }
 
 const softDeleteClient = `-- name: SoftDeleteClient :exec
-UPDATE clients SET is_active = false, updated_at = now() WHERE id = $1
+UPDATE clients SET is_active = false, updated_at = now() WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) SoftDeleteClient(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, softDeleteClient, id)
+type SoftDeleteClientParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// HR1-M3: tenant_id guard prevents cross-tenant soft-delete.
+func (q *Queries) SoftDeleteClient(ctx context.Context, arg SoftDeleteClientParams) error {
+	_, err := q.db.Exec(ctx, softDeleteClient, arg.ID, arg.TenantID)
 	return err
 }
 
 const updateClient = `-- name: UpdateClient :one
 UPDATE clients
 SET type = $2, code = $3, name = $4, email = $5, phone = $6, address = $7, tax_id = $8, notes = $9, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $10
 RETURNING id, tenant_id, type, code, name, email, phone, address, tax_id, notes, is_active, created_by, created_at, updated_at
 `
 
 type UpdateClientParams struct {
-	ID      string      `json:"id"`
-	Type    string      `json:"type"`
-	Code    string      `json:"code"`
-	Name    string      `json:"name"`
-	Email   pgtype.Text `json:"email"`
-	Phone   pgtype.Text `json:"phone"`
-	Address pgtype.Text `json:"address"`
-	TaxID   pgtype.Text `json:"tax_id"`
-	Notes   pgtype.Text `json:"notes"`
+	ID       string      `json:"id"`
+	Type     string      `json:"type"`
+	Code     string      `json:"code"`
+	Name     string      `json:"name"`
+	Email    pgtype.Text `json:"email"`
+	Phone    pgtype.Text `json:"phone"`
+	Address  pgtype.Text `json:"address"`
+	TaxID    pgtype.Text `json:"tax_id"`
+	Notes    pgtype.Text `json:"notes"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// HR1-M3: tenant_id guard prevents cross-tenant update.
 func (q *Queries) UpdateClient(ctx context.Context, arg UpdateClientParams) (Client, error) {
 	row := q.db.QueryRow(ctx, updateClient,
 		arg.ID,
@@ -206,6 +248,7 @@ func (q *Queries) UpdateClient(ctx context.Context, arg UpdateClientParams) (Cli
 		arg.Address,
 		arg.TaxID,
 		arg.Notes,
+		arg.TenantID,
 	)
 	var i Client
 	err := row.Scan(

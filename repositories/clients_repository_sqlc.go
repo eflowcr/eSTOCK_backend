@@ -71,9 +71,29 @@ func (r *ClientsRepositorySQLC) Create(tenantID string, data *requests.CreateCli
 	return &result, nil
 }
 
+// GetByID performs a lookup without tenant filter — used for internal validation only
+// (e.g. picking/receiving task customer/supplier checks). Not for HTTP endpoint responses.
 func (r *ClientsRepositorySQLC) GetByID(id string) (*database.Client, *responses.InternalResponse) {
 	ctx := context.Background()
 	c, err := r.queries.GetClientByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &responses.InternalResponse{Message: "Cliente no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error al obtener el cliente", Handled: false}
+	}
+	result := sqlcClientToDatabase(c)
+	return &result, nil
+}
+
+// GetByIDForTenant scopes the lookup to tenantID — use for HTTP endpoint responses (HR1-M3).
+func (r *ClientsRepositorySQLC) GetByIDForTenant(id, tenantID string) (*database.Client, *responses.InternalResponse) {
+	ctx := context.Background()
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	c, err := r.queries.GetClientByIDForTenant(ctx, sqlc.GetClientByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &responses.InternalResponse{Message: "Cliente no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
@@ -118,9 +138,14 @@ func (r *ClientsRepositorySQLC) ListByTenant(tenantID string) ([]database.Client
 	return out, nil
 }
 
-func (r *ClientsRepositorySQLC) Update(id string, data *requests.UpdateClientRequest) (*database.Client, *responses.InternalResponse) {
+func (r *ClientsRepositorySQLC) Update(id string, data *requests.UpdateClientRequest, tenantID string) (*database.Client, *responses.InternalResponse) {
 	ctx := context.Background()
-	_, err := r.queries.GetClientByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	// Existence check is tenant-scoped (HR1-M3).
+	_, err = r.queries.GetClientByIDForTenant(ctx, sqlc.GetClientByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &responses.InternalResponse{Message: "Cliente no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
@@ -128,15 +153,16 @@ func (r *ClientsRepositorySQLC) Update(id string, data *requests.UpdateClientReq
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al buscar el cliente", Handled: false}
 	}
 	arg := sqlc.UpdateClientParams{
-		ID:      id,
-		Type:    data.Type,
-		Code:    data.Code,
-		Name:    data.Name,
-		Email:   ptrStringToPgText(data.Email),
-		Phone:   ptrStringToPgText(data.Phone),
-		Address: ptrStringToPgText(data.Address),
-		TaxID:   ptrStringToPgText(data.TaxID),
-		Notes:   ptrStringToPgText(data.Notes),
+		ID:       id,
+		TenantID: tid,
+		Type:     data.Type,
+		Code:     data.Code,
+		Name:     data.Name,
+		Email:    ptrStringToPgText(data.Email),
+		Phone:    ptrStringToPgText(data.Phone),
+		Address:  ptrStringToPgText(data.Address),
+		TaxID:    ptrStringToPgText(data.TaxID),
+		Notes:    ptrStringToPgText(data.Notes),
 	}
 	c, err := r.queries.UpdateClient(ctx, arg)
 	if err != nil {
@@ -146,16 +172,21 @@ func (r *ClientsRepositorySQLC) Update(id string, data *requests.UpdateClientReq
 	return &result, nil
 }
 
-func (r *ClientsRepositorySQLC) SoftDelete(id string) *responses.InternalResponse {
+func (r *ClientsRepositorySQLC) SoftDelete(id, tenantID string) *responses.InternalResponse {
 	ctx := context.Background()
-	_, err := r.queries.GetClientByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	// Existence check is tenant-scoped (HR1-M3).
+	_, err = r.queries.GetClientByIDForTenant(ctx, sqlc.GetClientByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{Message: "Cliente no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
 		}
 		return &responses.InternalResponse{Error: err, Message: "Error al buscar el cliente", Handled: false}
 	}
-	if err := r.queries.SoftDeleteClient(ctx, id); err != nil {
+	if err := r.queries.SoftDeleteClient(ctx, sqlc.SoftDeleteClientParams{ID: id, TenantID: tid}); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al eliminar el cliente", Handled: false}
 	}
 	return nil

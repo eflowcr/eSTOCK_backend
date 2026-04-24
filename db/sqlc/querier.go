@@ -51,7 +51,10 @@ type Querier interface {
 	GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error)
 	GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error)
 	GetCategoryByID(ctx context.Context, id string) (Category, error)
+	// Internal use only: no tenant filter. Use GetClientByIDForTenant for HTTP responses (HR1-M3).
 	GetClientByID(ctx context.Context, id string) (Client, error)
+	// HR1-M3: tenant_id guard prevents cross-tenant client enumeration via HTTP.
+	GetClientByIDForTenant(ctx context.Context, arg GetClientByIDForTenantParams) (Client, error)
 	GetClientByTenantAndCode(ctx context.Context, arg GetClientByTenantAndCodeParams) (Client, error)
 	GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error)
 	GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error)
@@ -119,10 +122,12 @@ type Querier interface {
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
 	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	SoftDeleteCategory(ctx context.Context, id string) error
-	SoftDeleteClient(ctx context.Context, id string) error
+	// HR1-M3: tenant_id guard prevents cross-tenant soft-delete.
+	SoftDeleteClient(ctx context.Context, arg SoftDeleteClientParams) error
 	UpdateAdjustmentReasonCode(ctx context.Context, arg UpdateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
 	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error)
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
+	// HR1-M3: tenant_id guard prevents cross-tenant update.
 	UpdateClient(ctx context.Context, arg UpdateClientParams) (Client, error)
 	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
