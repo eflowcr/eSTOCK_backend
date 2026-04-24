@@ -13,10 +13,10 @@ import (
 
 const createLot = `-- name: CreateLot :one
 INSERT INTO lots (lot_number, sku, quantity, expiration_date, status,
-                 lot_notes, manufactured_at, best_before_date)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 lot_notes, manufactured_at, best_before_date, tenant_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-          lot_notes, manufactured_at, best_before_date
+          lot_notes, manufactured_at, best_before_date, tenant_id
 `
 
 type CreateLotParams struct {
@@ -28,6 +28,7 @@ type CreateLotParams struct {
 	LotNotes       pgtype.Text      `json:"lot_notes"`
 	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
 	BestBeforeDate pgtype.Date      `json:"best_before_date"`
+	TenantID       pgtype.UUID      `json:"tenant_id"`
 }
 
 func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error) {
@@ -40,6 +41,7 @@ func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, erro
 		arg.LotNotes,
 		arg.ManufacturedAt,
 		arg.BestBeforeDate,
+		arg.TenantID,
 	)
 	var i Lot
 	err := row.Scan(
@@ -54,27 +56,35 @@ func (q *Queries) CreateLot(ctx context.Context, arg CreateLotParams) (Lot, erro
 		&i.LotNotes,
 		&i.ManufacturedAt,
 		&i.BestBeforeDate,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const deleteLot = `-- name: DeleteLot :exec
-DELETE FROM lots WHERE id = $1
+DELETE FROM lots WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) DeleteLot(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteLot, id)
+type DeleteLotParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant guard prevents cross-tenant deletes (S3.5 W2-B).
+func (q *Queries) DeleteLot(ctx context.Context, arg DeleteLotParams) error {
+	_, err := q.db.Exec(ctx, deleteLot, arg.ID, arg.TenantID)
 	return err
 }
 
 const getLotByID = `-- name: GetLotByID :one
 SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-       lot_notes, manufactured_at, best_before_date
+       lot_notes, manufactured_at, best_before_date, tenant_id
 FROM lots
 WHERE id = $1
 LIMIT 1
 `
 
+// Internal use only: no tenant filter. Use GetLotByIDForTenant for HTTP callers.
 func (q *Queries) GetLotByID(ctx context.Context, id string) (Lot, error) {
 	row := q.db.QueryRow(ctx, getLotByID, id)
 	var i Lot
@@ -90,6 +100,41 @@ func (q *Queries) GetLotByID(ctx context.Context, id string) (Lot, error) {
 		&i.LotNotes,
 		&i.ManufacturedAt,
 		&i.BestBeforeDate,
+		&i.TenantID,
+	)
+	return i, err
+}
+
+const getLotByIDForTenant = `-- name: GetLotByIDForTenant :one
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date, tenant_id
+FROM lots
+WHERE id = $1 AND tenant_id = $2
+LIMIT 1
+`
+
+type GetLotByIDForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant guard prevents cross-tenant lot enumeration via HTTP (S3.5 W2-B).
+func (q *Queries) GetLotByIDForTenant(ctx context.Context, arg GetLotByIDForTenantParams) (Lot, error) {
+	row := q.db.QueryRow(ctx, getLotByIDForTenant, arg.ID, arg.TenantID)
+	var i Lot
+	err := row.Scan(
+		&i.ID,
+		&i.LotNumber,
+		&i.Sku,
+		&i.Quantity,
+		&i.ExpirationDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Status,
+		&i.LotNotes,
+		&i.ManufacturedAt,
+		&i.BestBeforeDate,
+		&i.TenantID,
 	)
 	return i, err
 }
@@ -97,15 +142,24 @@ func (q *Queries) GetLotByID(ctx context.Context, id string) (Lot, error) {
 const listLots = `-- name: ListLots :many
 
 SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-       lot_notes, manufactured_at, best_before_date
+       lot_notes, manufactured_at, best_before_date, tenant_id
 FROM lots
+WHERE tenant_id = $1
 ORDER BY created_at DESC
 `
 
 // Lots CRUD for sqlc
-// Schema: db/migrations (lots table)
-func (q *Queries) ListLots(ctx context.Context) ([]Lot, error) {
-	rows, err := q.db.Query(ctx, listLots)
+// Schema: db/migrations (lots table; tenant_id added in 000030)
+// S3.5 W2-B: every public query is tenant-scoped. Internal helpers (GetLotByID) keep
+// the un-scoped variant for cross-domain joins (lot trace, picking task validation)
+// where the caller already proved tenancy via the parent record.
+//
+// Column order in SELECT/RETURNING must match db/sqlc/models.go::Lot (Postgres appends
+// tenant_id at the end after the 000030 migration), otherwise sqlc generates per-query
+// Row structs instead of returning the shared Lot model.
+// Returns all lots for a tenant, sorted by created_at DESC.
+func (q *Queries) ListLots(ctx context.Context, tenantID pgtype.UUID) ([]Lot, error) {
+	rows, err := q.db.Query(ctx, listLots, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +179,54 @@ func (q *Queries) ListLots(ctx context.Context) ([]Lot, error) {
 			&i.LotNotes,
 			&i.ManufacturedAt,
 			&i.BestBeforeDate,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLotsBySkuForTenant = `-- name: ListLotsBySkuForTenant :many
+SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
+       lot_notes, manufactured_at, best_before_date, tenant_id
+FROM lots
+WHERE tenant_id = $1 AND sku = $2
+ORDER BY created_at DESC
+`
+
+type ListLotsBySkuForTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Sku      string      `json:"sku"`
+}
+
+// Tenant-scoped lookup by SKU; replaces the un-scoped ListLotsBySku for HTTP callers.
+func (q *Queries) ListLotsBySkuForTenant(ctx context.Context, arg ListLotsBySkuForTenantParams) ([]Lot, error) {
+	rows, err := q.db.Query(ctx, listLotsBySkuForTenant, arg.TenantID, arg.Sku)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Lot{}
+	for rows.Next() {
+		var i Lot
+		if err := rows.Scan(
+			&i.ID,
+			&i.LotNumber,
+			&i.Sku,
+			&i.Quantity,
+			&i.ExpirationDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Status,
+			&i.LotNotes,
+			&i.ManufacturedAt,
+			&i.BestBeforeDate,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -139,22 +241,23 @@ func (q *Queries) ListLots(ctx context.Context) ([]Lot, error) {
 const updateLot = `-- name: UpdateLot :one
 UPDATE lots
 SET
-    lot_number = $2,
-    sku = $3,
-    quantity = $4,
-    expiration_date = $5,
-    status = $6,
-    lot_notes = $7,
-    manufactured_at = $8,
-    best_before_date = $9,
+    lot_number = $3,
+    sku = $4,
+    quantity = $5,
+    expiration_date = $6,
+    status = $7,
+    lot_notes = $8,
+    manufactured_at = $9,
+    best_before_date = $10,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 RETURNING id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-          lot_notes, manufactured_at, best_before_date
+          lot_notes, manufactured_at, best_before_date, tenant_id
 `
 
 type UpdateLotParams struct {
 	ID             string           `json:"id"`
+	TenantID       pgtype.UUID      `json:"tenant_id"`
 	LotNumber      string           `json:"lot_number"`
 	Sku            string           `json:"sku"`
 	Quantity       pgtype.Numeric   `json:"quantity"`
@@ -165,9 +268,11 @@ type UpdateLotParams struct {
 	BestBeforeDate pgtype.Date      `json:"best_before_date"`
 }
 
+// Tenant guard prevents cross-tenant updates (S3.5 W2-B).
 func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error) {
 	row := q.db.QueryRow(ctx, updateLot,
 		arg.ID,
+		arg.TenantID,
 		arg.LotNumber,
 		arg.Sku,
 		arg.Quantity,
@@ -190,6 +295,7 @@ func (q *Queries) UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, erro
 		&i.LotNotes,
 		&i.ManufacturedAt,
 		&i.BestBeforeDate,
+		&i.TenantID,
 	)
 	return i, err
 }

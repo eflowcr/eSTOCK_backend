@@ -17,7 +17,9 @@ var _ ports.LotsRepository = (*repositories.LotsRepositorySQLC)(nil)
 
 func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	_, lotsService := wire.NewLots(db, pool)
-	lotsController := controllers.NewLotsController(*lotsService)
+	// S3.5 W2-B: TenantID flows from configuration.Config into the controller and into
+	// every service/repo call so the data layer is never invoked without a tenant scope.
+	lotsController := controllers.NewLotsController(*lotsService, config.TenantID)
 
 	route := router.Group("/lots")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
@@ -29,7 +31,7 @@ func RegisterLotsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool
 
 		route.GET("/", read, lotsController.GetAllLots)
 		if pool != nil {
-			cfg := tools.LotsTableConfig()
+			cfg := tools.LotsTableConfig(config.TenantID)
 			route.GET("/table", read, tools.GenericListHandler(pool, cfg))
 			route.GET("/table/export", read, tools.GenericExportHandler(pool, cfg, "lots.csv"))
 		}

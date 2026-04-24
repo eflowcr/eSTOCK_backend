@@ -22,11 +22,14 @@ type mockLotsRepoCtrl struct {
 	deleteErr *responses.InternalResponse
 }
 
-func (m *mockLotsRepoCtrl) GetAllLots() ([]database.Lot, *responses.InternalResponse) {
+// S3.5 W2-B: every method takes a tenantID; tests use the const below.
+const ctrlTestTenantID = "00000000-0000-0000-0000-000000000001"
+
+func (m *mockLotsRepoCtrl) GetAllLots(_ string) ([]database.Lot, *responses.InternalResponse) {
 	return m.lots, nil
 }
 
-func (m *mockLotsRepoCtrl) GetLotsBySKU(sku *string) ([]database.Lot, *responses.InternalResponse) {
+func (m *mockLotsRepoCtrl) GetLotsBySKU(_ string, sku *string) ([]database.Lot, *responses.InternalResponse) {
 	if sku == nil || *sku == "" {
 		return nil, nil
 	}
@@ -38,15 +41,15 @@ func (m *mockLotsRepoCtrl) GetLotsBySKU(sku *string) ([]database.Lot, *responses
 	return []database.Lot{}, nil
 }
 
-func (m *mockLotsRepoCtrl) CreateLot(data *requests.CreateLotRequest) *responses.InternalResponse {
+func (m *mockLotsRepoCtrl) CreateLot(_ string, data *requests.CreateLotRequest) *responses.InternalResponse {
 	return m.createErr
 }
 
-func (m *mockLotsRepoCtrl) UpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
+func (m *mockLotsRepoCtrl) UpdateLot(_ string, id string, data map[string]interface{}) *responses.InternalResponse {
 	return m.updateErr
 }
 
-func (m *mockLotsRepoCtrl) DeleteLot(id string) *responses.InternalResponse {
+func (m *mockLotsRepoCtrl) DeleteLot(_ string, id string) *responses.InternalResponse {
 	return m.deleteErr
 }
 
@@ -59,7 +62,11 @@ func (m *mockLotsRepoCtrl) GetLotByID(id string) (*database.Lot, *responses.Inte
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockLotsRepoCtrl) GetLotTrace(_ string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+func (m *mockLotsRepoCtrl) GetLotByIDForTenant(id, _ string) (*database.Lot, *responses.InternalResponse) {
+	return m.GetLotByID(id)
+}
+
+func (m *mockLotsRepoCtrl) GetLotTrace(_, _ string) (*responses.LotTraceResponse, *responses.InternalResponse) {
 	return nil, nil
 }
 
@@ -67,7 +74,7 @@ func (m *mockLotsRepoCtrl) GetLotTrace(_ string) (*responses.LotTraceResponse, *
 
 func newLotsController(repo *mockLotsRepoCtrl) *LotsController {
 	svc := services.NewLotsService(repo, nil)
-	return NewLotsController(*svc)
+	return NewLotsController(*svc, ctrlTestTenantID)
 }
 
 // ─── tests ───────────────────────────────────────────────────────────────────

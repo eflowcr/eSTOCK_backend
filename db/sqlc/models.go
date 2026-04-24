@@ -271,6 +271,7 @@ type Lot struct {
 	LotNotes       pgtype.Text      `json:"lot_notes"`
 	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
 	BestBeforeDate pgtype.Date      `json:"best_before_date"`
+	TenantID       pgtype.UUID      `json:"tenant_id"`
 }
 
 type Notification struct {
