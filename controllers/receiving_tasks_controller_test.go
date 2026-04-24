@@ -35,6 +35,10 @@ func (m *mockReceivingTasksRepoCtrl) GetAllReceivingTasks() ([]responses.Receivi
 	return m.tasks, nil
 }
 
+func (m *mockReceivingTasksRepoCtrl) GetAllForTenant(tenantID string) ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	return m.tasks, nil
+}
+
 func (m *mockReceivingTasksRepoCtrl) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	if m.byID != nil {
 		if t, ok := m.byID[id]; ok {
@@ -44,7 +48,7 @@ func (m *mockReceivingTasksRepoCtrl) GetReceivingTaskByID(id string) (*database.
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockReceivingTasksRepoCtrl) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+func (m *mockReceivingTasksRepoCtrl) CreateReceivingTask(userId string, tenantID string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	return m.createErr
 }
 
@@ -52,7 +56,7 @@ func (m *mockReceivingTasksRepoCtrl) UpdateReceivingTask(id string, data map[str
 	return m.updateErr
 }
 
-func (m *mockReceivingTasksRepoCtrl) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (m *mockReceivingTasksRepoCtrl) ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	return m.importErr
 }
 

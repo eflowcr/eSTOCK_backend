@@ -28,6 +28,10 @@ func (m *mockAdjustmentsRepoCtrl) GetAllAdjustments() ([]database.Adjustment, *r
 	return m.adjustments, nil
 }
 
+func (m *mockAdjustmentsRepoCtrl) GetAllForTenant(tenantID string) ([]database.Adjustment, *responses.InternalResponse) {
+	return m.adjustments, nil
+}
+
 func (m *mockAdjustmentsRepoCtrl) GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse) {
 	if m.byID != nil {
 		if a, ok := m.byID[id]; ok {
@@ -46,7 +50,7 @@ func (m *mockAdjustmentsRepoCtrl) GetAdjustmentDetails(id string) (*dto.Adjustme
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockAdjustmentsRepoCtrl) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+func (m *mockAdjustmentsRepoCtrl) CreateAdjustment(userId string, tenantID string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
 	if m.createErr != nil {
 		return nil, m.createErr
 	}

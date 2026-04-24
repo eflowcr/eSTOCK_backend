@@ -29,6 +29,10 @@ func (m *mockAdjustmentsRepo) GetAllAdjustments() ([]database.Adjustment, *respo
 	return m.adjustments, nil
 }
 
+func (m *mockAdjustmentsRepo) GetAllForTenant(tenantID string) ([]database.Adjustment, *responses.InternalResponse) {
+	return m.adjustments, nil
+}
+
 func (m *mockAdjustmentsRepo) GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse) {
 	if m.byID != nil {
 		if a, ok := m.byID[id]; ok {
@@ -55,7 +59,7 @@ func (m *mockAdjustmentsRepo) GetAdjustmentDetails(id string) (*dto.AdjustmentDe
 	}
 }
 
-func (m *mockAdjustmentsRepo) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+func (m *mockAdjustmentsRepo) CreateAdjustment(userId string, tenantID string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
@@ -69,6 +73,7 @@ func (m *mockAdjustmentsRepo) CreateAdjustment(userId string, adjustment request
 		AdjustmentQty: int(adjustment.AdjustmentQuantity),
 		Reason:        adjustment.Reason,
 		UserID:        userId,
+		TenantID:      tenantID,
 	}
 	return result, nil
 }
@@ -198,7 +203,7 @@ func TestAdjustmentsService_CreateAdjustment_NegativeQuantity_ReturnsBadRequest(
 		AdjustmentQuantity: -5,
 		Reason:             "DAMAGE",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
@@ -214,7 +219,7 @@ func TestAdjustmentsService_CreateAdjustment_NoReasonCodesRepo_Success(t *testin
 		AdjustmentQuantity: 10,
 		Reason:             "RECOUNT",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	assert.Equal(t, "SKU-1", result.SKU)
@@ -235,7 +240,7 @@ func TestAdjustmentsService_CreateAdjustment_InboundReasonCode_KeepsPositiveQuan
 		AdjustmentQuantity: 20,
 		Reason:             "RECEIVE",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	// inbound: quantity stays positive
@@ -256,7 +261,7 @@ func TestAdjustmentsService_CreateAdjustment_OutboundReasonCode_NegatesQuantity(
 		AdjustmentQuantity: 15,
 		Reason:             "DAMAGE",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	// outbound: quantity is negated
@@ -275,7 +280,7 @@ func TestAdjustmentsService_CreateAdjustment_InvalidReasonCode_ReturnsBadRequest
 		AdjustmentQuantity: 5,
 		Reason:             "UNKNOWN-CODE",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
@@ -297,7 +302,7 @@ func TestAdjustmentsService_CreateAdjustment_ReasonCodeLookupError_ReturnsError(
 		AdjustmentQuantity: 5,
 		Reason:             "SOME-CODE",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.False(t, errResp.Handled)
@@ -345,7 +350,7 @@ func TestAdjustmentsService_D1_Decrease_ViolatesReserved_Returns400(t *testing.T
 		Reason:             "RECOUNT",
 		AdjustmentType:     "decrease",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, errResp, "should be rejected when decrease violates reserved_qty")
 	assert.Nil(t, result)
 	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
@@ -363,7 +368,7 @@ func TestAdjustmentsService_D1_Decrease_RespectsAvailable_OK(t *testing.T) {
 		Reason:             "RECOUNT",
 		AdjustmentType:     "decrease",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	assert.Equal(t, int(-60), result.AdjustmentQty)
@@ -382,7 +387,7 @@ func TestAdjustmentsService_D1_CountReconcile_AlwaysOK(t *testing.T) {
 		Reason:             "CYCLE_COUNT",
 		AdjustmentType:     "count_reconcile",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp, "count_reconcile must always succeed regardless of reserved_qty")
 	require.NotNil(t, result)
 	// Expected delta: 50 - 100 = -50
@@ -400,7 +405,7 @@ func TestAdjustmentsService_D1_Increase_OK(t *testing.T) {
 		Reason:             "RECOUNT",
 		AdjustmentType:     "increase",
 	}
-	result, errResp := svc.CreateAdjustment("user-1", req)
+	result, errResp := svc.CreateAdjustment("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	assert.Equal(t, 20, result.AdjustmentQty)

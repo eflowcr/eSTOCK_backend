@@ -319,7 +319,7 @@ func TestReceivingB5_ImportFromExcel_WithLots(t *testing.T) {
 	})
 
 	repo := newReceivingRepo(db)
-	resp := repo.ImportReceivingTaskFromExcel(userID, excelData)
+	resp := repo.ImportReceivingTaskFromExcel(userID, "00000000-0000-0000-0000-000000000001", excelData)
 	require.Nil(t, resp, "import should succeed")
 
 	// Verify the created task has LotNumbers hydrated
@@ -358,7 +358,7 @@ func TestReceivingB5_ImportFromExcel_NoLots(t *testing.T) {
 	})
 
 	repo := newReceivingRepo(db)
-	resp := repo.ImportReceivingTaskFromExcel(userID, excelData)
+	resp := repo.ImportReceivingTaskFromExcel(userID, "00000000-0000-0000-0000-000000000001", excelData)
 	require.Nil(t, resp, "import should succeed without lots")
 
 	var itemsJSON []byte
