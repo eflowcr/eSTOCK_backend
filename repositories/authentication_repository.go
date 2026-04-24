@@ -60,10 +60,21 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		}
 	}
 
-	// S3.5 W3 — embed tenant_id into JWT. users table doesn't carry tenant_id yet
-	// (single-tenant pilot), so the source is Config.TenantID. When the users table gains
-	// tenant_id (planned post-S3.5), swap to user.TenantID without touching this signature.
-	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID, a.Config.TenantID)
+	// S3.5 W5.5 (HR-S3.5 C2 fix) — embed the user's own tenant_id into the JWT. Pre-W5.5
+	// this used Config.TenantID (the env-injected pod default), which silently moved every
+	// authenticated user into whichever tenant the pod was started for — defeating the
+	// W3 multi-tenant claim plumbing. After 000035_users_tenant_id, every users row carries
+	// tenant_id (backfilled to the default tenant for legacy rows; freshly stamped on signup),
+	// so the JWT now correctly scopes to the user's own tenant.
+	//
+	// Defense in depth: if user.TenantID is empty (should never happen post-migration —
+	// the column is NOT NULL), we fall back to Config.TenantID rather than issue a token
+	// with no tenant claim, since RequirePermission would 401 it anyway.
+	tenantClaim := user.TenantID
+	if tenantClaim == "" {
+		tenantClaim = a.Config.TenantID
+	}
+	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID, tenantClaim)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,

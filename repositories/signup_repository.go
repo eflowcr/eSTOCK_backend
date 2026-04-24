@@ -200,8 +200,13 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 		if adminName == "" {
 			adminName = st.TenantName + " Admin"
 		}
+		// S3.5 W5.5 (HR-S3.5 C2): stamp tenant_id on the new admin so subsequent logins
+		// embed the right tenant claim into the JWT. Without this the user row would
+		// inherit the migration default ('00000000-...-001') and all this signup's
+		// downstream requests would silently route to tenant 1 again.
 		user := database.User{
 			ID:       adminID,
+			TenantID: tenantID,
 			Name:     adminName,
 			Email:    st.Email,
 			Password: &encPwd,

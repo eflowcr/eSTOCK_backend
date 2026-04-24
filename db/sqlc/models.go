@@ -633,6 +633,7 @@ type User struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserBadge struct {
