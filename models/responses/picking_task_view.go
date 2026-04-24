@@ -24,6 +24,6 @@ type PickingTaskView struct {
 	CustomerID   *string `gorm:"column:customer_id" json:"customer_id,omitempty"`
 	CustomerCode *string `gorm:"column:customer_code" json:"customer_code,omitempty"`
 	CustomerName *string `gorm:"column:customer_name" json:"customer_name,omitempty"`
-	// S2.5 M3.1 tenant isolation
-	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
+	// S2.5 M3.1 tenant isolation — never leak UUID in HTTP responses
+	TenantID string `gorm:"column:tenant_id" json:"-"`
 }
