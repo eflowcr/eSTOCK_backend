@@ -14,7 +14,7 @@ RUN apk add --no-cache ca-certificates curl && \
 WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /app/main .
 COPY --chown=appuser:appgroup db/migrations ./db/migrations
-USER appuser
+USER 1001:1001
 
 EXPOSE 8080
 
