@@ -60,6 +60,18 @@ type Config struct {
 	// TenantID is the UUID of the current tenant (env: TENANT_ID).
 	// Single-tenant mode: defaults to a fixed UUID if unset.
 	TenantID string
+
+	// Stripe billing configuration (S3-W5-B).
+	// StripeSecretKey is the Stripe secret API key (env: STRIPE_SECRET_KEY).
+	StripeSecretKey string
+	// StripeWebhookSecret is the webhook endpoint signing secret (env: STRIPE_WEBHOOK_SECRET).
+	StripeWebhookSecret string
+	// StripePriceStarter is the Stripe Price ID for the Starter plan (env: STRIPE_PRICE_STARTER).
+	StripePriceStarter string
+	// StripePricePro is the Stripe Price ID for the Pro plan (env: STRIPE_PRICE_PRO).
+	StripePricePro string
+	// StripePriceEnterprise is the Stripe Price ID for the Enterprise plan (env: STRIPE_PRICE_ENTERPRISE).
+	StripePriceEnterprise string
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -93,6 +105,11 @@ func LoadConfig() (Config, error) {
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		ResendFromAddress:    os.Getenv("RESEND_FROM_ADDRESS"),
 		TenantID:             os.Getenv("TENANT_ID"),
+		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripePriceStarter:   os.Getenv("STRIPE_PRICE_STARTER"),
+		StripePricePro:       os.Getenv("STRIPE_PRICE_PRO"),
+		StripePriceEnterprise: os.Getenv("STRIPE_PRICE_ENTERPRISE"),
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"
