@@ -28,4 +28,6 @@ type ReceivingTasksView struct {
 	Incoterms       *string `gorm:"column:incoterms" json:"incoterms,omitempty"`
 	SupplierCode    *string `gorm:"column:supplier_code" json:"supplier_code,omitempty"`
 	SupplierName    *string `gorm:"column:supplier_name" json:"supplier_name,omitempty"`
+	// S2.5 M3.1 tenant isolation
+	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
 }

@@ -20,6 +20,8 @@ type PickingTask struct {
 	CompletedAt *time.Time      `gorm:"column:completed_at" json:"completed_at"`
 	// S2 M2 customer field
 	CustomerID *string `gorm:"column:customer_id" json:"customer_id,omitempty"`
+	// S2.5 M3.1 tenant isolation
+	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (PickingTask) TableName() string {
