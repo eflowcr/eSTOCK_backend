@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+// PurchaseOrderItemQtyUpdate carries received/rejected quantity deltas for a single PO item.
+// Used by the receiving completion flow to update purchase_order_items without re-loading the full PO.
+type PurchaseOrderItemQtyUpdate struct {
+	ArticleSKU  string
+	ReceivedQty float64
+	RejectedQty float64
+}
+
 type StringSliceOrCSV []string
 
 func (s *StringSliceOrCSV) UnmarshalJSON(b []byte) error {
