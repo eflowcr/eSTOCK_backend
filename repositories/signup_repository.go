@@ -222,8 +222,10 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 			return fmt.Errorf("mark token used: %w", err)
 		}
 
-		// 6. Generate JWT for immediate login.
-		jwtToken, err := tools.GenerateToken(r.Config.JWTSecret, adminID, adminName, st.Email, roleID)
+		// 6. Generate JWT for immediate login. S3.5 W3 — embed the freshly-created tenant's
+		// UUID as the tenant_id claim so this admin's subsequent requests scope to their own
+		// tenant (NOT the pod's TENANT_ID env var).
+		jwtToken, err := tools.GenerateToken(r.Config.JWTSecret, adminID, adminName, st.Email, roleID, tenantID)
 		if err != nil {
 			return fmt.Errorf("generate jwt: %w", err)
 		}

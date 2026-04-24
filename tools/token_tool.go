@@ -6,31 +6,38 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 )
 
+// Claims is the JWT payload for authenticated users.
+//
+// S3.5 W3: Added TenantID to enable per-request tenant isolation. Controllers must read
+// the tenant from gin.Context (TenantIDFromContext) instead of Config.TenantID env var so
+// a single pod can serve multiple tenants safely. Tokens issued before W3 do not carry
+// this claim and will be rejected by RequirePermission (forces re-login). Acceptable since
+// v0.2.1 is a hotfix deploy with very few active users.
 type Claims struct {
 	UserId   string `json:"user_id"`
 	UserName string `json:"user_name"`
 	Email    string `json:"email"`
 	Role     string `json:"role"`
+	TenantID string `json:"tenant_id"`
 	jwt.RegisteredClaims
 }
 
-// GenerateToken creates a JWT signed with the given secret.
-//
-// TODO(ARCH — S3.5 blocker): JWT Claims has no tenant_id field. Controllers resolve tenant from
-// Config.TenantID (env var), not from the token. In a multi-tenant SaaS, a user from Tenant A
-// can use their JWT against Tenant B's billing endpoint because the controller uses the static
-// env-var TenantID. Adding tenant_id to Claims + validating it in RequirePermission middleware
-// is required before opening signups to multiple real tenants on the same pod.
-// Tracked as S3.5-jwt-tenant-claim. See: feedback_estock_articles_no_tenant_isolation.md
-func GenerateToken(secret string, userId, userName, email, role string) (string, error) {
+// GenerateToken creates a JWT signed with the given secret. tenantID MUST be non-empty —
+// callers (login, signup verify, refresh) must source it explicitly:
+//   - login: Config.TenantID (single-tenant pilot) or user.TenantID once users have a
+//     tenant column (future wave).
+//   - signup verify: the freshly created tenant's UUID.
+func GenerateToken(secret string, userId, userName, email, role, tenantID string) (string, error) {
 	claims := Claims{
 		UserId:   userId,
 		UserName: userName,
 		Email:    email,
 		Role:     role,
+		TenantID: tenantID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			// TODO(M5 — S3.5): 2400h = 100-day expiry. JWTs issued to self-signup trial users should
 			// be short-lived (e.g. 24h) with refresh. A cancelled subscriber retains access for 99 days.
@@ -46,6 +53,22 @@ func GenerateToken(secret string, userId, userName, email, role string) (string,
 		return "", err
 	}
 	return tokenString, nil
+}
+
+// TenantIDFromContext returns the tenant_id claim that JWTAuthMiddleware placed on the
+// gin.Context. Returns "" if absent — callers (controllers) MUST treat empty as a failure
+// because RequirePermission already rejects tokens lacking the claim. Returning empty here
+// is a defense-in-depth: an endpoint not behind RequirePermission still gets a safe zero value.
+func TenantIDFromContext(c *gin.Context) string {
+	v, ok := c.Get(ContextKeyTenantID)
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }
 
 func GetUserId(secret string, tokenString string) (string, error) {
