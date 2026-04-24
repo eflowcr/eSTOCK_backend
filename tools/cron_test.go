@@ -213,8 +213,12 @@ func TestCronDispatch_BothJobsRun(t *testing.T) {
 	defer cleanup()
 
 	analyzerCalled := false
-	analyzer := func() error {
+	// S3.5 W2-B: analyzer is invoked per active tenant. With no tenants seeded, the
+	// fallback returns the default tenant UUID, so the callback fires exactly once.
+	var analyzerTenants []string
+	analyzer := func(tenantID string) error {
 		analyzerCalled = true
+		analyzerTenants = append(analyzerTenants, tenantID)
 		return errors.New("simulated stock_alerts failure")
 	}
 
@@ -222,6 +226,7 @@ func TestCronDispatch_BothJobsRun(t *testing.T) {
 	CronDispatch(db, analyzer, nil, nil, nil)
 
 	assert.True(t, analyzerCalled, "analyzer must be called")
+	assert.NotEmpty(t, analyzerTenants, "analyzer must receive at least the default tenant when no tenants exist")
 	// stale cleanup ran on empty tables without error (verified by no panic)
 }
 

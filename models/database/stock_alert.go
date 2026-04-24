@@ -2,8 +2,15 @@ package database
 
 import "time"
 
+// StockAlert represents a stock-level or expiration alert for a SKU/lot owned by a tenant.
+//
+// S3.5 W2-B: TenantID is required so Analyze() can recompute alerts per tenant without
+// mixing inventory/movement data across tenants. JSON tag is "-" because the HTTP layer
+// resolves tenant scope from the JWT/Config — payload-side tenant_id would be redundant
+// and a potential leak vector.
 type StockAlert struct {
 	ID                    string     `gorm:"column:id;primaryKey" json:"id"`
+	TenantID              string     `gorm:"column:tenant_id;type:uuid;not null;index" json:"-"`
 	SKU                   string     `gorm:"column:sku" json:"sku"`
 	AlertType             string     `gorm:"column:alert_type" json:"alert_type"`
 	CurrentStock          int        `gorm:"column:current_stock" json:"current_stock"`

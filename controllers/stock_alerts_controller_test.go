@@ -25,23 +25,25 @@ type mockStockAlertsRepoCtrl struct {
 	exportErr       *responses.InternalResponse
 }
 
-func (m *mockStockAlertsRepoCtrl) GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
+// S3.5 W2-B: tenantID is now part of every repo method; tests pass it through but
+// the mock ignores it (we only verify the controller-side wiring works).
+func (m *mockStockAlertsRepoCtrl) GetAllStockAlerts(_ string, resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
 	return m.alerts, m.alertsErr
 }
 
-func (m *mockStockAlertsRepoCtrl) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
+func (m *mockStockAlertsRepoCtrl) Analyze(_ string) (*responses.StockAlertResponse, *responses.InternalResponse) {
 	return m.analyzeResp, m.analyzeErr
 }
 
-func (m *mockStockAlertsRepoCtrl) LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse) {
+func (m *mockStockAlertsRepoCtrl) LotExpiration(_ string) (*responses.StockAlertResponse, *responses.InternalResponse) {
 	return m.lotExpResp, m.lotExpErr
 }
 
-func (m *mockStockAlertsRepoCtrl) ResolveAlert(alertID string) *responses.InternalResponse {
+func (m *mockStockAlertsRepoCtrl) ResolveAlert(_, alertID string) *responses.InternalResponse {
 	return m.resolveErr
 }
 
-func (m *mockStockAlertsRepoCtrl) ExportAlertsToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockStockAlertsRepoCtrl) ExportAlertsToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportData, m.exportErr
 }
 
@@ -49,7 +51,7 @@ func (m *mockStockAlertsRepoCtrl) ExportAlertsToExcel() ([]byte, *responses.Inte
 
 func newStockAlertsController(repo *mockStockAlertsRepoCtrl) *StockAlertsController {
 	svc := services.NewStockAlertsService(repo)
-	return NewStockAlertsController(*svc)
+	return NewStockAlertsController(*svc, ctrlTestTenantID)
 }
 
 // ─── tests ───────────────────────────────────────────────────────────────────
