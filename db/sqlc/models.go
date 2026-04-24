@@ -525,6 +525,7 @@ type StockAlert struct {
 	DaysToExpiration      pgtype.Int4      `json:"days_to_expiration"`
 	CreatedAt             pgtype.Timestamp `json:"created_at"`
 	ResolvedAt            pgtype.Timestamp `json:"resolved_at"`
+	TenantID              pgtype.UUID      `json:"tenant_id"`
 }
 
 type StockSetting struct {
