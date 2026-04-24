@@ -327,3 +327,10 @@ func NewStockSettings(pool *pgxpool.Pool) (ports.StockSettingsRepository, *servi
 	r := repositories.NewStockSettingsRepositorySQLC(queries)
 	return r, services.NewStockSettingsService(r)
 }
+
+// NewPurchaseOrders builds PurchaseOrdersRepository and PurchaseOrdersService.
+// Uses GORM (consistent with ReceivingTasksRepository and PickingTaskRepository).
+func NewPurchaseOrders(db *gorm.DB) (ports.PurchaseOrdersRepository, *services.PurchaseOrdersService) {
+	r := &repositories.PurchaseOrdersRepository{DB: db}
+	return r, services.NewPurchaseOrdersService(r)
+}

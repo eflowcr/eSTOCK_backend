@@ -53,6 +53,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterCategoriesRoutes(api, pool, config, rolesRepo)
 	RegisterStockSettingsRoutes(api, pool, config, rolesRepo)
 	RegisterNotificationsRoutes(api, db, config, notifSvc)
+	RegisterPurchaseOrdersRoutes(api, db, config, rolesRepo)
 
 	RegisterDocsRoutes(r)
 }
