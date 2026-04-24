@@ -32,7 +32,7 @@ type PurchaseOrderView struct {
 	UpdatedAt       time.Time               `json:"updated_at"`
 	Items           []PurchaseOrderItemView `json:"items,omitempty"`
 	// Tenant isolation — never leak UUID in HTTP responses.
-	TenantID string `json:"tenant_id" gorm:"column:tenant_id"`
+	TenantID string `json:"-" gorm:"column:tenant_id"`
 }
 
 // PurchaseOrderSubmitResponse adds the new receiving_task_id to the submit response.
