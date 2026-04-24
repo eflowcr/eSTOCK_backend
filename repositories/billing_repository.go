@@ -130,24 +130,39 @@ func (r *BillingRepository) UpdateTenantStatus(tenantID, status string) *respons
 	return nil
 }
 
+// AttemptMarkWebhookEventProcessed atomically gates webhook idempotency via INSERT ON CONFLICT.
+// It attempts to insert the event_id as a PRIMARY KEY. If the event was already inserted (i.e.
+// a concurrent or retry delivery), RowsAffected will be 0 and alreadyProcessed=true is returned —
+// the caller must skip processing. This is a single round-trip with no TOCTOU window.
+func (r *BillingRepository) AttemptMarkWebhookEventProcessed(eventID, eventType string) (alreadyProcessed bool, resp *responses.InternalResponse) {
+	result := r.DB.Exec(
+		"INSERT INTO stripe_webhook_events (event_id, event_type, processed_at) VALUES (?, ?, NOW()) ON CONFLICT (event_id) DO NOTHING",
+		eventID, eventType,
+	)
+	if result.Error != nil {
+		return false, &responses.InternalResponse{Error: result.Error, Message: "Error registrando evento de webhook", Handled: false}
+	}
+	// RowsAffected == 0 → conflict → already processed.
+	return result.RowsAffected == 0, nil
+}
+
 // IsWebhookEventProcessed checks if the event ID has been processed (idempotency via stripe_webhook_events table).
-// Falls back to false (not processed) if the table does not exist yet — migration adds it.
 func (r *BillingRepository) IsWebhookEventProcessed(eventID string) (bool, *responses.InternalResponse) {
 	var count int64
 	if err := r.DB.Table("stripe_webhook_events").
 		Where("event_id = ?", eventID).
 		Count(&count).Error; err != nil {
-		// If the table doesn't exist yet (before migration), treat as not processed.
-		return false, nil
+		return false, &responses.InternalResponse{Error: err, Message: "Error verificando evento de webhook", Handled: false}
 	}
 	return count > 0, nil
 }
 
-// MarkWebhookEventProcessed records a Stripe event ID as processed.
+// MarkWebhookEventProcessed records a Stripe event ID as processed (best-effort).
+// Deprecated: prefer AttemptMarkWebhookEventProcessed which is atomic and eliminates TOCTOU.
 func (r *BillingRepository) MarkWebhookEventProcessed(eventID string) *responses.InternalResponse {
 	if err := r.DB.Exec(
-		"INSERT INTO stripe_webhook_events (event_id, processed_at) VALUES (?, ?) ON CONFLICT (event_id) DO NOTHING",
-		eventID, time.Now(),
+		"INSERT INTO stripe_webhook_events (event_id, event_type, processed_at) VALUES (?, '', NOW()) ON CONFLICT (event_id) DO NOTHING",
+		eventID,
 	).Error; err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error registrando evento de webhook", Handled: false}
 	}

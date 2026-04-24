@@ -204,6 +204,10 @@ func (s *BillingService) HandleCheckoutSessionCompleted(sess *stripe.CheckoutSes
 	}
 	now := time.Now()
 	sub.CurrentPeriodStart = &now
+	// TODO(CS3 — S3.5): CurrentPeriodEnd is never set from checkout.session.completed (period end
+	// is on the subscription object, not the session). Initial billing record will show null
+	// current_period_end until customer.subscription.updated fires. Consider fetching the
+	// subscription from Stripe API here to populate CurrentPeriodEnd immediately.
 
 	if resp := s.repo.UpsertSubscription(sub); resp != nil {
 		return resp
@@ -274,6 +278,12 @@ func (s *BillingService) HandleSubscriptionDeleted(stripeSub *stripe.Subscriptio
 	return nil
 }
 
+// AttemptMarkWebhookEventProcessed atomically gates webhook idempotency.
+// Returns alreadyProcessed=true if this event ID was already inserted — caller must skip.
+func (s *BillingService) AttemptMarkWebhookEventProcessed(eventID, eventType string) (bool, *responses.InternalResponse) {
+	return s.repo.AttemptMarkWebhookEventProcessed(eventID, eventType)
+}
+
 // IsWebhookEventProcessed checks idempotency via the billing repo.
 func (s *BillingService) IsWebhookEventProcessed(eventID string) (bool, *responses.InternalResponse) {
 	return s.repo.IsWebhookEventProcessed(eventID)
@@ -286,6 +296,11 @@ func (s *BillingService) MarkWebhookEventProcessed(eventID string) *responses.In
 
 // HandleInvoicePaymentFailed processes an invoice.payment_failed event.
 // Marks the subscription past_due and alerts the tenant admin.
+//
+// TODO(CS4 — S3.5): inv.Subscription may be an ID-only object (not expanded) in some Stripe API
+// versions. If so, Metadata will be empty and tenantID remains "" — tenant status is never updated.
+// Fix: if tenantID == "", look up via DB: SELECT tenant_id FROM subscriptions WHERE
+// stripe_subscription_id = inv.Subscription.ID. Deferred to S3.5.
 func (s *BillingService) HandleInvoicePaymentFailed(inv *stripe.Invoice) *responses.InternalResponse {
 	tenantID := ""
 	if inv.Subscription != nil {

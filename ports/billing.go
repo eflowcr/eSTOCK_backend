@@ -24,10 +24,19 @@ type BillingRepository interface {
 	// UpdateTenantStatus updates the tenant's status field (trial|active|past_due|cancelled).
 	UpdateTenantStatus(tenantID, status string) *responses.InternalResponse
 
+	// AttemptMarkWebhookEventProcessed atomically inserts event_id into stripe_webhook_events
+	// (INSERT … ON CONFLICT DO NOTHING). Returns alreadyProcessed=true if a duplicate — the
+	// caller must skip processing without an error. This eliminates the TOCTOU race between a
+	// separate SELECT check and INSERT mark.
+	AttemptMarkWebhookEventProcessed(eventID, eventType string) (alreadyProcessed bool, resp *responses.InternalResponse)
+
 	// IsWebhookEventProcessed checks whether a Stripe event ID has already been processed (idempotency).
+	// Retained for service-layer unit tests and direct queries. Prefer AttemptMarkWebhookEventProcessed
+	// for the actual webhook gate.
 	IsWebhookEventProcessed(eventID string) (bool, *responses.InternalResponse)
 
-	// MarkWebhookEventProcessed records a Stripe event ID to prevent duplicate processing.
+	// MarkWebhookEventProcessed records a Stripe event ID as processed (best-effort after handling).
+	// Deprecated: use AttemptMarkWebhookEventProcessed as the atomic gate instead.
 	MarkWebhookEventProcessed(eventID string) *responses.InternalResponse
 
 	// GetTenantAdminUserID returns the user ID of the admin for a tenant (for notifications).

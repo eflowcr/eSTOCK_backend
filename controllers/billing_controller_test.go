@@ -63,6 +63,19 @@ func (m *mockBillingRepo) UpdateTenantStatus(_ string, _ string) *responses.Inte
 	return m.updateTenantErr
 }
 
+// AttemptMarkWebhookEventProcessed atomically attempts to record the event as processed.
+// Returns alreadyProcessed=true if the event was already in processedEvents (simulates PK conflict).
+func (m *mockBillingRepo) AttemptMarkWebhookEventProcessed(eventID, _ string) (bool, *responses.InternalResponse) {
+	if m.processedEvents == nil {
+		m.processedEvents = make(map[string]bool)
+	}
+	if m.processedEvents[eventID] {
+		return true, nil // already processed
+	}
+	m.processedEvents[eventID] = true
+	return false, nil
+}
+
 func (m *mockBillingRepo) IsWebhookEventProcessed(eventID string) (bool, *responses.InternalResponse) {
 	if m.processedEvents == nil {
 		return false, nil
