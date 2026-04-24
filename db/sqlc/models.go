@@ -308,20 +308,22 @@ type PasswordResetToken struct {
 }
 
 type PickingTask struct {
-	ID          string           `json:"id"`
-	TaskID      string           `json:"task_id"`
-	OrderNumber string           `json:"order_number"`
-	CreatedBy   string           `json:"created_by"`
-	AssignedTo  pgtype.Text      `json:"assigned_to"`
-	Status      string           `json:"status"`
-	Priority    string           `json:"priority"`
-	Notes       pgtype.Text      `json:"notes"`
-	Items       json.RawMessage  `json:"items"`
-	CreatedAt   pgtype.Timestamp `json:"created_at"`
-	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
-	CompletedAt pgtype.Timestamp `json:"completed_at"`
-	CustomerID  pgtype.Text      `json:"customer_id"`
-	TenantID    pgtype.UUID      `json:"tenant_id"`
+	ID                string           `json:"id"`
+	TaskID            string           `json:"task_id"`
+	OrderNumber       string           `json:"order_number"`
+	CreatedBy         string           `json:"created_by"`
+	AssignedTo        pgtype.Text      `json:"assigned_to"`
+	Status            string           `json:"status"`
+	Priority          string           `json:"priority"`
+	Notes             pgtype.Text      `json:"notes"`
+	Items             json.RawMessage  `json:"items"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+	CompletedAt       pgtype.Timestamp `json:"completed_at"`
+	CustomerID        pgtype.Text      `json:"customer_id"`
+	TenantID          pgtype.UUID      `json:"tenant_id"`
+	SalesOrderID      pgtype.Text      `json:"sales_order_id"`
+	SourceBackorderID pgtype.Text      `json:"source_backorder_id"`
 }
 
 type Presentation struct {
@@ -401,6 +403,7 @@ type ReceivingTask struct {
 	ReceptionMethod pgtype.Text      `json:"reception_method"`
 	Incoterms       pgtype.Text      `json:"incoterms"`
 	TenantID        pgtype.UUID      `json:"tenant_id"`
+	PurchaseOrderID pgtype.Text      `json:"purchase_order_id"`
 }
 
 // RBAC roles; name is the stable identifier (Admin, Operator, Viewer).
