@@ -62,5 +62,8 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterDeliveryNotesRoutes(api, db, config, rolesRepo)
 	RegisterBackordersRoutes(api, db, config, rolesRepo)
 
+	// S3-W5-A: Public SaaS self-service signup (no auth required)
+	RegisterSignupRoutes(api, db, config)
+
 	RegisterDocsRoutes(r)
 }
