@@ -496,14 +496,16 @@ type SessionType struct {
 }
 
 type SignupToken struct {
-	ID         string             `json:"id"`
-	Email      string             `json:"email"`
-	TenantName string             `json:"tenant_name"`
-	TenantSlug string             `json:"tenant_slug"`
-	Token      string             `json:"token"`
-	ExpiresAt  time.Time          `json:"expires_at"`
-	UsedAt     pgtype.Timestamptz `json:"used_at"`
-	CreatedAt  time.Time          `json:"created_at"`
+	ID               string             `json:"id"`
+	Email            string             `json:"email"`
+	TenantName       string             `json:"tenant_name"`
+	TenantSlug       string             `json:"tenant_slug"`
+	Token            string             `json:"token"`
+	ExpiresAt        time.Time          `json:"expires_at"`
+	UsedAt           pgtype.Timestamptz `json:"used_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	AdminName        string             `json:"admin_name"`
+	AdminPasswordEnc string             `json:"admin_password_enc"`
 }
 
 type StockAlert struct {
@@ -562,6 +564,13 @@ type StockTransferLine struct {
 	Presentation    pgtype.Text      `json:"presentation"`
 	LineStatus      string           `json:"line_status"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
+type StripeWebhookEvent struct {
+	EventID     string    `json:"event_id"`
+	EventType   string    `json:"event_type"`
+	ProcessedAt time.Time `json:"processed_at"`
+	RawEvent    []byte    `json:"raw_event"`
 }
 
 type Subscription struct {

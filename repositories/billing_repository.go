@@ -169,15 +169,21 @@ func (r *BillingRepository) MarkWebhookEventProcessed(eventID string) *responses
 	return nil
 }
 
-// GetTenantAdminUserID returns the user ID of the first admin for a tenant (for notifications).
+// GetTenantAdminUserID returns the user ID of the first active admin user (for notifications).
+// NOTE: the users table has no tenant_id column and no direct role string — it uses role_id (FK to roles).
+// We JOIN users → roles and filter by LOWER(roles.name) = 'admin'.
+// TODO S3.5: scope by tenant_id when users table gets tenant_id column (single-tenant assumption documented).
 func (r *BillingRepository) GetTenantAdminUserID(tenantID string) (string, *responses.InternalResponse) {
 	var userID string
 	if err := r.DB.Table("users").
-		Select("id").
-		Where("tenant_id = ? AND role = 'admin' AND deleted_at IS NULL", tenantID).
-		Order("created_at ASC").
+		Select("users.id").
+		Joins("JOIN roles ON users.role_id = roles.id").
+		Where("LOWER(roles.name) = ?", "admin").
+		Where("users.deleted_at IS NULL").
+		Where("users.is_active = ?", true).
+		Order("users.created_at ASC").
 		Limit(1).
-		Scan(&userID).Error; err != nil {
+		Pluck("users.id", &userID).Error; err != nil {
 		return "", &responses.InternalResponse{Error: err, Message: "Error buscando admin del tenant", Handled: false}
 	}
 	return userID, nil

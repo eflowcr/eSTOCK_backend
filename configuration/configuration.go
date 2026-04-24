@@ -61,6 +61,11 @@ type Config struct {
 	// Single-tenant mode: defaults to a fixed UUID if unset.
 	TenantID string
 
+	// EnableSignup gates the self-service signup endpoint (env: ENABLE_SIGNUP).
+	// Default: true in development, false in all other environments.
+	// Keep false in prod until S3.5 (articles tenant_id isolation is complete).
+	EnableSignup bool
+
 	// Stripe billing configuration (S3-W5-B).
 	// StripeSecretKey is the Stripe secret API key (env: STRIPE_SECRET_KEY).
 	StripeSecretKey string
@@ -113,6 +118,13 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"
+	}
+
+	// EnableSignup: explicit env var takes priority; defaults to true in development, false elsewhere.
+	if raw := os.Getenv("ENABLE_SIGNUP"); raw != "" {
+		cfg.EnableSignup = strings.EqualFold(raw, "true")
+	} else if strings.EqualFold(cfg.Environment, "development") {
+		cfg.EnableSignup = true
 	}
 	if cfg.DBSource == "" {
 		cfg.DBSource = os.Getenv("DATABASE_URL")

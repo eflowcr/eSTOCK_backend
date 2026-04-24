@@ -167,34 +167,35 @@ FROM clients
 WHERE tenant_id = $1
   AND ($2::text IS NULL OR type = $2)
   AND ($3::boolean IS NULL OR is_active = $3)
+  -- TODO(S3/MA4): escape ILIKE wildcards with replace(search,'%','\%') ESCAPE '\' to prevent
+  -- DoS via catastrophic backtracking on strings containing many '%' or '_' characters.
   AND ($4::text IS NULL OR (name ILIKE '%' || $4 || '%' OR code ILIKE '%' || $4 || '%'))
 ORDER BY name ASC
-LIMIT COALESCE($5::int, 100)
-OFFSET COALESCE($6::int, 0)
+LIMIT COALESCE($6::int, 100)
+OFFSET COALESCE($5::int, 0)
 `
 
-// ListClientsByTenantParams holds optional filter params for ListClientsByTenant.
-// Use pgtype.Text{} (Valid:false) / pgtype.Bool{} (Valid:false) / pgtype.Int4{} (Valid:false)
-// to pass NULL and skip a filter.  M8: fields renamed from sqlc Column* defaults.
 type ListClientsByTenantParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Type     pgtype.Text `json:"type"`
 	IsActive pgtype.Bool `json:"is_active"`
 	Search   pgtype.Text `json:"search"`
-	Limit    pgtype.Int4 `json:"limit"`
 	Offset   pgtype.Int4 `json:"offset"`
+	Limit    pgtype.Int4 `json:"limit"`
 }
 
 // M8: Push type/is_active/search filters and pagination to SQL (HR1 deferred).
 // Pass NULL for any optional param to skip that filter.
+// sqlc.narg() used so generated struct has named fields (Type, IsActive, Search, Limit, Offset)
+// instead of positional Column2…Column6 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
 func (q *Queries) ListClientsByTenant(ctx context.Context, arg ListClientsByTenantParams) ([]Client, error) {
 	rows, err := q.db.Query(ctx, listClientsByTenant,
 		arg.TenantID,
 		arg.Type,
 		arg.IsActive,
 		arg.Search,
-		arg.Limit,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

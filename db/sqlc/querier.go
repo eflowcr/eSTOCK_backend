@@ -90,9 +90,13 @@ type Querier interface {
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// M8: Push search/is_active filters and pagination to SQL (HR1 deferred).
 	// Pass NULL for any optional param to skip that filter.
+	// sqlc.narg() used so generated struct has named fields (IsActive, Search, Limit, Offset)
+	// instead of positional Column2…Column5 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
 	ListCategoriesByTenant(ctx context.Context, arg ListCategoriesByTenantParams) ([]Category, error)
 	// M8: Push type/is_active/search filters and pagination to SQL (HR1 deferred).
 	// Pass NULL for any optional param to skip that filter.
+	// sqlc.narg() used so generated struct has named fields (Type, IsActive, Search, Limit, Offset)
+	// instead of positional Column2…Column6 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
 	ListClientsByTenant(ctx context.Context, arg ListClientsByTenantParams) ([]Client, error)
 	// Location types CRUD for sqlc. Schema: db/migrations (location_types table)
 	ListLocationTypes(ctx context.Context) ([]LocationType, error)
