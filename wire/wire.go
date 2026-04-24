@@ -328,13 +328,13 @@ func NewStockSettings(pool *pgxpool.Pool) (ports.StockSettingsRepository, *servi
 	return r, services.NewStockSettingsService(r)
 }
 
-<<<<<<< HEAD
 // NewPurchaseOrders builds PurchaseOrdersRepository and PurchaseOrdersService.
 // Uses GORM (consistent with ReceivingTasksRepository and PickingTaskRepository).
 func NewPurchaseOrders(db *gorm.DB) (ports.PurchaseOrdersRepository, *services.PurchaseOrdersService) {
 	r := &repositories.PurchaseOrdersRepository{DB: db}
 	return r, services.NewPurchaseOrdersService(r)
-=======
+}
+
 // NewSalesOrders builds SalesOrdersRepository and SalesOrdersService (S3-W2-B).
 // Injects InventoryService for FEFO pick suggestions on submit.
 func NewSalesOrders(db *gorm.DB, config configuration.Config) (ports.SalesOrdersRepository, *services.SalesOrdersService) {
@@ -346,5 +346,4 @@ func NewSalesOrders(db *gorm.DB, config configuration.Config) (ports.SalesOrders
 		InventorySvc: invSvc,
 	}
 	return r, services.NewSalesOrdersService(r)
->>>>>>> origin/s3-w2b-sales-orders
 }
