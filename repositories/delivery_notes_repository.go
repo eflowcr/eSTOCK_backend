@@ -21,10 +21,20 @@ type DeliveryNotesRepository struct {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // nextDNNumber generates "DN-YYYY-NNNN" unique per tenant per year inside tx.
-// Uses SELECT MAX(...) FOR UPDATE to prevent race conditions.
+// Uses pg_advisory_xact_lock to serialize number generation per (tenant, year),
+// which correctly handles the empty-table case where SELECT MAX ... FOR UPDATE
+// would lock no rows and allow duplicate numbers under concurrent inserts.
 func nextDNNumber(tx *gorm.DB, tenantID string) (string, error) {
 	year := time.Now().Year()
 	prefix := fmt.Sprintf("DN-%d-", year)
+
+	// Acquire a per-(tenant, year) advisory lock for the duration of this transaction.
+	// hashtext() produces a stable int4 from the string key; combining with year
+	// ensures locks don't cross years. The lock is automatically released on tx commit/rollback.
+	lockKey := fmt.Sprintf("dn-number-%s-%d", tenantID, year)
+	if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey).Error; err != nil {
+		return "", fmt.Errorf("acquire DN number lock: %w", err)
+	}
 
 	var maxNum int
 	if err := tx.Raw(`
@@ -34,7 +44,6 @@ func nextDNNumber(tx *gorm.DB, tenantID string) (string, error) {
 		FROM delivery_notes
 		WHERE tenant_id = $2
 		  AND dn_number LIKE $3
-		FOR UPDATE
 	`, prefix, tenantID, prefix+"%").Scan(&maxNum).Error; err != nil {
 		return "", fmt.Errorf("generate DN number: %w", err)
 	}
