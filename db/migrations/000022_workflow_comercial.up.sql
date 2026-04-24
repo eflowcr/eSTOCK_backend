@@ -144,9 +144,7 @@ CREATE TABLE backorders (
   generated_picking_task_id TEXT REFERENCES picking_tasks(id),
   fulfilled_at             TIMESTAMPTZ,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  -- Max backorder depth=1 enforced at application level (services/backorders_service.go)
-  -- Document only — no DB-level constraint possible without recursive CTE in CHECK
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_backorders_tenant_status ON backorders(tenant_id, status);
 CREATE INDEX idx_backorders_so ON backorders(original_sales_order_id);

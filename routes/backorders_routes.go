@@ -21,12 +21,13 @@ func RegisterBackordersRoutes(router *gin.RouterGroup, db *gorm.DB, config confi
 	route := router.Group("/backorders")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
-		read   := tools.RequirePermission(rolesRepo, "backorders", "read")
-		create := tools.RequirePermission(rolesRepo, "backorders", "create")
+		read           := tools.RequirePermission(rolesRepo, "backorders", "read")
+		// fulfill creates a picking task — gate on picking_tasks:create (more accurate than backorders:create).
+		fulfillPerm    := tools.RequirePermission(rolesRepo, "picking_tasks", "create")
 
 		// BO2 — list + detail + fulfill
 		route.GET("", read, ctrl.List)
 		route.GET("/:id", read, ctrl.GetByID)
-		route.POST("/:id/fulfill", create, ctrl.Fulfill)
+		route.POST("/:id/fulfill", fulfillPerm, ctrl.Fulfill)
 	}
 }
