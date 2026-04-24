@@ -60,7 +60,10 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		}
 	}
 
-	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID)
+	// S3.5 W3 — embed tenant_id into JWT. users table doesn't carry tenant_id yet
+	// (single-tenant pilot), so the source is Config.TenantID. When the users table gains
+	// tenant_id (planned post-S3.5), swap to user.TenantID without touching this signature.
+	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID, a.Config.TenantID)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,

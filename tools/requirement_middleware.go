@@ -30,6 +30,20 @@ func RequirePermission(store ports.RolesRepository, resource, action string) gin
 			return
 		}
 
+		// S3.5 W3 — reject tokens lacking the tenant_id claim. This forces a re-login for any
+		// JWT issued before the W3 deploy (claim was absent → defaults to ""). Without this gate
+		// a stale token would silently fall through to controllers that read TenantIDFromContext
+		// and get an empty string, which they would either reject (good) or treat as a wildcard
+		// (very bad). Reject here so the failure is consistent and actionable: 401 → re-login.
+		tenantVal, _ := c.Get(ContextKeyTenantID)
+		tenantID, _ := tenantVal.(string)
+		if tenantID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "token sin tenant — vuelve a iniciar sesión",
+			})
+			return
+		}
+
 		perms, err := store.GetRolePermissions(c.Request.Context(), role)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "no se pudieron verificar permisos"})

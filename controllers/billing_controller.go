@@ -15,9 +15,14 @@ import (
 )
 
 // BillingController handles Stripe billing endpoints.
+//
+// S3.5 W3: tenant is sourced per-request from the JWT claim (TenantIDFromContext) instead
+// of a constructor-injected env var. The TenantID field is kept ONLY as a default-only
+// fallback for system / cron / admin paths that bypass JWTAuthMiddleware — never used by
+// the JWT-protected endpoints.
 type BillingController struct {
 	Service       *services.BillingService
-	TenantID      string
+	TenantID      string // fallback for non-JWT callers only (cron, admin tooling)
 	WebhookSecret string
 }
 
@@ -28,6 +33,17 @@ func NewBillingController(svc *services.BillingService, tenantID, webhookSecret 
 		TenantID:      tenantID,
 		WebhookSecret: webhookSecret,
 	}
+}
+
+// resolveTenantID returns the tenant for this request: JWT claim first, env-var fallback only
+// if the claim is missing AND the controller has a default (system path). Returns "" iff there
+// is no tenant available — the caller MUST then return 401 to avoid leaking another tenant's
+// data via Config.TenantID.
+func (c *BillingController) resolveTenantID(ctx *gin.Context) string {
+	if t := tools.TenantIDFromContext(ctx); t != "" {
+		return t
+	}
+	return c.TenantID
 }
 
 // Checkout handles POST /api/billing/checkout (JWT required, tenant-scoped).
@@ -50,23 +66,30 @@ func (c *BillingController) Checkout(ctx *gin.Context) {
 		return
 	}
 
+	// S3.5 W3 — read tenant from JWT claim, never from c.TenantID (env var) for JWT-protected endpoints.
+	tenantID := c.resolveTenantID(ctx)
+	if tenantID == "" {
+		tools.ResponseUnauthorized(ctx, "BillingCheckout", "tenant no identificado en token", "billing_checkout")
+		return
+	}
+
 	// Get or create Stripe customer. Use tenant email/name from JWT claims if available,
 	// or fall back to tenant ID as display name (frontend can update later).
 	tenantEmail, _ := ctx.Get("email")
 	tenantEmailStr, _ := tenantEmail.(string)
 	if tenantEmailStr == "" {
-		tenantEmailStr = c.TenantID + "@tenant.estock.app"
+		tenantEmailStr = tenantID + "@tenant.estock.app"
 	}
 
-	// TODO(CS2 — S3.5): third arg is tenantName but passes c.TenantID (a UUID). Stripe dashboard
+	// TODO(CS2 — S3.5): third arg is tenantName but passes tenantID (a UUID). Stripe dashboard
 	// shows UUID as customer name — unidentifiable. Should use tenant's company name from DB or JWT.
-	customerID, resp := c.Service.GetOrCreateStripeCustomer(c.TenantID, tenantEmailStr, c.TenantID)
+	customerID, resp := c.Service.GetOrCreateStripeCustomer(tenantID, tenantEmailStr, tenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "BillingCheckout", "billing_checkout", resp)
 		return
 	}
 
-	checkoutURL, resp := c.Service.CreateCheckoutSession(c.TenantID, customerID, req.Plan, priceID)
+	checkoutURL, resp := c.Service.CreateCheckoutSession(tenantID, customerID, req.Plan, priceID)
 	if resp != nil {
 		writeErrorResponse(ctx, "BillingCheckout", "billing_checkout", resp)
 		return
@@ -79,7 +102,12 @@ func (c *BillingController) Checkout(ctx *gin.Context) {
 // GetSubscription handles GET /api/billing/subscription (JWT required, tenant-scoped).
 // Returns the current subscription record for the tenant.
 func (c *BillingController) GetSubscription(ctx *gin.Context) {
-	sub, resp := c.Service.GetSubscription()
+	tenantID := c.resolveTenantID(ctx)
+	if tenantID == "" {
+		tools.ResponseUnauthorized(ctx, "GetBillingSubscription", "tenant no identificado en token", "get_billing_subscription")
+		return
+	}
+	sub, resp := c.Service.GetSubscription(tenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "GetBillingSubscription", "get_billing_subscription", resp)
 		return
@@ -96,7 +124,12 @@ func (c *BillingController) GetSubscription(ctx *gin.Context) {
 // PortalSession handles POST /api/billing/portal-session (JWT required, tenant-scoped).
 // Creates a Stripe Billing Portal session and returns the URL.
 func (c *BillingController) PortalSession(ctx *gin.Context) {
-	sub, resp := c.Service.GetSubscription()
+	tenantID := c.resolveTenantID(ctx)
+	if tenantID == "" {
+		tools.ResponseUnauthorized(ctx, "BillingPortalSession", "tenant no identificado en token", "billing_portal_session")
+		return
+	}
+	sub, resp := c.Service.GetSubscription(tenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "BillingPortalSession", "billing_portal_session", resp)
 		return

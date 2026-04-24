@@ -167,9 +167,18 @@ func (s *BillingService) CreatePortalSession(customerID string) (string, *respon
 	return sess.URL, nil
 }
 
-// GetSubscription returns the current subscription for the service's tenant.
-func (s *BillingService) GetSubscription() (*database.Subscription, *responses.InternalResponse) {
-	return s.repo.GetSubscriptionByTenant(s.tenantID)
+// GetSubscription returns the current subscription for the given tenant.
+//
+// S3.5 W3: signature now requires tenantID (sourced from JWT claim by the controller).
+// Previously read s.tenantID (env var) which made the BillingService unsafe in any pod
+// serving more than one tenant. The injected s.tenantID is kept as a fallback ONLY for
+// callers that pass "" (e.g. cron / system jobs); production endpoints MUST pass the
+// per-request tenant.
+func (s *BillingService) GetSubscription(tenantID string) (*database.Subscription, *responses.InternalResponse) {
+	if tenantID == "" {
+		tenantID = s.tenantID
+	}
+	return s.repo.GetSubscriptionByTenant(tenantID)
 }
 
 // HandleCheckoutSessionCompleted processes a checkout.session.completed Stripe event.

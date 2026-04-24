@@ -8,10 +8,11 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-// Context keys for values set by JWTAuthMiddleware (e.g. audit, RBAC).
+// Context keys for values set by JWTAuthMiddleware (e.g. audit, RBAC, multi-tenant isolation).
 const (
-	ContextKeyUserID = "user_id"
-	ContextKeyRole   = "role"
+	ContextKeyUserID   = "user_id"
+	ContextKeyRole     = "role"
+	ContextKeyTenantID = "tenant_id" // S3.5 W3 — tenant isolation per request
 )
 
 // JWTAuthMiddleware returns a Gin middleware that validates JWT and sets user_id and role on context.
@@ -49,6 +50,14 @@ func JWTAuthMiddleware(secret string) gin.HandlerFunc {
 		if claims, ok := token.Claims.(*Claims); ok {
 			c.Set(ContextKeyUserID, claims.UserId)
 			c.Set(ContextKeyRole, claims.Role)
+			// S3.5 W3 — surface tenant_id so controllers can scope per-request without
+			// touching Config.TenantID env var. Empty value is intentionally still set so
+			// RequirePermission can detect and reject pre-W3 tokens.
+			c.Set(ContextKeyTenantID, claims.TenantID)
+			// Also set "email" for legacy callers (BillingController used to read it).
+			if claims.Email != "" {
+				c.Set("email", claims.Email)
+			}
 		}
 		c.Next()
 	}
