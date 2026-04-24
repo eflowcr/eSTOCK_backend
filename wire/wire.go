@@ -188,8 +188,15 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 }
 
 // NewPickingTask builds PickingTaskRepository and PickingTaskService.
-func NewPickingTask(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService) (ports.PickingTaskRepository, *services.PickingTaskService) {
-	r := &repositories.PickingTaskRepository{DB: db, AuditService: auditSvc, NotificationsSvc: notifSvc}
+// soRepo is optional (nil-safe): when non-nil, SO3 cross-domain link is active and
+// CompletePickingTask will update picked quantities on the linked sales order.
+func NewPickingTask(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService, soRepo repositories.SOPickedQtyUpdater) (ports.PickingTaskRepository, *services.PickingTaskService) {
+	r := &repositories.PickingTaskRepository{
+		DB:               db,
+		AuditService:     auditSvc,
+		NotificationsSvc: notifSvc,
+		SORepository:     soRepo,
+	}
 	return r, services.NewPickingTaskService(r)
 }
 
