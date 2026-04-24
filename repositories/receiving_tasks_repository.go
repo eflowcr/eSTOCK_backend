@@ -421,6 +421,10 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, tenantID s
 	return nil
 }
 
+// UpdateReceivingTask applies whitelist-filtered updates to a receiving task.
+// TODO S3 (M1 deuda — HR-S2.5-W1): reads inside this Transaction use r.DB instead of tx.
+// The read-modify-write is therefore not atomic. Fix: replace r.DB.First / r.DB.Model
+// inside the closure with tx.First / tx.Model to make the transaction meaningful.
 func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse {
 	var handledResp *responses.InternalResponse
 
