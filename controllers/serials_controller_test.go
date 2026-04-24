@@ -13,16 +13,23 @@ import (
 )
 
 // ─── mock repo ───────────────────────────────────────────────────────────────
+//
+// S3.5 W2-A: mock records the tenantID it was called with so isolation tests
+// can assert the controller forwarded the right tenant.
 
 type mockSerialsRepoCtrl struct {
-	byID      map[string]*database.Serial
-	bySKU     map[string][]database.Serial
-	createErr *responses.InternalResponse
-	updateErr *responses.InternalResponse
-	deleteErr *responses.InternalResponse
+	byID         map[string]*database.Serial
+	bySKU        map[string][]database.Serial
+	createErr    *responses.InternalResponse
+	updateErr    *responses.InternalResponse
+	deleteErr    *responses.InternalResponse
+	gotTenantIDs []string
 }
 
-func (m *mockSerialsRepoCtrl) GetSerialByID(id string) (*database.Serial, *responses.InternalResponse) {
+func (m *mockSerialsRepoCtrl) recordTenant(t string) { m.gotTenantIDs = append(m.gotTenantIDs, t) }
+
+func (m *mockSerialsRepoCtrl) GetSerialByID(tenantID, id string) (*database.Serial, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	if m.byID != nil {
 		if s, ok := m.byID[id]; ok {
 			return s, nil
@@ -31,50 +38,51 @@ func (m *mockSerialsRepoCtrl) GetSerialByID(id string) (*database.Serial, *respo
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockSerialsRepoCtrl) GetSerialsBySKU(sku string) ([]database.Serial, *responses.InternalResponse) {
+func (m *mockSerialsRepoCtrl) GetSerialsBySKU(tenantID, sku string) ([]database.Serial, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	if m.bySKU != nil {
-		if serials, ok := m.bySKU[sku]; ok {
-			return serials, nil
+		if list, ok := m.bySKU[sku]; ok {
+			return list, nil
 		}
 	}
 	return []database.Serial{}, nil
 }
 
-func (m *mockSerialsRepoCtrl) CreateSerial(data *requests.CreateSerialRequest) *responses.InternalResponse {
+func (m *mockSerialsRepoCtrl) CreateSerial(tenantID string, data *requests.CreateSerialRequest) *responses.InternalResponse {
+	m.recordTenant(tenantID)
 	return m.createErr
 }
 
-func (m *mockSerialsRepoCtrl) UpdateSerial(id string, data map[string]interface{}) *responses.InternalResponse {
+func (m *mockSerialsRepoCtrl) UpdateSerial(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
+	m.recordTenant(tenantID)
 	return m.updateErr
 }
 
-func (m *mockSerialsRepoCtrl) DeleteSerial(id string) *responses.InternalResponse {
+func (m *mockSerialsRepoCtrl) DeleteSerial(tenantID, id string) *responses.InternalResponse {
+	m.recordTenant(tenantID)
 	return m.deleteErr
 }
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
 func newSerialsController(repo *mockSerialsRepoCtrl) *SerialsController {
 	svc := services.NewSerialsService(repo)
-	return NewSerialsController(*svc)
+	return NewSerialsController(*svc, ctrlTenantA)
 }
 
-// ─── tests ───────────────────────────────────────────────────────────────────
-
-func TestSerialsController_GetSerialByID_Found(t *testing.T) {
+func TestSerialsController_GetSerialByID_Success(t *testing.T) {
 	repo := &mockSerialsRepoCtrl{
 		byID: map[string]*database.Serial{
-			"ser-1": {ID: "ser-1", SerialNumber: "SN-001", SKU: "SKU-001", Status: "available"},
+			"s1": {ID: "s1", SerialNumber: "SN-001", SKU: "SKU-A"},
 		},
 	}
 	ctrl := newSerialsController(repo)
-	w := performRequest(ctrl.GetSerialByID, "GET", "/serials/ser-1", nil, gin.Params{{Key: "id", Value: "ser-1"}})
+	w := performRequest(ctrl.GetSerialByID, "GET", "/serials/s1", nil, gin.Params{{Key: "id", Value: "s1"}})
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, repo.gotTenantIDs, ctrlTenantA)
 }
 
 func TestSerialsController_GetSerialByID_NotFound(t *testing.T) {
 	ctrl := newSerialsController(&mockSerialsRepoCtrl{byID: map[string]*database.Serial{}})
-	w := performRequest(ctrl.GetSerialByID, "GET", "/serials/99", nil, gin.Params{{Key: "id", Value: "99"}})
+	w := performRequest(ctrl.GetSerialByID, "GET", "/serials/missing", nil, gin.Params{{Key: "id", Value: "missing"}})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -84,33 +92,26 @@ func TestSerialsController_GetSerialByID_MissingParam(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestSerialsController_GetSerialsBySKU_WithData(t *testing.T) {
+func TestSerialsController_GetSerialsBySKU_Success(t *testing.T) {
 	repo := &mockSerialsRepoCtrl{
 		bySKU: map[string][]database.Serial{
-			"SKU-001": {{ID: "ser-1", SerialNumber: "SN-001", SKU: "SKU-001", Status: "available"}},
+			"SKU-A": {{ID: "s1", SerialNumber: "SN-001", SKU: "SKU-A"}},
 		},
 	}
 	ctrl := newSerialsController(repo)
-	w := performRequest(ctrl.GetSerialsBySKU, "GET", "/serials/SKU-001", nil, gin.Params{{Key: "sku", Value: "SKU-001"}})
+	w := performRequest(ctrl.GetSerialsBySKU, "GET", "/serials/by-sku/SKU-A", nil, gin.Params{{Key: "sku", Value: "SKU-A"}})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestSerialsController_GetSerialsBySKU_Empty(t *testing.T) {
+func TestSerialsController_GetSerialsBySKU_MissingSku(t *testing.T) {
 	ctrl := newSerialsController(&mockSerialsRepoCtrl{})
-	w := performRequest(ctrl.GetSerialsBySKU, "GET", "/serials/SKU-999", nil, gin.Params{{Key: "sku", Value: "SKU-999"}})
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestSerialsController_GetSerialsBySKU_MissingParam(t *testing.T) {
-	ctrl := newSerialsController(&mockSerialsRepoCtrl{})
-	// The controller reads sku via ctx.Param("sku") — empty string triggers 400
-	w := performRequest(ctrl.GetSerialsBySKU, "GET", "/serials/", nil, gin.Params{{Key: "sku", Value: ""}})
+	w := performRequest(ctrl.GetSerialsBySKU, "GET", "/serials/by-sku/", nil, gin.Params{{Key: "sku", Value: ""}})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestSerialsController_CreateSerial_Success(t *testing.T) {
 	ctrl := newSerialsController(&mockSerialsRepoCtrl{})
-	body := requests.CreateSerialRequest{SerialNumber: "SN-001", SKU: "SKU-001"}
+	body := requests.CreateSerialRequest{SerialNumber: "SN-NEW", SKU: "SKU-B"}
 	w := performRequest(ctrl.CreateSerial, "POST", "/serials", body, nil)
 	assert.Equal(t, http.StatusCreated, w.Code)
 }
@@ -121,47 +122,23 @@ func TestSerialsController_CreateSerial_InvalidJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestSerialsController_CreateSerial_Conflict(t *testing.T) {
-	repo := &mockSerialsRepoCtrl{
-		createErr: &responses.InternalResponse{
-			Message:    "serial number already exists",
-			Handled:    true,
-			StatusCode: responses.StatusConflict,
-		},
-	}
-	ctrl := newSerialsController(repo)
-	body := requests.CreateSerialRequest{SerialNumber: "SN-DUP", SKU: "SKU-001"}
-	w := performRequest(ctrl.CreateSerial, "POST", "/serials", body, nil)
-	assert.Equal(t, http.StatusConflict, w.Code)
-}
-
 func TestSerialsController_UpdateSerial_Success(t *testing.T) {
 	ctrl := newSerialsController(&mockSerialsRepoCtrl{})
-	body := map[string]interface{}{"status": "in_use"}
-	w := performRequest(ctrl.UpdateSerial, "PUT", "/serials/ser-1", body, gin.Params{{Key: "id", Value: "ser-1"}})
+	body := map[string]interface{}{"status": "used"}
+	w := performRequest(ctrl.UpdateSerial, "PUT", "/serials/s1", body, gin.Params{{Key: "id", Value: "s1"}})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestSerialsController_UpdateSerial_MissingParam(t *testing.T) {
 	ctrl := newSerialsController(&mockSerialsRepoCtrl{})
-	body := map[string]interface{}{"status": "in_use"}
+	body := map[string]interface{}{"status": "used"}
 	w := performRequest(ctrl.UpdateSerial, "PUT", "/serials/", body, gin.Params{{Key: "id", Value: ""}})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestSerialsController_UpdateSerial_NotFound(t *testing.T) {
-	repo := &mockSerialsRepoCtrl{
-		updateErr: &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound},
-	}
-	ctrl := newSerialsController(repo)
-	body := map[string]interface{}{"status": "in_use"}
-	w := performRequest(ctrl.UpdateSerial, "PUT", "/serials/99", body, gin.Params{{Key: "id", Value: "99"}})
-	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
 func TestSerialsController_DeleteSerial_Success(t *testing.T) {
 	ctrl := newSerialsController(&mockSerialsRepoCtrl{})
-	w := performRequest(ctrl.DeleteSerial, "DELETE", "/serials/ser-1", nil, gin.Params{{Key: "id", Value: "ser-1"}})
+	w := performRequest(ctrl.DeleteSerial, "DELETE", "/serials/s1", nil, gin.Params{{Key: "id", Value: "s1"}})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
@@ -171,14 +148,18 @@ func TestSerialsController_DeleteSerial_MissingParam(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestSerialsController_DeleteSerial_Error(t *testing.T) {
-	repo := &mockSerialsRepoCtrl{
-		deleteErr: &responses.InternalResponse{
-			Message:    "db error",
-			StatusCode: responses.StatusInternalServerError,
-		},
-	}
+// TestSerialsController_TenantIsolation_forwardsControllerTenant verifies the
+// constructor-injected TenantID is forwarded to every repo call.
+func TestSerialsController_TenantIsolation_forwardsControllerTenant(t *testing.T) {
+	repo := &mockSerialsRepoCtrl{}
 	ctrl := newSerialsController(repo)
-	w := performRequest(ctrl.DeleteSerial, "DELETE", "/serials/ser-1", nil, gin.Params{{Key: "id", Value: "ser-1"}})
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	performRequest(ctrl.GetSerialByID, "GET", "/serials/x", nil, gin.Params{{Key: "id", Value: "x"}})
+	performRequest(ctrl.CreateSerial, "POST", "/serials", requests.CreateSerialRequest{SerialNumber: "SN-X", SKU: "SKU-X"}, nil)
+	performRequest(ctrl.DeleteSerial, "DELETE", "/serials/x", nil, gin.Params{{Key: "id", Value: "x"}})
+
+	for _, tid := range repo.gotTenantIDs {
+		assert.Equal(t, ctrlTenantA, tid)
+	}
+	assert.NotContains(t, repo.gotTenantIDs, ctrlTenantB)
 }

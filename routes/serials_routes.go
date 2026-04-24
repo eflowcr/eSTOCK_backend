@@ -17,7 +17,8 @@ var _ ports.SerialsRepository = (*repositories.SerialsRepositorySQLC)(nil)
 
 func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	_, serialService := wire.NewSerials(db, pool)
-	serialController := controllers.NewSerialsController(*serialService)
+	// S3.5 W2-A: pass tenantID from configuration so all CRUD is tenant-scoped.
+	serialController := controllers.NewSerialsController(*serialService, config.TenantID)
 
 	route := router.Group("/serials")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
