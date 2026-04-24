@@ -275,11 +275,13 @@ func TestSeedFarma_Idempotent(t *testing.T) {
 	err2 := tools.SeedFarma(ctx, db, tenantID)
 	require.NoError(t, err2, "second SeedFarma should be idempotent (no error)")
 
-	// Verify articles count is not doubled.
+	// Verify articles count is not doubled. S3.5 W4: SKUs are now tenant-prefixed
+	// ("T00000000-RX-001"), so we filter on the prefixed pattern for this tenant
+	// instead of bare "RX-%".
 	var count int64
 	require.NoError(t, db.Model(&database.Article{}).
-		Where("sku LIKE 'RX-%'").Count(&count).Error)
-	assert.EqualValues(t, 50, count, "exactly 50 farma articles should exist")
+		Where("tenant_id = ? AND sku LIKE '%RX-%'", tenantID).Count(&count).Error)
+	assert.EqualValues(t, 50, count, "exactly 50 farma articles should exist for tenant")
 }
 
 // ─── Test: Rate-limit middleware integration (route-level) ───────────────────

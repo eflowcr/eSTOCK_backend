@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
@@ -14,8 +15,61 @@ import (
 
 const FarmaSeedName = "farma-50skus"
 
+// tenantPrefix builds a short, deterministic prefix from a tenant UUID so demo
+// data inserted for two different tenants does not collide on still-global
+// UNIQUE constraints (e.g. articles_sku_key, receiving_tasks_task_id_key,
+// picking_tasks_task_id_key, sales/purchase order numbers).
+//
+// S3.5 W4 (HR-S3-W5 C2 follow-up): articles got tenant_id in W1 but the legacy
+// global UNIQUE(sku) is intentionally retained because 8+ child tables FK on
+// articles.sku without tenant_id (see migration 000029). Without prefixing,
+// tenant 2 signing up + auto-running SeedFarma would hit a UNIQUE violation on
+// "PARA-500" and end up with an empty WMS. The prefix scopes all demo
+// identifiers per tenant; user-visible NAMES are left clean ("Paracetamol
+// 500mg…") so the UI still reads naturally.
+//
+// Format: "T<first 8 hex chars of tenantID, uppercase, no dashes>-".
+// Examples:
+//
+//	tenantPrefix("00000000-0000-0000-0000-000000000001") -> "T00000000-"
+//	tenantPrefix("a1b2c3d4-...")                          -> "TA1B2C3D4-"
+//
+// Empty / malformed tenantID falls back to the literal "TANON-" so the seeder
+// still produces a valid (albeit collision-prone) prefix instead of panicking.
+func tenantPrefix(tenantID string) string {
+	clean := strings.ReplaceAll(tenantID, "-", "")
+	if len(clean) < 8 {
+		return "TANON-"
+	}
+	return "T" + strings.ToUpper(clean[:8]) + "-"
+}
+
+// prefixedSKU applies tenantPrefix to a base SKU. Centralised so the rest of
+// the seeder reads naturally and any future change to the prefix scheme lives
+// in one place.
+func prefixedSKU(tenantID, baseSKU string) string {
+	return tenantPrefix(tenantID) + baseSKU
+}
+
+// prefixedTaskID applies the tenant prefix to demo task identifiers
+// (RT-DEMO-0001, PK-DEMO-0001, IN-DEMO-0001, ORD-DEMO-0001, etc.).
+// receiving_tasks.task_id and picking_tasks.task_id still carry global UNIQUE
+// indexes from migration 000002, so a second tenant re-running the seeder
+// would otherwise collide.
+func prefixedTaskID(tenantID, baseID string) string {
+	return tenantPrefix(tenantID) + baseID
+}
+
 // SeedFarma seeds ~50 pharmaceutical SKUs plus tasks and movements for the given tenant.
 // It is idempotent: if demo_data_seeds already has a row for (tenantID, farma-50skus), it returns nil immediately.
+//
+// S3.5 W4 — multi-tenant safe: every demo identifier that lives behind a still-global
+// UNIQUE constraint (articles.sku, receiving_tasks.task_id, picking_tasks.task_id) is
+// stamped with a per-tenant prefix derived from the first 8 hex chars of tenantID.
+// Two tenants signing up via SaaS self-service therefore each get their own clean
+// demo dataset instead of the second tenant hitting a duplicate-key error or
+// silently inheriting tenant 1's rows. See tenantPrefix and migration 000029 for
+// the full structural-debt context.
 func SeedFarma(ctx context.Context, db *gorm.DB, tenantID string) error {
 	// ── Idempotency check ────────────────────────────────────────────────────────
 	var existing database.DemoDataSeed
@@ -106,10 +160,14 @@ func SeedFarma(ctx context.Context, db *gorm.DB, tenantID string) error {
 // locationIDs are used for FK references in articles.default_location_id.
 // locationCodes are used for inventory.location and task item location fields
 // (which store codes, not IDs — known S2 debt, see feedback_estock_location_storage_inconsistency).
-// TODO(M3 — S3.5): tenantID is dropped (blank identifier _). Locations have no tenant_id column
-// (global table) so this is currently correct. But once articles and inventory_movements gain
-// tenant_id columns (see C2/ARCH BLOCKER), this function signature should accept and use tenantID.
-func seedLocations(ctx context.Context, tx *gorm.DB, _ string) (ids []string, codes []string, err error) {
+//
+// S3.5 W4: locations now have tenant_id (migration 000032) with composite
+// UNIQUE (tenant_id, location_code), so two tenants can both have "RX-A1"
+// without collision. We DO NOT prefix location_code — it stays human-readable
+// per tenant and the per-tenant unique index handles isolation. We DO scope
+// the FirstOrCreate by tenant so a second tenant gets its own row instead of
+// adopting tenant 1's location id.
+func seedLocations(ctx context.Context, tx *gorm.DB, tenantID string) (ids []string, codes []string, err error) {
 	locs := []struct {
 		code string
 		zone string
@@ -131,15 +189,17 @@ func seedLocations(ctx context.Context, tx *gorm.DB, _ string) (ids []string, co
 		desc := l.desc
 		loc := database.Location{
 			ID:           uuid.NewString(),
+			TenantID:     tenantID,
 			LocationCode: l.code,
 			Description:  &desc,
 			Zone:         &l.zone,
 			Type:         "shelf",
 			IsActive:     true,
 		}
-		// FirstOrCreate so idempotent if locations already exist from a prior partial run.
+		// FirstOrCreate scoped by (tenant_id, location_code) so each tenant
+		// owns its own location rows. Idempotent for partial-run recovery too.
 		if err := tx.WithContext(ctx).
-			Where("location_code = ?", l.code).
+			Where("tenant_id = ? AND location_code = ?", tenantID, l.code).
 			FirstOrCreate(&loc).Error; err != nil {
 			return nil, nil, fmt.Errorf("location %s: %w", l.code, err)
 		}
@@ -316,17 +376,23 @@ var farmaArticles = []farmaArticle{
 // (tenant_id, sku). FirstOrCreate now scopes by (tenant_id, sku) so each tenant
 // looks up its own row instead of silently inheriting another tenant's article.
 //
-// KNOWN LIMITATION (W1): the legacy global UNIQUE(sku) is still in place to keep
-// 8+ child-table FKs satisfied; this means a SECOND tenant signing up cannot yet
-// register the same demo SKUs — the INSERT will fail. SeedFarma will surface a
-// clear duplicate-key error rather than silently leaking data. The W4 wave will
-// either prefix demo SKUs per-tenant or share a single demo catalog explicitly,
-// once child FKs migrate to composite (tenant_id, sku). For the immediate goal
-// (un-blocking signup for the second G-customer in prod), the operator can pre-
-// migrate them with a custom SKU set OR keep ENABLE_SIGNUP=false until W4 lands.
+// S3.5 W4: SKUs are now prefixed with the tenant's short hash (see
+// tenantPrefix) before insert. The legacy global UNIQUE(sku) — retained because
+// 8+ child tables FK on articles.sku without tenant_id (see migration 000029) —
+// would otherwise reject the second tenant's "PARA-500" / "RX-001" / etc. The
+// prefix uniqueifies the SKU value across tenants while keeping the per-tenant
+// composite (tenant_id, sku) intact. User-visible NAMES ("Paracetamol 500mg…")
+// are kept clean so the catalog UI reads naturally.
+//
+// Returns the list of articles AS WRITTEN (with prefixed SKUs) so downstream
+// seed steps (inventory, tasks, movements) reference the SAME prefixed SKUs.
 func seedArticles(ctx context.Context, tx *gorm.DB, tenantID string, categoryIDs, locationIDs []string) ([]farmaArticle, error) {
 	active := true
-	for _, a := range farmaArticles {
+	written := make([]farmaArticle, 0, len(farmaArticles))
+	for _, base := range farmaArticles {
+		a := base                            // copy so we can mutate the SKU per-tenant
+		a.sku = prefixedSKU(tenantID, base.sku)
+
 		shelfDays := a.shelfDays
 		minQty := a.minQty
 		price := a.unitPrice
@@ -355,8 +421,9 @@ func seedArticles(ctx context.Context, tx *gorm.DB, tenantID string, categoryIDs
 			FirstOrCreate(&article).Error; err != nil {
 			return nil, fmt.Errorf("article %s: %w", a.sku, err)
 		}
+		written = append(written, a)
 	}
-	return farmaArticles, nil
+	return written, nil
 }
 
 // ─── inventory ───────────────────────────────────────────────────────────────
@@ -443,8 +510,13 @@ func seedReceivingTasks(ctx context.Context, tx *gorm.DB, tenantID string, artic
 		}
 
 		supplierID := supplierIDs[i%len(supplierIDs)]
-		taskID := fmt.Sprintf("RT-DEMO-%04d", i+1)
-		inboundNum := fmt.Sprintf("IN-DEMO-%04d", i+1)
+		// S3.5 W4: receiving_tasks.task_id still has a global UNIQUE index
+		// (receiving_tasks_task_id_key from migration 000002), so demo task IDs
+		// must be tenant-prefixed to avoid collision when a second tenant runs
+		// SeedFarma. inbound_number's UNIQUE was made per-tenant in 000019 but
+		// we prefix it too for visual consistency in the UI.
+		taskID := prefixedTaskID(tenantID, fmt.Sprintf("RT-DEMO-%04d", i+1))
+		inboundNum := prefixedTaskID(tenantID, fmt.Sprintf("IN-DEMO-%04d", i+1))
 
 		task := database.ReceivingTask{
 			ID:          uuid.NewString(),
@@ -524,8 +596,11 @@ func seedPickingTasks(ctx context.Context, tx *gorm.DB, tenantID string, article
 		}
 
 		customerID := customerIDs[i%len(customerIDs)]
-		taskID := fmt.Sprintf("PK-DEMO-%04d", i+1)
-		orderNum := fmt.Sprintf("ORD-DEMO-%04d", i+1)
+		// S3.5 W4: picking_tasks.task_id has a global UNIQUE index
+		// (picking_tasks_task_id_key from migration 000002). Tenant-prefix to
+		// keep demo IDs unique across tenants.
+		taskID := prefixedTaskID(tenantID, fmt.Sprintf("PK-DEMO-%04d", i+1))
+		orderNum := prefixedTaskID(tenantID, fmt.Sprintf("ORD-DEMO-%04d", i+1))
 
 		task := database.PickingTask{
 			ID:          uuid.NewString(),
