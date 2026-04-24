@@ -72,32 +72,33 @@ SELECT id, tenant_id, name, parent_id, is_active, created_at, updated_at
 FROM categories
 WHERE tenant_id = $1
   AND ($2::boolean IS NULL OR is_active = $2)
+  -- TODO(S3/MA4): escape ILIKE wildcards with replace(search,'%','\%') ESCAPE '\' to prevent
+  -- DoS via catastrophic backtracking on strings containing many '%' or '_' characters.
   AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%')
 ORDER BY name ASC
-LIMIT COALESCE($4::int, 200)
-OFFSET COALESCE($5::int, 0)
+LIMIT COALESCE($5::int, 200)
+OFFSET COALESCE($4::int, 0)
 `
 
-// ListCategoriesByTenantParams holds optional filter params for ListCategoriesByTenant.
-// Use pgtype.Bool{} (Valid:false) / pgtype.Text{} (Valid:false) / pgtype.Int4{} (Valid:false)
-// to pass NULL and skip a filter.  M8: fields renamed from sqlc Column* defaults.
 type ListCategoriesByTenantParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	IsActive pgtype.Bool `json:"is_active"`
 	Search   pgtype.Text `json:"search"`
-	Limit    pgtype.Int4 `json:"limit"`
 	Offset   pgtype.Int4 `json:"offset"`
+	Limit    pgtype.Int4 `json:"limit"`
 }
 
 // M8: Push search/is_active filters and pagination to SQL (HR1 deferred).
 // Pass NULL for any optional param to skip that filter.
+// sqlc.narg() used so generated struct has named fields (IsActive, Search, Limit, Offset)
+// instead of positional Column2…Column5 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
 func (q *Queries) ListCategoriesByTenant(ctx context.Context, arg ListCategoriesByTenantParams) ([]Category, error) {
 	rows, err := q.db.Query(ctx, listCategoriesByTenant,
 		arg.TenantID,
 		arg.IsActive,
 		arg.Search,
-		arg.Limit,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

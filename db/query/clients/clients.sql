@@ -23,17 +23,19 @@ FROM clients WHERE tenant_id = $1 AND code = $2;
 -- name: ListClientsByTenant :many
 -- M8: Push type/is_active/search filters and pagination to SQL (HR1 deferred).
 -- Pass NULL for any optional param to skip that filter.
+-- sqlc.narg() used so generated struct has named fields (Type, IsActive, Search, Limit, Offset)
+-- instead of positional Column2…Column6 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
 SELECT id, tenant_id, type, code, name, email, phone, address, tax_id, notes, is_active, created_by, created_at, updated_at
 FROM clients
 WHERE tenant_id = $1
-  AND ($2::text IS NULL OR type = $2)
-  AND ($3::boolean IS NULL OR is_active = $3)
-  -- TODO(S3/MA4): escape ILIKE wildcards with replace($4,'%','\%') ESCAPE '\' to prevent
+  AND (sqlc.narg('type')::text IS NULL OR type = sqlc.narg('type'))
+  AND (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active'))
+  -- TODO(S3/MA4): escape ILIKE wildcards with replace(search,'%','\%') ESCAPE '\' to prevent
   -- DoS via catastrophic backtracking on strings containing many '%' or '_' characters.
-  AND ($4::text IS NULL OR (name ILIKE '%' || $4 || '%' OR code ILIKE '%' || $4 || '%'))
+  AND (sqlc.narg('search')::text IS NULL OR (name ILIKE '%' || sqlc.narg('search') || '%' OR code ILIKE '%' || sqlc.narg('search') || '%'))
 ORDER BY name ASC
-LIMIT COALESCE($5::int, 100)
-OFFSET COALESCE($6::int, 0);
+LIMIT COALESCE(sqlc.narg('limit')::int, 100)
+OFFSET COALESCE(sqlc.narg('offset')::int, 0);
 
 -- name: UpdateClient :one
 -- HR1-M3: tenant_id guard prevents cross-tenant update.
