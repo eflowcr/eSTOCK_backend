@@ -51,6 +51,12 @@ func (s *CategoriesService) ListByTenant(tenantID string) ([]database.Category, 
 	return s.Repository.ListByTenant(tenantID)
 }
 
+// ListByTenantFiltered delegates to the SQL-filtered repository path (M8).
+// Pass nil for any parameter to skip that filter.
+func (s *CategoriesService) ListByTenantFiltered(tenantID string, isActive *bool, search *string, limit *int32, offset *int32) ([]database.Category, *responses.InternalResponse) {
+	return s.Repository.ListByTenantFiltered(tenantID, isActive, search, limit, offset)
+}
+
 func (s *CategoriesService) GetTree(tenantID string) ([]responses.CategoryTreeNode, *responses.InternalResponse) {
 	all, resp := s.Repository.ListByTenant(tenantID)
 	if resp != nil {

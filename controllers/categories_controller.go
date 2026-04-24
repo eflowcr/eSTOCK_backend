@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"strconv"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -17,7 +19,32 @@ func NewCategoriesController(service services.CategoriesService, tenantID string
 }
 
 func (c *CategoriesController) List(ctx *gin.Context) {
-	categories, resp := c.Service.ListByTenant(c.TenantID)
+	// C1 fix: wire M8 SQL filter params to HTTP query string (mirrors clients_controller.go).
+	var isActive *bool
+	if a := ctx.Query("is_active"); a != "" {
+		v := a == "true"
+		isActive = &v
+	}
+	var search *string
+	if s := ctx.Query("search"); s != "" {
+		search = &s
+	}
+	var limit *int32
+	if l := ctx.Query("limit"); l != "" {
+		if n, err := strconv.ParseInt(l, 10, 32); err == nil && n > 0 {
+			v := int32(n)
+			limit = &v
+		}
+	}
+	var offset *int32
+	if o := ctx.Query("offset"); o != "" {
+		if n, err := strconv.ParseInt(o, 10, 32); err == nil && n >= 0 {
+			v := int32(n)
+			offset = &v
+		}
+	}
+
+	categories, resp := c.Service.ListByTenantFiltered(c.TenantID, isActive, search, limit, offset)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListCategories", "list_categories", resp)
 		return
