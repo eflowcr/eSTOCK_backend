@@ -216,7 +216,7 @@ func TestCronDispatch_BothJobsRun(t *testing.T) {
 	}
 
 	// Should not panic — errors are logged, not propagated
-	CronDispatch(db, analyzer)
+	CronDispatch(db, analyzer, nil, nil)
 
 	assert.True(t, analyzerCalled, "analyzer must be called")
 	// stale cleanup ran on empty tables without error (verified by no panic)

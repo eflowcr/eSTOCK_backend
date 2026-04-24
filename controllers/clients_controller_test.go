@@ -41,6 +41,11 @@ func (m *mockClientsRepo) GetByID(id string) (*database.Client, *responses.Inter
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
+// GetByIDForTenant implements the tenant-scoped lookup (HR1-M3). In tests, ignores tenant filter.
+func (m *mockClientsRepo) GetByIDForTenant(id, _ string) (*database.Client, *responses.InternalResponse) {
+	return m.GetByID(id)
+}
+
 func (m *mockClientsRepo) GetByTenantAndCode(_, code string) (*database.Client, *responses.InternalResponse) {
 	if m.byCode != nil {
 		if c, ok := m.byCode[code]; ok {
@@ -54,7 +59,8 @@ func (m *mockClientsRepo) ListByTenant(_ string) ([]database.Client, *responses.
 	return m.clients, nil
 }
 
-func (m *mockClientsRepo) Update(id string, data *requests.UpdateClientRequest) (*database.Client, *responses.InternalResponse) {
+// Update now requires tenantID (HR1-M3). In tests, ignores tenant filter.
+func (m *mockClientsRepo) Update(id string, data *requests.UpdateClientRequest, _ string) (*database.Client, *responses.InternalResponse) {
 	if m.byID != nil {
 		if c, ok := m.byID[id]; ok {
 			c.Name = data.Name
@@ -64,7 +70,8 @@ func (m *mockClientsRepo) Update(id string, data *requests.UpdateClientRequest) 
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockClientsRepo) SoftDelete(id string) *responses.InternalResponse {
+// SoftDelete now requires tenantID (HR1-M3). In tests, ignores tenant filter.
+func (m *mockClientsRepo) SoftDelete(id, _ string) *responses.InternalResponse {
 	if m.byID != nil {
 		if _, ok := m.byID[id]; ok {
 			return nil

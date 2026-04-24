@@ -45,7 +45,9 @@ func (c *AdminCronController) Trigger(ctx *gin.Context) {
 			return
 		}
 	case "all":
-		tools.CronDispatch(c.DB, analyzer)
+		// Admin manual trigger: no notification callbacks (fire-and-forget, notifications
+		// are wired in the background cron goroutine in main.go).
+		tools.CronDispatch(c.DB, analyzer, nil, nil)
 	default:
 		tools.ResponseBadRequest(ctx, "CronTrigger", "Job inválido. Use: stock_alerts | stale_reservations | all", "cron_trigger")
 		return

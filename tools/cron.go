@@ -87,23 +87,29 @@ func RunStaleReservationsCleanup(db *gorm.DB) error {
 }
 
 // RunStockAlertAnalysis corre el análisis de alertas de stock (low + expiring).
-// A7: advisory lock a nivel de sesión para no duplicar en multi-replica.
-// El caller provee la función analyzer que crea el repo/service y llama Analyze()+LotExpiration().
+// HR1-C2: usa pg_try_advisory_xact_lock (transaction-scoped) dentro de db.Transaction(),
+// igual que RunStaleReservationsCleanup. El lock se libera automáticamente al commit/rollback,
+// eliminando el bug donde lock y unlock corrían en distintas conexiones del pool (session-level
+// pg_try_advisory_lock + defer pg_advisory_unlock en conexiones distintas del pool).
+// analyzer() corre dentro de la misma transacción; GORM maneja transacciones anidadas vía
+// savepoints, por lo que los Begin() internos del repo no causan deadlock.
 func RunStockAlertAnalysis(db *gorm.DB, analyzer func() error) error {
 	if db == nil {
 		return errors.New("cron: nil db")
 	}
-	var locked bool
-	if err := db.Raw("SELECT pg_try_advisory_lock(987654321)").Scan(&locked).Error; err != nil {
-		return err
-	}
-	if !locked {
-		log.Debug().Msg("cron: stock_alerts: otro pod tiene el lock, skipping")
-		return nil
-	}
-	defer db.Exec("SELECT pg_advisory_unlock(987654321)")
-
-	return analyzer()
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Advisory lock a nivel de transacción — un pod a la vez.
+		// Se libera automáticamente al commit/rollback.
+		var locked bool
+		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(987654321)").Scan(&locked).Error; err != nil {
+			return err
+		}
+		if !locked {
+			log.Debug().Msg("cron: stock_alerts: otro pod tiene el lock, skipping")
+			return nil
+		}
+		return analyzer()
+	})
 }
 
 // LotExpirationWindow describes a lot approaching expiration.
@@ -210,21 +216,23 @@ func RunLowStockNotifications(db *gorm.DB, notifyFn func(sku, message string) er
 // CronDispatch ejecuta todos los jobs del cron en secuencia.
 // Se invoca: una vez al arrancar (tras delay de estabilización) y luego cada hora por el ticker.
 // Los errores se loggean sin parar la ejecución del siguiente job.
-// lotNotifyFn and lowStockNotifyFn are optional callbacks for notification integration.
-func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn ...func(eventType, title, body string) error) {
+//
+// Callbacks (both optional, pass nil to skip):
+//   - lotNotifyFn: called per expiring lot event (eventType, title, body)
+//   - lowStockNotifyFn: called per unresolved low-stock alert (sku, message)
+func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType, title, body string) error, lowStockNotifyFn func(sku, message string) error) {
 	if err := RunStockAlertAnalysis(db, analyzer); err != nil {
 		log.Error().Err(err).Msg("cron: stock alerts failed")
 	}
 	if err := RunStaleReservationsCleanup(db); err != nil {
 		log.Error().Err(err).Msg("cron: stale reservations cleanup failed")
 	}
-
-	var lotFn func(string, string, string) error
-	if len(lotNotifyFn) > 0 {
-		lotFn = lotNotifyFn[0]
-	}
-	if err := RunLotExpirationCheck(db, lotFn); err != nil {
+	if err := RunLotExpirationCheck(db, lotNotifyFn); err != nil {
 		log.Error().Err(err).Msg("cron: lot expiration check failed")
+	}
+	// HR1-M5: wire RunLowStockNotifications so low-stock email alerts are actually sent.
+	if err := RunLowStockNotifications(db, lowStockNotifyFn); err != nil {
+		log.Error().Err(err).Msg("cron: low stock notifications failed")
 	}
 }
 

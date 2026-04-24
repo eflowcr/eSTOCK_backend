@@ -30,8 +30,15 @@ func (s *ClientsService) Create(tenantID string, data *requests.CreateClientRequ
 	return s.Repository.Create(tenantID, data, createdBy)
 }
 
+// GetByID performs a lookup without tenant filter — satisfies the internal clientLookup
+// interface used by picking/receiving task validation. For HTTP responses use GetByIDForTenant.
 func (s *ClientsService) GetByID(id string) (*database.Client, *responses.InternalResponse) {
 	return s.Repository.GetByID(id)
+}
+
+// GetByIDForTenant scopes the lookup to tenantID — use for HTTP endpoint responses (HR1-M3).
+func (s *ClientsService) GetByIDForTenant(id, tenantID string) (*database.Client, *responses.InternalResponse) {
+	return s.Repository.GetByIDForTenant(id, tenantID)
 }
 
 func (s *ClientsService) List(tenantID string, clientType *string, isActive *bool, search *string) ([]database.Client, *responses.InternalResponse) {
@@ -63,7 +70,8 @@ func (s *ClientsService) List(tenantID string, clientType *string, isActive *boo
 }
 
 func (s *ClientsService) Update(id string, data *requests.UpdateClientRequest, tenantID string) (*database.Client, *responses.InternalResponse) {
-	existing, resp := s.Repository.GetByID(id)
+	// Existence check is tenant-scoped (HR1-M3).
+	existing, resp := s.Repository.GetByIDForTenant(id, tenantID)
 	if resp != nil {
 		return nil, resp
 	}
@@ -83,9 +91,10 @@ func (s *ClientsService) Update(id string, data *requests.UpdateClientRequest, t
 		}
 	}
 
-	return s.Repository.Update(id, data)
+	return s.Repository.Update(id, data, tenantID)
 }
 
-func (s *ClientsService) SoftDelete(id string) *responses.InternalResponse {
-	return s.Repository.SoftDelete(id)
+// SoftDelete requires tenantID to prevent cross-tenant soft-delete (HR1-M3).
+func (s *ClientsService) SoftDelete(id, tenantID string) *responses.InternalResponse {
+	return s.Repository.SoftDelete(id, tenantID)
 }

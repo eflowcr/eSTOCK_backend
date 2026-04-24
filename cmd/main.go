@@ -111,13 +111,36 @@ func main() {
 			}
 		}
 
+		// HR1-M5: lowStockNotifyFn notifies all admin users for unresolved low-stock alerts.
+		var lowStockNotifyFn func(sku, message string) error
+		if notifSvc != nil {
+			lowStockNotifyFn = func(sku, message string) error {
+				var adminIDs []string
+				if err := db.Table("users").
+					Joins("JOIN roles ON users.role_id = roles.id").
+					Where("LOWER(roles.name) = 'admin' AND users.is_active = true AND users.deleted_at IS NULL").
+					Pluck("users.id", &adminIDs).Error; err != nil {
+					log.Warn().Err(err).Msg("cron: query admins for low_stock notify failed")
+					return nil
+				}
+				title := "Alerta: stock bajo — " + sku
+				ctx := context.Background()
+				for _, uid := range adminIDs {
+					if err := notifSvc.Send(ctx, uid, "low_stock", title, message, "stock_alert", sku); err != nil {
+						log.Warn().Err(err).Str("sku", sku).Str("user_id", uid).Msg("cron: low_stock notify send failed")
+					}
+				}
+				return nil
+			}
+		}
+
 		log.Info().Msg("cron: first run (post-startup)")
-		tools.CronDispatch(db, analyzer, lotNotifyFn)
+		tools.CronDispatch(db, analyzer, lotNotifyFn, lowStockNotifyFn)
 
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			tools.CronDispatch(db, analyzer, lotNotifyFn)
+			tools.CronDispatch(db, analyzer, lotNotifyFn, lowStockNotifyFn)
 		}
 	}()
 
