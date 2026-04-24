@@ -223,6 +223,8 @@ func sanitizePickingUpdatePayload(data map[string]interface{}) map[string]interf
 // Read methods
 // ─────────────────────────────────────────────────────────────────────────────
 
+// GetAllPickingTasks returns all picking tasks without tenant filter.
+// internal use only — bypass tenant. Prefer GetAllForTenant in HTTP handlers.
 func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	var tasks []responses.PickingTaskView
 
@@ -299,6 +301,84 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 	return tasks, nil
 }
 
+// GetAllForTenant returns picking tasks scoped to a specific tenant (S2.5 M3.1).
+func (r *PickingTaskRepository) GetAllForTenant(tenantID string) ([]responses.PickingTaskView, *responses.InternalResponse) {
+	var tasks []responses.PickingTaskView
+
+	sqlTenant := `
+		SELECT
+			pt.id,
+			pt.task_id,
+			pt.order_number,
+			pt.created_by,
+			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			pt.assigned_to,
+			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
+			pt.status,
+			pt.priority,
+			pt.notes,
+			pt.created_at,
+			pt.updated_at,
+			pt.completed_at,
+			pt.customer_id,
+			c.code AS customer_code,
+			c.name AS customer_name,
+			jsonb_agg(
+				jsonb_build_object(
+					'sku', item->>'sku',
+					'item_name', a.name,
+					'status', COALESCE(item->>'status', 'pending'),
+					'location', item->>'location',
+					'required_qty', item->>'required_qty',
+					'picked_qty', item->>'picked_qty',
+					'lots', (
+						SELECT jsonb_agg(l)
+						FROM jsonb_array_elements(item->'lots') AS l
+					),
+					'serials', (
+						SELECT jsonb_agg(s)
+						FROM jsonb_array_elements(item->'serials') AS s
+					)
+				)
+			) AS items
+		FROM picking_tasks pt
+		INNER JOIN users usr ON pt.created_by = usr.id
+		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
+		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
+		LEFT JOIN articles a ON a.sku = item->>'sku'
+		LEFT JOIN clients c ON pt.customer_id = c.id
+		WHERE pt.tenant_id = ?
+		GROUP BY
+			pt.id,
+			pt.task_id,
+			pt.order_number,
+			pt.created_by,
+			usr.first_name,
+			usr.last_name,
+			pt.assigned_to,
+			usr_assignee.first_name,
+			usr_assignee.last_name,
+			pt.status,
+			pt.priority,
+			pt.notes,
+			pt.created_at,
+			pt.updated_at,
+			pt.completed_at,
+			pt.customer_id,
+			c.code,
+			c.name;
+	`
+
+	if err := r.DB.Raw(sqlTenant, tenantID).Scan(&tasks).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener todas las tareas de picking",
+			Handled: false,
+		}
+	}
+	return tasks, nil
+}
+
 func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	var task database.PickingTask
 	if err := r.DB.Table(database.PickingTask{}.TableName()).Where("id = ?", id).First(&task).Error; err != nil {
@@ -322,7 +402,7 @@ func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.Picking
 // CreatePickingTask
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
+func (r *PickingTaskRepository) CreatePickingTask(userId string, tenantID string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	var items []requests.PickingTaskItemRequest
@@ -412,6 +492,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 			Notes:       task.Notes,
 			Items:       json.RawMessage(itemsJSON),
 			CustomerID:  task.CustomerID, // S2 R2
+			TenantID:    tenantID,        // S2.5 M3.1
 		}
 
 		if err := tx.Create(&pickingTask).Error; err != nil {
@@ -951,7 +1032,7 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 // Excel Import / Export
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo de Excel"}
@@ -1136,7 +1217,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 		Items:          json.RawMessage(itemsJSON),
 	}
 
-	if resp := r.CreatePickingTask(userID, req); resp != nil && resp.Error != nil {
+	if resp := r.CreatePickingTask(userID, tenantID, req); resp != nil && resp.Error != nil {
 		return resp
 	}
 

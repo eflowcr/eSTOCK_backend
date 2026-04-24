@@ -46,6 +46,8 @@ func isValidReceivingTransition(current, next string) bool {
 	return false
 }
 
+// GetAllReceivingTasks returns all receiving tasks without tenant filter.
+// internal use only — bypass tenant. Prefer GetAllForTenant in HTTP handlers.
 func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
 	var tasks []responses.ReceivingTasksView
 
@@ -136,6 +138,97 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 	return tasks, nil
 }
 
+// GetAllForTenant returns receiving tasks scoped to a specific tenant (S2.5 M3.1).
+func (r *ReceivingTasksRepository) GetAllForTenant(tenantID string) ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	var tasks []responses.ReceivingTasksView
+
+	sqlTenant := `
+		SELECT
+			rt.id,
+			rt.task_id,
+			rt.inbound_number,
+			rt.created_by,
+			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			rt.assigned_to,
+			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
+			rt.status,
+			rt.priority,
+			rt.notes,
+			rt.created_at,
+			rt.updated_at,
+			rt.completed_at,
+			rt.supplier_id,
+			rt.vendor_ref,
+			rt.tracking_number,
+			rt.reception_method,
+			rt.incoterms,
+			c.code AS supplier_code,
+			c.name AS supplier_name,
+			jsonb_agg(
+				jsonb_build_object(
+					'sku', item->>'sku',
+					'item_name', a.name,
+					'status', COALESCE(item->>'status', 'pending'),
+					'location', item->>'location',
+					'expected_qty', item->>'expected_qty',
+					'received_qty', item->>'received_qty',
+					'accepted_qty', item->>'accepted_qty',
+					'rejected_qty', item->>'rejected_qty',
+					'lots', (
+						SELECT jsonb_agg(l)
+						FROM jsonb_array_elements(item->'lots') AS l
+					),
+					'serials', (
+						SELECT jsonb_agg(s)
+						FROM jsonb_array_elements(item->'serials') AS s
+					)
+				)
+			) AS items
+		FROM receiving_tasks rt
+		INNER JOIN users usr ON rt.created_by = usr.id
+		LEFT JOIN users usr_assignee ON rt.assigned_to = usr_assignee.id
+		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
+		LEFT JOIN articles a ON a.sku = item->>'sku'
+		LEFT JOIN clients c ON rt.supplier_id = c.id
+		WHERE rt.tenant_id = ?
+		GROUP BY
+			rt.id,
+			rt.task_id,
+			rt.inbound_number,
+			rt.created_by,
+			usr.first_name,
+			usr.last_name,
+			rt.assigned_to,
+			usr_assignee.first_name,
+			usr_assignee.last_name,
+			rt.status,
+			rt.priority,
+			rt.notes,
+			rt.created_at,
+			rt.updated_at,
+			rt.completed_at,
+			rt.supplier_id,
+			rt.vendor_ref,
+			rt.tracking_number,
+			rt.reception_method,
+			rt.incoterms,
+			c.code,
+			c.name;
+	`
+
+	err := r.DB.Raw(sqlTenant, tenantID).Scan(&tasks).Error
+
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener todas las tareas de recepción",
+			Handled: false,
+		}
+	}
+
+	return tasks, nil
+}
+
 func (r *ReceivingTasksRepository) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	var task database.ReceivingTask
 
@@ -162,7 +255,7 @@ func (r *ReceivingTasksRepository) GetReceivingTaskByID(id string) (*database.Re
 	return &task, nil
 }
 
-func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, tenantID string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	var items []requests.ReceivingTaskItemRequest
@@ -256,6 +349,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 			TrackingNumber:  task.TrackingNumber,
 			ReceptionMethod: task.ReceptionMethod,
 			Incoterms:       task.Incoterms,
+			TenantID:        tenantID, // S2.5 M3.1
 		}
 
 		if err := tx.Create(&receivingTask).Error; err != nil {
@@ -431,7 +525,7 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[strin
 	return nil
 }
 
-func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo de Excel"}
@@ -601,7 +695,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		Items:         json.RawMessage(itemsJSON),
 	}
 
-	if resp := r.CreateReceivingTask(userID, req); resp != nil && resp.Error != nil {
+	if resp := r.CreateReceivingTask(userID, tenantID, req); resp != nil && resp.Error != nil {
 		return resp
 	}
 	return &responses.InternalResponse{

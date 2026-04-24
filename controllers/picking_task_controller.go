@@ -26,7 +26,7 @@ func (c *PickingTasksController) WithTenantID(tenantID string) *PickingTasksCont
 }
 
 func (c *PickingTasksController) GetAllPickingTasks(ctx *gin.Context) {
-	tasks, response := c.Service.GetAllPickingTasks()
+	tasks, response := c.Service.ListByTenant(c.TenantID)
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllPickingTasks", "get_all_picking_tasks", response)
 		return
@@ -72,7 +72,7 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.CreatePickingTask(userId, &request)
+	response := c.Service.CreatePickingTask(userId, c.TenantID, &request)
 	if response != nil {
 		writeErrorResponse(ctx, "CreatePickingTask", "create_picking_task", response)
 		return
@@ -221,7 +221,7 @@ func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.ImportPickingTaskFromExcel(userId, fileBytes)
+	response := c.Service.ImportPickingTaskFromExcel(userId, c.TenantID, fileBytes)
 	if response != nil {
 		writeErrorResponse(ctx, "ImportPickingTaskFromExcel", "import_picking_task_from_excel", response)
 		return

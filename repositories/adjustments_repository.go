@@ -21,11 +21,34 @@ type AdjustmentsRepository struct {
 	DB *gorm.DB
 }
 
+// GetAllAdjustments returns all adjustments without tenant filter.
+// internal use only — bypass tenant. Prefer GetAllForTenant in HTTP handlers.
 func (r *AdjustmentsRepository) GetAllAdjustments() ([]database.Adjustment, *responses.InternalResponse) {
 	var adjustments []database.Adjustment
 
 	err := r.DB.
 		Table(database.Adjustment{}.TableName()).
+		Order("created_at ASC").
+		Find(&adjustments).Error
+
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener los ajustes",
+			Handled: false,
+		}
+	}
+
+	return adjustments, nil
+}
+
+// GetAllForTenant returns adjustments scoped to a specific tenant (S2.5 M3.1).
+func (r *AdjustmentsRepository) GetAllForTenant(tenantID string) ([]database.Adjustment, *responses.InternalResponse) {
+	var adjustments []database.Adjustment
+
+	err := r.DB.
+		Table(database.Adjustment{}.TableName()).
+		Where("tenant_id = ?", tenantID).
 		Order("created_at ASC").
 		Find(&adjustments).Error
 
@@ -176,7 +199,7 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id string) (*dto.Adjustment
 	return &details, nil
 }
 
-func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+func (r *AdjustmentsRepository) CreateAdjustment(userId string, tenantID string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
 	var created *database.Adjustment
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 
@@ -237,6 +260,7 @@ func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment reque
 			Notes:            &adjustment.Notes,
 			UserID:           userId,
 			AdjustmentType:   adjType,
+			TenantID:         tenantID, // S2.5 M3.1
 		}
 
 		err = tx.
