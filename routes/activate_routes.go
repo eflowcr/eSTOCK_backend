@@ -62,5 +62,8 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterDeliveryNotesRoutes(api, db, config, rolesRepo)
 	RegisterBackordersRoutes(api, db, config, rolesRepo)
 
+	// S3-W5-B: Stripe Billing
+	RegisterBillingRoutes(api, db, config, notifSvc, rolesRepo)
+
 	RegisterDocsRoutes(r)
 }
