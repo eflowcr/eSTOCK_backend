@@ -421,7 +421,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, tenantID string
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Model(&database.PickingTask{}).Where("order_number = ?", task.OutboundNumber).Count(&count).Error; err != nil {
+		if err := tx.Model(&database.PickingTask{}).Where("order_number = ? AND tenant_id = ?", task.OutboundNumber, tenantID).Count(&count).Error; err != nil {
 			*handledResp = responses.InternalResponse{Error: err, Message: "Error al verificar la unicidad del número de salida", Handled: false}
 			return nil
 		}

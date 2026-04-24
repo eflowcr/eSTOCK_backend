@@ -276,7 +276,7 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, tenantID s
 		// Check if inbound number is unique
 		var count int64
 
-		if err := tx.Model(&database.ReceivingTask{}).Where("inbound_number = ?", task.InboundNumber).Count(&count).Error; err != nil {
+		if err := tx.Model(&database.ReceivingTask{}).Where("inbound_number = ? AND tenant_id = ?", task.InboundNumber, tenantID).Count(&count).Error; err != nil {
 			*handledResp = responses.InternalResponse{Error: err, Message: "Error al verificar la unicidad del número de entrada", Handled: false}
 
 			return nil
