@@ -58,8 +58,8 @@ func (s *stubSalesOrdersRepo) Submit(_ string, _ string, _ string) (*responses.S
 func (s *stubSalesOrdersRepo) Cancel(_ string, _ string, _ string) *responses.InternalResponse {
 	return s.cancelErr
 }
-func (s *stubSalesOrdersRepo) UpdatePickedQty(_ string, _ map[string]float64) *responses.InternalResponse {
-	return s.updatePickErr
+func (s *stubSalesOrdersRepo) UpdatePickedQty(_ string, _ map[string]float64) (string, *responses.InternalResponse) {
+	return "", s.updatePickErr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

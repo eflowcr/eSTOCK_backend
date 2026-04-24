@@ -354,3 +354,34 @@ func NewSalesOrders(db *gorm.DB, config configuration.Config) (ports.SalesOrders
 	}
 	return r, services.NewSalesOrdersService(r)
 }
+
+// NewDeliveryNotes builds DeliveryNotesRepository and DeliveryNotesService (S3-W3-A DN3).
+func NewDeliveryNotes(db *gorm.DB) (ports.DeliveryNotesRepository, *services.DeliveryNotesService) {
+	r := &repositories.DeliveryNotesRepository{DB: db}
+	return r, services.NewDeliveryNotesService(r, db)
+}
+
+// NewBackorders builds BackordersRepository and BackordersService (S3-W3-A BO1+BO2).
+// Injects InventoryService for FEFO pick suggestions on fulfill.
+func NewBackorders(db *gorm.DB) (ports.BackordersRepository, *services.BackordersService) {
+	invRepo := &repositories.InventoryRepository{DB: db}
+	invSvc := services.NewInventoryService(invRepo, nil)
+	r := &repositories.BackordersRepository{
+		DB:           db,
+		InventorySvc: invSvc,
+	}
+	return r, services.NewBackordersService(r)
+}
+
+// NewPickingTaskWithDN builds PickingTaskRepository with SO + DN PDF generator injected (S3-W3-A).
+func NewPickingTaskWithDN(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService, soRepo repositories.SOPickedQtyUpdater) (ports.PickingTaskRepository, *services.PickingTaskService) {
+	_, dnSvc := NewDeliveryNotes(db)
+	r := &repositories.PickingTaskRepository{
+		DB:               db,
+		AuditService:     auditSvc,
+		NotificationsSvc: notifSvc,
+		SORepository:     soRepo,
+		DNPDFGen:         dnSvc,
+	}
+	return r, services.NewPickingTaskService(r)
+}

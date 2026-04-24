@@ -38,5 +38,6 @@ type SalesOrdersRepository interface {
 
 	// UpdatePickedQty updates sales_order_items.picked_qty after picking completion and
 	// advances SO status to 'completed' or 'partial' accordingly.
-	UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) *responses.InternalResponse
+	// Returns the new SO status string for DN/BO routing in CompletePickingTask.
+	UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) (string, *responses.InternalResponse)
 }
