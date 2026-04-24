@@ -22,6 +22,8 @@ type PickingTask struct {
 	CustomerID *string `gorm:"column:customer_id" json:"customer_id,omitempty"`
 	// S2.5 M3.1 tenant isolation
 	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
+	// S3-W2-B: SO auto-link (migration 000025)
+	SalesOrderID *string `gorm:"column:sales_order_id" json:"sales_order_id,omitempty"`
 }
 
 func (PickingTask) TableName() string {
