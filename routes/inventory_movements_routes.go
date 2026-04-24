@@ -19,6 +19,7 @@ func RegisterInventoryMovementsRoutes(router *gin.RouterGroup, db *gorm.DB, conf
 
 	// Legacy per-SKU endpoint (kept for backward compat)
 	inventoryMovementsRoute := router.Group("/inventory_movements")
+	inventoryMovementsRoute.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		inventoryMovementsRoute.GET("/:sku", inventoryMovementsController.GetAllInventoryMovements)
 	}

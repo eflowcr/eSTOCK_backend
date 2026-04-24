@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"time"
@@ -108,9 +109,9 @@ func (r *ResendEmailSender) Send(ctx context.Context, to, subject, htmlBody, tex
 func (r *ResendEmailSender) SendPasswordReset(toEmail, userName, resetLink string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	html := renderResetEmailHTML(userName, resetLink, r.AppName)
+	htmlBody := renderResetEmailHTML(userName, resetLink, r.AppName)
 	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.", userName, r.AppName, resetLink)
-	return r.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", r.AppName), html, text)
+	return r.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", r.AppName), htmlBody, text)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ func (r *ResendEmailSender) SendPasswordReset(toEmail, userName, resetLink strin
 
 // RenderNotificationEmail returns (htmlBody, textBody) for a given event type.
 // Falls back to a generic template for unknown event types.
-func RenderNotificationEmail(eventType, title, body string) (html, text string) {
+func RenderNotificationEmail(eventType, title, body string) (htmlBody, text string) {
 	switch eventType {
 	case "task_assigned":
 		return renderTaskAssignedHTML(title, body), fmt.Sprintf("%s\n\n%s", title, body)
@@ -139,6 +140,10 @@ func RenderNotificationEmail(eventType, title, body string) (html, text string) 
 }
 
 func renderResetEmailHTML(userName, resetLink, appName string) string {
+	safeUserName := html.EscapeString(userName)
+	safeAppName := html.EscapeString(appName)
+	// resetLink is system-generated (not user-controlled), but escape attribute value for safety.
+	safeResetLink := html.EscapeString(resetLink)
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
@@ -151,7 +156,7 @@ func renderResetEmailHTML(userName, resetLink, appName string) string {
     <a href="%s" style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Restablecer contraseña</a>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">Si no solicitaste este cambio, puedes ignorar este correo.</p>
   </div>
-</body></html>`, userName, appName, resetLink)
+</body></html>`, safeUserName, safeAppName, safeResetLink)
 }
 
 func renderTaskAssignedHTML(title, body string) string {
@@ -159,6 +164,8 @@ func renderTaskAssignedHTML(title, body string) string {
 }
 
 func renderLotExpiringHTML(title, body string) string {
+	safeTitle := html.EscapeString(title)
+	safeBody := html.EscapeString(body)
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
@@ -170,10 +177,12 @@ func renderLotExpiringHTML(title, body string) string {
     <p style="color:#475569;line-height:1.6;margin:0 0 24px;">%s</p>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">eSTOCK — Sistema de gestión de inventario</p>
   </div>
-</body></html>`, title, body)
+</body></html>`, safeTitle, safeBody)
 }
 
 func renderLowStockHTML(title, body string) string {
+	safeTitle := html.EscapeString(title)
+	safeBody := html.EscapeString(body)
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
@@ -185,10 +194,12 @@ func renderLowStockHTML(title, body string) string {
     <p style="color:#475569;line-height:1.6;margin:0 0 24px;">%s</p>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">eSTOCK — Sistema de gestión de inventario</p>
   </div>
-</body></html>`, title, body)
+</body></html>`, safeTitle, safeBody)
 }
 
 func renderUserWelcomeHTML(title, body string) string {
+	safeTitle := html.EscapeString(title)
+	safeBody := html.EscapeString(body)
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
@@ -198,10 +209,12 @@ func renderUserWelcomeHTML(title, body string) string {
     <pre style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:16px;font-size:14px;color:#334155;">%s</pre>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">eSTOCK — Sistema de gestión de inventario</p>
   </div>
-</body></html>`, title, body)
+</body></html>`, safeTitle, safeBody)
 }
 
 func renderGenericHTML(title, body string) string {
+	safeTitle := html.EscapeString(title)
+	safeBody := html.EscapeString(body)
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
@@ -210,5 +223,5 @@ func renderGenericHTML(title, body string) string {
     <p style="color:#475569;line-height:1.6;margin:0 0 24px;">%s</p>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">eSTOCK — Sistema de gestión de inventario</p>
   </div>
-</body></html>`, title, body)
+</body></html>`, safeTitle, safeBody)
 }

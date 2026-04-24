@@ -15,17 +15,22 @@ import (
 var _ ports.SerialsRepository = (*repositories.SerialsRepository)(nil)
 var _ ports.SerialsRepository = (*repositories.SerialsRepositorySQLC)(nil)
 
-func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) {
+func RegisterSerialRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	_, serialService := wire.NewSerials(db, pool)
 	serialController := controllers.NewSerialsController(*serialService)
 
 	route := router.Group("/serials")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
-		route.GET("/:id", serialController.GetSerialByID)
-		route.GET("/by-sku/:sku", serialController.GetSerialsBySKU)
-		route.POST("/", serialController.CreateSerial)
-		route.PUT("/:id", serialController.UpdateSerial)
-		route.DELETE("/:id", serialController.DeleteSerial)
+		read := tools.RequirePermission(rolesRepo, "serials", "read")
+		create := tools.RequirePermission(rolesRepo, "serials", "create")
+		update := tools.RequirePermission(rolesRepo, "serials", "update")
+		delete := tools.RequirePermission(rolesRepo, "serials", "delete")
+
+		route.GET("/:id", read, serialController.GetSerialByID)
+		route.GET("/by-sku/:sku", read, serialController.GetSerialsBySKU)
+		route.POST("/", create, serialController.CreateSerial)
+		route.PUT("/:id", update, serialController.UpdateSerial)
+		route.DELETE("/:id", delete, serialController.DeleteSerial)
 	}
 }
