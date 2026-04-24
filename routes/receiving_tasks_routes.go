@@ -15,7 +15,7 @@ import (
 
 var _ ports.ReceivingTasksRepository = (*repositories.ReceivingTasksRepository)(nil)
 
-func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService, pool *pgxpool.Pool) {
+func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService, pool *pgxpool.Pool, rolesRepo ports.RolesRepository) {
 	_, clientsSvc := wire.NewClients(pool)
 	_, receivingTasksService := wire.NewReceivingTasks(db, notifSvc)
 	if clientsSvc != nil {
@@ -27,15 +27,19 @@ func RegisterReceivingTasksRoutes(router *gin.RouterGroup, db *gorm.DB, config c
 	route := router.Group("/receiving-tasks")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
-		route.GET("/", receivingTasksController.GetAllReceivingTasks)
-		route.GET("/:id", receivingTasksController.GetReceivingTaskByID)
-		route.POST("/", receivingTasksController.CreateReceivingTask)
-		route.PUT("/:id", receivingTasksController.UpdateReceivingTask)
-		route.GET("/import/template", receivingTasksController.DownloadImportTemplate)
-		route.POST("/import", receivingTasksController.ImportReceivingTaskFromExcel)
-		route.GET("/export", receivingTasksController.ExportReceivingTaskToExcel)
-		route.PATCH("/complete-full-task/:id/:location", receivingTasksController.CompleteFullTask)
-		route.PATCH("/complete-receiving-line/:id/:location", receivingTasksController.CompleteReceivingLine)
-		route.PATCH("/:id/supplier", receivingTasksController.LinkSupplier) // S2 R2 E1.7
+		read := tools.RequirePermission(rolesRepo, "receiving_tasks", "read")
+		create := tools.RequirePermission(rolesRepo, "receiving_tasks", "create")
+		update := tools.RequirePermission(rolesRepo, "receiving_tasks", "update")
+
+		route.GET("/", read, receivingTasksController.GetAllReceivingTasks)
+		route.GET("/:id", read, receivingTasksController.GetReceivingTaskByID)
+		route.POST("/", create, receivingTasksController.CreateReceivingTask)
+		route.PUT("/:id", update, receivingTasksController.UpdateReceivingTask)
+		route.GET("/import/template", read, receivingTasksController.DownloadImportTemplate)
+		route.POST("/import", create, receivingTasksController.ImportReceivingTaskFromExcel)
+		route.GET("/export", read, receivingTasksController.ExportReceivingTaskToExcel)
+		route.PATCH("/complete-full-task/:id/:location", update, receivingTasksController.CompleteFullTask)
+		route.PATCH("/complete-receiving-line/:id/:location", update, receivingTasksController.CompleteReceivingLine)
+		route.PATCH("/:id/supplier", update, receivingTasksController.LinkSupplier) // S2 R2 E1.7
 	}
 }
