@@ -106,6 +106,9 @@ func SeedFarma(ctx context.Context, db *gorm.DB, tenantID string) error {
 // locationIDs are used for FK references in articles.default_location_id.
 // locationCodes are used for inventory.location and task item location fields
 // (which store codes, not IDs — known S2 debt, see feedback_estock_location_storage_inconsistency).
+// TODO(M3 — S3.5): tenantID is dropped (blank identifier _). Locations have no tenant_id column
+// (global table) so this is currently correct. But once articles and inventory_movements gain
+// tenant_id columns (see C2/ARCH BLOCKER), this function signature should accept and use tenantID.
 func seedLocations(ctx context.Context, tx *gorm.DB, _ string) (ids []string, codes []string, err error) {
 	locs := []struct {
 		code string
@@ -308,6 +311,13 @@ var farmaArticles = []farmaArticle{
 }
 
 // seedArticles inserts articles. locationIDs must be location UUIDs (FK to locations.id).
+//
+// TODO(ARCH BLOCKER — S3.5): articles table has no tenant_id column (global unique on sku).
+// SeedFarma uses WHERE sku=? FirstOrCreate which finds rows from *any* tenant. Tenant 2+ will
+// silently inherit Tenant 1's articles instead of creating their own — data isolation failure.
+// Fix requires: migration adding tenant_id to articles, composite UNIQUE(tenant_id, sku),
+// model update, and all query sites. Tracked as S3.5-articles-tenant-isolation. See:
+// feedback_estock_articles_no_tenant_isolation.md
 func seedArticles(ctx context.Context, tx *gorm.DB, _ string, categoryIDs, locationIDs []string) ([]farmaArticle, error) {
 	active := true
 	for _, a := range farmaArticles {
@@ -535,6 +545,8 @@ func seedPickingTasks(ctx context.Context, tx *gorm.DB, tenantID string, article
 
 // ─── inventory movements ─────────────────────────────────────────────────────
 
+// TODO(M3 — S3.5): tenantID dropped (blank identifier _). InventoryMovement has no tenant_id
+// column. Once it does (ARCH debt from C2 scope), pass and use tenantID here.
 func seedInventoryMovements(ctx context.Context, tx *gorm.DB, _ string, articles []farmaArticle, locationIDs []string) error {
 	now := time.Now()
 	movTypes := []string{"IN", "OUT", "ADJUSTMENT", "IN", "OUT", "IN"}
