@@ -1,5 +1,11 @@
 -- 000019_tenant_id_operational.down.sql
 -- Reverses 000019_tenant_id_operational.up.sql
+--
+-- WARNING (M3 — deuda S3): this down migration is NOT safe to run if multiple
+-- tenants have overlapping inbound_number values. The CREATE UNIQUE INDEX below
+-- will fail with a duplicate key violation if two tenants share the same
+-- inbound_number. At rollback time, resolve overlaps manually before running.
+-- Safe for single-tenant prod (G2 as of S2.5).
 
 DROP INDEX IF EXISTS idx_receiving_tasks_inbound_number_tenant;
 CREATE UNIQUE INDEX idx_receiving_tasks_inbound_number ON receiving_tasks(inbound_number)

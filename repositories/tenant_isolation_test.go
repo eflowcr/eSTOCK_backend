@@ -1,16 +1,26 @@
 package repositories
 
 // tenant_isolation_test.go — S2.5 M3.6
-// Unit-level multi-tenant isolation tests using in-memory fakes.
-// Verifies that GetAllForTenant only returns rows scoped to the correct tenant.
+// Integration-level multi-tenant isolation tests using testcontainers + real Postgres.
+// Uses setupGORMTestDB (defined in receiving_tasks_upsert_lot_integration_test.go).
+//
+// These tests exercise the actual GORM WHERE tenant_id = ? clause inside
+// GetAllForTenant / ExportXToExcel. If the WHERE clause is removed from the
+// production code, these tests will fail.
+//
+// Run: go test -v ./repositories/... -run TestTenantIsolation
+// Requires Docker (testcontainers). Automatically skipped in -short mode.
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
-	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 const (
@@ -18,133 +28,225 @@ const (
 	testTenantB = "00000000-0000-0000-0000-000000000002"
 )
 
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+// seedUserForIsolation inserts a minimal user row and returns its id.
+// Uses a deterministic email so repeated calls are idempotent via ON CONFLICT.
+func seedUserForIsolation(t *testing.T, db *gorm.DB, tag string) string {
+	t.Helper()
+	id, err := tools.GenerateNanoid(db)
+	require.NoError(t, err)
+	email := fmt.Sprintf("iso-%s@test.com", tag)
+	db.Exec(`
+		INSERT INTO users (id, first_name, last_name, email, password, created_at, updated_at)
+		VALUES (?, 'Test', 'ISO', ?, 'hashed', NOW(), NOW())
+		ON CONFLICT (email) DO NOTHING`, id, email)
+	var uid string
+	db.Raw("SELECT id FROM users WHERE email = ?", email).Scan(&uid)
+	if uid == "" {
+		uid = id
+	}
+	return uid
+}
+
+// seedAdjustmentRow inserts an adjustment row with an explicit tenant_id.
+func seedAdjustmentRow(t *testing.T, db *gorm.DB, userID, tenantID, sku string) string {
+	t.Helper()
+	id, err := tools.GenerateNanoid(db)
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(`
+		INSERT INTO adjustments
+			(id, sku, location, previous_quantity, adjustment_quantity, new_quantity,
+			 reason, user_id, adjustment_type, tenant_id, created_at)
+		VALUES (?, ?, 'LOC-ISO', 10, 5, 15, 'isolation-test', ?, 'increase', ?, NOW())`,
+		id, sku, userID, tenantID).Error)
+	return id
+}
+
+// seedPickingTaskRow inserts a picking_task row with an explicit tenant_id.
+func seedPickingTaskRow(t *testing.T, db *gorm.DB, userID, tenantID, orderNumber string) string {
+	t.Helper()
+	id, err := tools.GenerateNanoid(db)
+	require.NoError(t, err)
+	items, _ := json.Marshal([]interface{}{})
+	require.NoError(t, db.Exec(`
+		INSERT INTO picking_tasks
+			(id, task_id, order_number, created_by, status, priority, items, tenant_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 'normal', ?, ?, NOW(), NOW())`,
+		id, "PICK-ISO-"+id[:6], orderNumber, userID, string(items), tenantID).Error)
+	return id
+}
+
+// seedReceivingTaskRow inserts a receiving_task row with an explicit tenant_id.
+func seedReceivingTaskRow(t *testing.T, db *gorm.DB, userID, tenantID, inboundNumber string) string {
+	t.Helper()
+	id, err := tools.GenerateNanoid(db)
+	require.NoError(t, err)
+	items, _ := json.Marshal([]interface{}{})
+	require.NoError(t, db.Exec(`
+		INSERT INTO receiving_tasks
+			(id, task_id, inbound_number, created_by, status, priority, items, tenant_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 'normal', ?, ?, NOW(), NOW())`,
+		id, "RCV-ISO-"+id[:6], inboundNumber, userID, string(items), tenantID).Error)
+	return id
+}
+
 // ─── Adjustments isolation ────────────────────────────────────────────────────
 
-// filterAdjustmentsByTenant simulates what GetAllForTenant does at the DB level.
-func filterAdjustmentsByTenant(rows []database.Adjustment, tenantID string) []database.Adjustment {
-	var result []database.Adjustment
-	for _, row := range rows {
-		if row.TenantID == tenantID {
-			result = append(result, row)
-		}
+// TestTenantIsolation_Adjustments_GetAllForTenant seeds two tenants then calls
+// the real AdjustmentsRepository.GetAllForTenant and verifies cross-tenant
+// invisibility. Removing WHERE tenant_id = ? from the production code causes
+// this test to fail.
+func TestTenantIsolation_Adjustments_GetAllForTenant(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	userID := seedUserForIsolation(t, db, "adj")
+
+	// Tenant A: 2 rows; Tenant B: 1 row.
+	idA1 := seedAdjustmentRow(t, db, userID, testTenantA, "SKU-A1")
+	idA2 := seedAdjustmentRow(t, db, userID, testTenantA, "SKU-A2")
+	idB1 := seedAdjustmentRow(t, db, userID, testTenantB, "SKU-B1")
+
+	repo := &AdjustmentsRepository{DB: db}
+
+	// Tenant A sees exactly its 2 rows, not tenant B's.
+	rowsA, errA := repo.GetAllForTenant(testTenantA)
+	require.Nil(t, errA)
+	idsA := make([]string, len(rowsA))
+	for i, r := range rowsA {
+		idsA[i] = r.ID
+		assert.Equal(t, testTenantA, r.TenantID, "GetAllForTenant(A) must only return tenant A rows")
 	}
-	return result
+	assert.Contains(t, idsA, idA1)
+	assert.Contains(t, idsA, idA2)
+	assert.NotContains(t, idsA, idB1)
+
+	// Tenant B sees exactly its 1 row, not tenant A's.
+	rowsB, errB := repo.GetAllForTenant(testTenantB)
+	require.Nil(t, errB)
+	require.Len(t, rowsB, 1)
+	assert.Equal(t, idB1, rowsB[0].ID)
+	assert.Equal(t, testTenantB, rowsB[0].TenantID)
 }
 
-func TestTenantIsolation_Adjustments_FiltersByTenant(t *testing.T) {
-	allRows := []database.Adjustment{
-		{ID: "adj-1", SKU: "SKU-A", TenantID: testTenantA},
-		{ID: "adj-2", SKU: "SKU-B", TenantID: testTenantB},
-		{ID: "adj-3", SKU: "SKU-C", TenantID: testTenantA},
-	}
+// TestTenantIsolation_Adjustments_ExportTenantScoped verifies that
+// ExportAdjustmentsToExcel(tenantID) returns only the calling tenant's rows
+// (i.e., the bytes represent a file built from tenant-scoped data only).
+func TestTenantIsolation_Adjustments_ExportTenantScoped(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
 
-	// Tenant A sees only adj-1 and adj-3.
-	resultA := filterAdjustmentsByTenant(allRows, testTenantA)
-	require.Len(t, resultA, 2, "tenant A should see 2 adjustments")
-	for _, a := range resultA {
-		assert.Equal(t, testTenantA, a.TenantID, "all results should belong to tenant A")
-	}
+	userID := seedUserForIsolation(t, db, "adj-exp")
 
-	// Tenant B sees only adj-2.
-	resultB := filterAdjustmentsByTenant(allRows, testTenantB)
-	require.Len(t, resultB, 1, "tenant B should see 1 adjustment")
-	assert.Equal(t, "adj-2", resultB[0].ID)
-	assert.Equal(t, testTenantB, resultB[0].TenantID)
+	seedAdjustmentRow(t, db, userID, testTenantA, "SKU-EXP-A")
+	seedAdjustmentRow(t, db, userID, testTenantB, "SKU-EXP-B")
+
+	repo := &AdjustmentsRepository{DB: db}
+
+	// Export for tenant A must not fail and must return non-empty bytes.
+	bytesA, errA := repo.ExportAdjustmentsToExcel(testTenantA)
+	require.Nil(t, errA)
+	assert.NotEmpty(t, bytesA, "export for tenant A should return xlsx bytes")
+
+	// Export for an unknown tenant returns empty-data response (no rows → "no data" path).
+	bytesUnknown, errUnknown := repo.ExportAdjustmentsToExcel("00000000-0000-0000-0000-000000000099")
+	assert.Nil(t, bytesUnknown, "unknown tenant should return nil bytes (no data)")
+	require.NotNil(t, errUnknown, "no-data path returns a handled InternalResponse")
+	assert.True(t, errUnknown.Handled, "no-data response should be handled")
 }
 
-func TestTenantIsolation_Adjustments_UnknownTenantGetsNothing(t *testing.T) {
-	allRows := []database.Adjustment{
-		{ID: "adj-1", SKU: "SKU-A", TenantID: testTenantA},
-	}
+// ─── PickingTask isolation ────────────────────────────────────────────────────
 
-	unknownTenant := "00000000-0000-0000-0000-000000000099"
-	result := filterAdjustmentsByTenant(allRows, unknownTenant)
-	assert.Empty(t, result, "unknown tenant should see no data")
+// TestTenantIsolation_PickingTasks_GetAllForTenant exercises the real SQL
+// WHERE pt.tenant_id = ? clause in PickingTaskRepository.GetAllForTenant.
+func TestTenantIsolation_PickingTasks_GetAllForTenant(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	userID := seedUserForIsolation(t, db, "pick")
+
+	idA1 := seedPickingTaskRow(t, db, userID, testTenantA, "ISO-ORD-A1")
+	idA2 := seedPickingTaskRow(t, db, userID, testTenantA, "ISO-ORD-A2")
+	idB1 := seedPickingTaskRow(t, db, userID, testTenantB, "ISO-ORD-B1")
+
+	repo := &PickingTaskRepository{DB: db}
+
+	rowsA, errA := repo.GetAllForTenant(testTenantA)
+	require.Nil(t, errA)
+	idsA := make([]string, len(rowsA))
+	for i, r := range rowsA {
+		idsA[i] = r.ID
+		assert.Equal(t, testTenantA, r.TenantID, "GetAllForTenant(A) must only return tenant A rows")
+	}
+	assert.Contains(t, idsA, idA1)
+	assert.Contains(t, idsA, idA2)
+	assert.NotContains(t, idsA, idB1)
+
+	rowsB, errB := repo.GetAllForTenant(testTenantB)
+	require.Nil(t, errB)
+	idsB := make([]string, len(rowsB))
+	for i, r := range rowsB {
+		idsB[i] = r.ID
+	}
+	assert.Contains(t, idsB, idB1)
+	assert.NotContains(t, idsB, idA1)
+	assert.NotContains(t, idsB, idA2)
 }
 
-// ─── PickingTaskView isolation ────────────────────────────────────────────────
+// ─── ReceivingTask isolation ──────────────────────────────────────────────────
 
-func filterPickingTasksByTenant(rows []responses.PickingTaskView, tenantID string) []responses.PickingTaskView {
-	var result []responses.PickingTaskView
-	for _, row := range rows {
-		if row.TenantID == tenantID {
-			result = append(result, row)
-		}
+// TestTenantIsolation_ReceivingTasks_GetAllForTenant exercises the real SQL
+// WHERE rt.tenant_id = ? clause in ReceivingTasksRepository.GetAllForTenant.
+func TestTenantIsolation_ReceivingTasks_GetAllForTenant(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	userID := seedUserForIsolation(t, db, "recv")
+
+	idA1 := seedReceivingTaskRow(t, db, userID, testTenantA, "ISO-RCV-A1")
+	idB1 := seedReceivingTaskRow(t, db, userID, testTenantB, "ISO-RCV-B1")
+	idB2 := seedReceivingTaskRow(t, db, userID, testTenantB, "ISO-RCV-B2")
+
+	repo := &ReceivingTasksRepository{DB: db}
+
+	rowsA, errA := repo.GetAllForTenant(testTenantA)
+	require.Nil(t, errA)
+	idsA := make([]string, len(rowsA))
+	for i, r := range rowsA {
+		idsA[i] = r.ID
+		assert.Equal(t, testTenantA, r.TenantID, "GetAllForTenant(A) must only return tenant A rows")
 	}
-	return result
+	assert.Contains(t, idsA, idA1)
+	assert.NotContains(t, idsA, idB1)
+	assert.NotContains(t, idsA, idB2)
+
+	rowsB, errB := repo.GetAllForTenant(testTenantB)
+	require.Nil(t, errB)
+	idsB := make([]string, len(rowsB))
+	for i, r := range rowsB {
+		idsB[i] = r.ID
+	}
+	assert.Contains(t, idsB, idB1)
+	assert.Contains(t, idsB, idB2)
+	assert.NotContains(t, idsB, idA1)
 }
 
-func TestTenantIsolation_PickingTasks_FiltersByTenant(t *testing.T) {
-	allRows := []responses.PickingTaskView{
-		{ID: "pt-1", TaskID: "PICK-001", TenantID: testTenantA},
-		{ID: "pt-2", TaskID: "PICK-002", TenantID: testTenantB},
-		{ID: "pt-3", TaskID: "PICK-003", TenantID: testTenantA},
-		{ID: "pt-4", TaskID: "PICK-004", TenantID: testTenantB},
-	}
+// ─── struct field sanity (compile-time guards) ────────────────────────────────
+// These lightweight checks verify the TenantID field exists on DB models.
+// They do NOT provide isolation coverage — the integration tests above do that.
 
-	resultA := filterPickingTasksByTenant(allRows, testTenantA)
-	require.Len(t, resultA, 2, "tenant A should see 2 picking tasks")
-	for _, pt := range resultA {
-		assert.Equal(t, testTenantA, pt.TenantID)
-	}
-
-	resultB := filterPickingTasksByTenant(allRows, testTenantB)
-	require.Len(t, resultB, 2, "tenant B should see 2 picking tasks")
-	for _, pt := range resultB {
-		assert.Equal(t, testTenantB, pt.TenantID)
-	}
-}
-
-// ─── ReceivingTasksView isolation ─────────────────────────────────────────────
-
-func filterReceivingTasksByTenant(rows []responses.ReceivingTasksView, tenantID string) []responses.ReceivingTasksView {
-	var result []responses.ReceivingTasksView
-	for _, row := range rows {
-		if row.TenantID == tenantID {
-			result = append(result, row)
-		}
-	}
-	return result
-}
-
-func TestTenantIsolation_ReceivingTasks_FiltersByTenant(t *testing.T) {
-	allRows := []responses.ReceivingTasksView{
-		{ID: "rt-1", TaskID: "RCV-001", TenantID: testTenantA},
-		{ID: "rt-2", TaskID: "RCV-002", TenantID: testTenantB},
-	}
-
-	resultA := filterReceivingTasksByTenant(allRows, testTenantA)
-	require.Len(t, resultA, 1, "tenant A should see 1 receiving task")
-	assert.Equal(t, "rt-1", resultA[0].ID)
-
-	resultB := filterReceivingTasksByTenant(allRows, testTenantB)
-	require.Len(t, resultB, 1, "tenant B should see 1 receiving task")
-	assert.Equal(t, "rt-2", resultB[0].ID)
-}
-
-// TestTenantIsolation_AdjustmentModelHasTenantIDField verifies the struct field exists.
 func TestTenantIsolation_AdjustmentModelHasTenantIDField(t *testing.T) {
-	adj := database.Adjustment{
-		ID:       "test",
-		TenantID: testTenantA,
-	}
+	adj := database.Adjustment{ID: "test", TenantID: testTenantA}
 	assert.Equal(t, testTenantA, adj.TenantID)
 }
 
-// TestTenantIsolation_PickingTaskModelHasTenantIDField verifies the struct field exists.
 func TestTenantIsolation_PickingTaskModelHasTenantIDField(t *testing.T) {
-	pt := database.PickingTask{
-		ID:       "test",
-		TenantID: testTenantA,
-	}
+	pt := database.PickingTask{ID: "test", TenantID: testTenantA}
 	assert.Equal(t, testTenantA, pt.TenantID)
 }
 
-// TestTenantIsolation_ReceivingTaskModelHasTenantIDField verifies the struct field exists.
 func TestTenantIsolation_ReceivingTaskModelHasTenantIDField(t *testing.T) {
-	rt := database.ReceivingTask{
-		ID:       "test",
-		TenantID: testTenantA,
-	}
+	rt := database.ReceivingTask{ID: "test", TenantID: testTenantA}
 	assert.Equal(t, testTenantA, rt.TenantID)
 }
