@@ -74,13 +74,28 @@ func (r *CategoriesRepositorySQLC) GetByID(id string) (*database.Category, *resp
 	return &result, nil
 }
 
+// ListByTenant returns all categories for the tenant without optional filters.
+// Internally delegates to ListByTenantFiltered with nil params (M8).
 func (r *CategoriesRepositorySQLC) ListByTenant(tenantID string) ([]database.Category, *responses.InternalResponse) {
+	return r.ListByTenantFiltered(tenantID, nil, nil, nil, nil)
+}
+
+// ListByTenantFiltered pushes optional isActive/search filters and pagination to SQL (M8 — HR1 deferred).
+// Pass nil for any param to skip that filter. limit/offset default to 200/0 in SQL.
+func (r *CategoriesRepositorySQLC) ListByTenantFiltered(tenantID string, isActive *bool, search *string, limit *int32, offset *int32) ([]database.Category, *responses.InternalResponse) {
 	ctx := context.Background()
 	tid, err := stringToPgUUID(tenantID)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "tenant_id inválido", Handled: true, StatusCode: responses.StatusBadRequest}
 	}
-	list, err := r.queries.ListCategoriesByTenant(ctx, tid)
+	arg := sqlc.ListCategoriesByTenantParams{
+		TenantID: tid,
+		IsActive: ptrBoolToPgBool(isActive),
+		Search:   ptrStringToPgText(search),
+		Limit:    ptrInt32ToPgInt4(limit),
+		Offset:   ptrInt32ToPgInt4(offset),
+	}
+	list, err := r.queries.ListCategoriesByTenant(ctx, arg)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Error al listar categorías", Handled: false}
 	}

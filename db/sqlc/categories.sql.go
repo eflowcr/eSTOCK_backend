@@ -69,11 +69,36 @@ func (q *Queries) GetCategoryByID(ctx context.Context, id string) (Category, err
 
 const listCategoriesByTenant = `-- name: ListCategoriesByTenant :many
 SELECT id, tenant_id, name, parent_id, is_active, created_at, updated_at
-FROM categories WHERE tenant_id = $1 ORDER BY name ASC
+FROM categories
+WHERE tenant_id = $1
+  AND ($2::boolean IS NULL OR is_active = $2)
+  AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%')
+ORDER BY name ASC
+LIMIT COALESCE($4::int, 200)
+OFFSET COALESCE($5::int, 0)
 `
 
-func (q *Queries) ListCategoriesByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Category, error) {
-	rows, err := q.db.Query(ctx, listCategoriesByTenant, tenantID)
+// ListCategoriesByTenantParams holds optional filter params for ListCategoriesByTenant.
+// Use pgtype.Bool{} (Valid:false) / pgtype.Text{} (Valid:false) / pgtype.Int4{} (Valid:false)
+// to pass NULL and skip a filter.  M8: fields renamed from sqlc Column* defaults.
+type ListCategoriesByTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	IsActive pgtype.Bool `json:"is_active"`
+	Search   pgtype.Text `json:"search"`
+	Limit    pgtype.Int4 `json:"limit"`
+	Offset   pgtype.Int4 `json:"offset"`
+}
+
+// M8: Push search/is_active filters and pagination to SQL (HR1 deferred).
+// Pass NULL for any optional param to skip that filter.
+func (q *Queries) ListCategoriesByTenant(ctx context.Context, arg ListCategoriesByTenantParams) ([]Category, error) {
+	rows, err := q.db.Query(ctx, listCategoriesByTenant,
+		arg.TenantID,
+		arg.IsActive,
+		arg.Search,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

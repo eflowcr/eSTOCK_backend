@@ -163,11 +163,39 @@ func (q *Queries) GetClientByTenantAndCode(ctx context.Context, arg GetClientByT
 
 const listClientsByTenant = `-- name: ListClientsByTenant :many
 SELECT id, tenant_id, type, code, name, email, phone, address, tax_id, notes, is_active, created_by, created_at, updated_at
-FROM clients WHERE tenant_id = $1 ORDER BY name ASC
+FROM clients
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR type = $2)
+  AND ($3::boolean IS NULL OR is_active = $3)
+  AND ($4::text IS NULL OR (name ILIKE '%' || $4 || '%' OR code ILIKE '%' || $4 || '%'))
+ORDER BY name ASC
+LIMIT COALESCE($5::int, 100)
+OFFSET COALESCE($6::int, 0)
 `
 
-func (q *Queries) ListClientsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Client, error) {
-	rows, err := q.db.Query(ctx, listClientsByTenant, tenantID)
+// ListClientsByTenantParams holds optional filter params for ListClientsByTenant.
+// Use pgtype.Text{} (Valid:false) / pgtype.Bool{} (Valid:false) / pgtype.Int4{} (Valid:false)
+// to pass NULL and skip a filter.  M8: fields renamed from sqlc Column* defaults.
+type ListClientsByTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Type     pgtype.Text `json:"type"`
+	IsActive pgtype.Bool `json:"is_active"`
+	Search   pgtype.Text `json:"search"`
+	Limit    pgtype.Int4 `json:"limit"`
+	Offset   pgtype.Int4 `json:"offset"`
+}
+
+// M8: Push type/is_active/search filters and pagination to SQL (HR1 deferred).
+// Pass NULL for any optional param to skip that filter.
+func (q *Queries) ListClientsByTenant(ctx context.Context, arg ListClientsByTenantParams) ([]Client, error) {
+	rows, err := q.db.Query(ctx, listClientsByTenant,
+		arg.TenantID,
+		arg.Type,
+		arg.IsActive,
+		arg.Search,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

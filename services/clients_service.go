@@ -41,32 +41,17 @@ func (s *ClientsService) GetByIDForTenant(id, tenantID string) (*database.Client
 	return s.Repository.GetByIDForTenant(id, tenantID)
 }
 
+// List delegates type/isActive/search filtering and pagination to SQL (M8 — HR1 deferred).
+// No in-memory filtering needed: the repository pushes all conditions to the DB.
 func (s *ClientsService) List(tenantID string, clientType *string, isActive *bool, search *string) ([]database.Client, *responses.InternalResponse) {
-	all, resp := s.Repository.ListByTenant(tenantID)
+	clients, resp := s.Repository.ListByTenantFiltered(tenantID, clientType, isActive, search, nil, nil)
 	if resp != nil {
 		return nil, resp
 	}
-
-	var filtered []database.Client
-	for _, c := range all {
-		if clientType != nil && c.Type != *clientType {
-			continue
-		}
-		if isActive != nil && c.IsActive != *isActive {
-			continue
-		}
-		if search != nil && *search != "" {
-			q := *search
-			if !containsIgnoreCase(c.Name, q) && !containsIgnoreCase(c.Code, q) {
-				continue
-			}
-		}
-		filtered = append(filtered, c)
+	if clients == nil {
+		clients = []database.Client{}
 	}
-	if filtered == nil {
-		filtered = []database.Client{}
-	}
-	return filtered, nil
+	return clients, nil
 }
 
 func (s *ClientsService) Update(id string, data *requests.UpdateClientRequest, tenantID string) (*database.Client, *responses.InternalResponse) {
