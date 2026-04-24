@@ -11,35 +11,50 @@ import (
 )
 
 // mockStockAlertsRepo is an in-memory fake for unit testing StockAlertsService.
+//
+// S3.5 W2-B: every method receives the tenantID so tests assert it gets propagated
+// from the service layer.
 type mockStockAlertsRepo struct {
-	alerts           []database.StockAlert
-	alertsErr        *responses.InternalResponse
-	analyzeResp      *responses.StockAlertResponse
-	analyzeErr       *responses.InternalResponse
-	lotExpirationResp *responses.StockAlertResponse
-	lotExpirationErr  *responses.InternalResponse
-	resolveErr       *responses.InternalResponse
-	excelBytes       []byte
-	excelErr         *responses.InternalResponse
+	alerts             []database.StockAlert
+	alertsErr          *responses.InternalResponse
+	analyzeResp        *responses.StockAlertResponse
+	analyzeErr         *responses.InternalResponse
+	lotExpirationResp  *responses.StockAlertResponse
+	lotExpirationErr   *responses.InternalResponse
+	resolveErr         *responses.InternalResponse
+	excelBytes         []byte
+	excelErr           *responses.InternalResponse
+	lastGetAllTenant   string
+	lastAnalyzeTenant  string
+	lastLotExpTenant   string
+	lastResolveTenant  string
+	lastExcelTenant    string
+	lastResolveAlertID string
 }
 
-func (m *mockStockAlertsRepo) GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
+func (m *mockStockAlertsRepo) GetAllStockAlerts(tenantID string, resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
+	m.lastGetAllTenant = tenantID
 	return m.alerts, m.alertsErr
 }
 
-func (m *mockStockAlertsRepo) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
+func (m *mockStockAlertsRepo) Analyze(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
+	m.lastAnalyzeTenant = tenantID
 	return m.analyzeResp, m.analyzeErr
 }
 
-func (m *mockStockAlertsRepo) LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse) {
+func (m *mockStockAlertsRepo) LotExpiration(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
+	m.lastLotExpTenant = tenantID
 	return m.lotExpirationResp, m.lotExpirationErr
 }
 
-func (m *mockStockAlertsRepo) ResolveAlert(alertID string) *responses.InternalResponse {
+func (m *mockStockAlertsRepo) ResolveAlert(tenantID, alertID string) *responses.InternalResponse {
+	m.lastResolveTenant = tenantID
+	m.lastResolveAlertID = alertID
 	return m.resolveErr
 }
 
-func (m *mockStockAlertsRepo) ExportAlertsToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockStockAlertsRepo) ExportAlertsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	m.lastExcelTenant = tenantID
 	return m.excelBytes, m.excelErr
 }
 
@@ -51,11 +66,12 @@ func TestStockAlertsService_GetAllStockAlerts_Success(t *testing.T) {
 	repo := &mockStockAlertsRepo{alerts: alerts}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.GetAllStockAlerts(false)
+	result, errResp := svc.GetAllStockAlerts(testTenantA, false)
 	require.Nil(t, errResp)
 	require.Len(t, result, 2)
 	assert.Equal(t, "SKU1", result[0].SKU)
 	assert.Equal(t, "critical", result[0].AlertLevel)
+	assert.Equal(t, testTenantA, repo.lastGetAllTenant, "tenantID must reach the repo")
 }
 
 func TestStockAlertsService_GetAllStockAlerts_Resolved(t *testing.T) {
@@ -65,7 +81,7 @@ func TestStockAlertsService_GetAllStockAlerts_Resolved(t *testing.T) {
 	repo := &mockStockAlertsRepo{alerts: alerts}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.GetAllStockAlerts(true)
+	result, errResp := svc.GetAllStockAlerts(testTenantA, true)
 	require.Nil(t, errResp)
 	require.Len(t, result, 1)
 	assert.True(t, result[0].IsResolved)
@@ -81,7 +97,7 @@ func TestStockAlertsService_GetAllStockAlerts_Error(t *testing.T) {
 	}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.GetAllStockAlerts(false)
+	result, errResp := svc.GetAllStockAlerts(testTenantA, false)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.False(t, errResp.Handled)
@@ -96,12 +112,13 @@ func TestStockAlertsService_Analyze_Success(t *testing.T) {
 	repo := &mockStockAlertsRepo{analyzeResp: analyzeResp}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.Analyze()
+	result, errResp := svc.Analyze(testTenantA)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	assert.Equal(t, "Analysis complete", result.Message)
 	assert.Equal(t, 1, result.Summary.Total)
 	assert.Equal(t, 1, result.Summary.Critical)
+	assert.Equal(t, testTenantA, repo.lastAnalyzeTenant)
 }
 
 func TestStockAlertsService_Analyze_Error(t *testing.T) {
@@ -114,7 +131,7 @@ func TestStockAlertsService_Analyze_Error(t *testing.T) {
 	}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.Analyze()
+	result, errResp := svc.Analyze(testTenantA)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.False(t, errResp.Handled)
@@ -129,11 +146,12 @@ func TestStockAlertsService_LotExpiration_Success(t *testing.T) {
 	repo := &mockStockAlertsRepo{lotExpirationResp: lotResp}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.LotExpiration()
+	result, errResp := svc.LotExpiration(testTenantA)
 	require.Nil(t, errResp)
 	require.NotNil(t, result)
 	assert.Equal(t, "Lot expiration analysis complete", result.Message)
 	assert.Equal(t, 1, result.Summary.Expiring)
+	assert.Equal(t, testTenantA, repo.lastLotExpTenant)
 }
 
 func TestStockAlertsService_LotExpiration_Error(t *testing.T) {
@@ -146,7 +164,7 @@ func TestStockAlertsService_LotExpiration_Error(t *testing.T) {
 	}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.LotExpiration()
+	result, errResp := svc.LotExpiration(testTenantA)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.False(t, errResp.Handled)
@@ -156,8 +174,10 @@ func TestStockAlertsService_ResolveAlert_Success(t *testing.T) {
 	repo := &mockStockAlertsRepo{}
 	svc := NewStockAlertsService(repo)
 
-	errResp := svc.ResolveAlert("alert-1")
+	errResp := svc.ResolveAlert(testTenantA, "alert-1")
 	require.Nil(t, errResp)
+	assert.Equal(t, testTenantA, repo.lastResolveTenant)
+	assert.Equal(t, "alert-1", repo.lastResolveAlertID)
 }
 
 func TestStockAlertsService_ResolveAlert_NotFound(t *testing.T) {
@@ -170,7 +190,7 @@ func TestStockAlertsService_ResolveAlert_NotFound(t *testing.T) {
 	}
 	svc := NewStockAlertsService(repo)
 
-	errResp := svc.ResolveAlert("alert-99")
+	errResp := svc.ResolveAlert(testTenantA, "alert-99")
 	require.NotNil(t, errResp)
 	assert.True(t, errResp.Handled)
 	assert.Equal(t, responses.StatusNotFound, errResp.StatusCode)
@@ -181,9 +201,10 @@ func TestStockAlertsService_ExportAlertsToExcel_Success(t *testing.T) {
 	repo := &mockStockAlertsRepo{excelBytes: excelBytes}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.ExportAlertsToExcel()
+	result, errResp := svc.ExportAlertsToExcel(testTenantA)
 	require.Nil(t, errResp)
 	assert.Equal(t, excelBytes, result)
+	assert.Equal(t, testTenantA, repo.lastExcelTenant)
 }
 
 func TestStockAlertsService_ExportAlertsToExcel_Error(t *testing.T) {
@@ -196,7 +217,7 @@ func TestStockAlertsService_ExportAlertsToExcel_Error(t *testing.T) {
 	}
 	svc := NewStockAlertsService(repo)
 
-	result, errResp := svc.ExportAlertsToExcel()
+	result, errResp := svc.ExportAlertsToExcel(testTenantA)
 	require.NotNil(t, errResp)
 	assert.Nil(t, result)
 	assert.False(t, errResp.Handled)

@@ -42,7 +42,8 @@ type Querier interface {
 	DeleteArticle(ctx context.Context, arg DeleteArticleParams) error
 	DeleteLocation(ctx context.Context, id string) error
 	DeleteLocationType(ctx context.Context, id string) error
-	DeleteLot(ctx context.Context, id string) error
+	// Tenant guard prevents cross-tenant deletes (S3.5 W2-B).
+	DeleteLot(ctx context.Context, arg DeleteLotParams) error
 	DeletePresentation(ctx context.Context, presentationID string) error
 	DeletePresentationConversion(ctx context.Context, id string) error
 	DeletePresentationType(ctx context.Context, id string) error
@@ -70,7 +71,10 @@ type Querier interface {
 	GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error)
 	GetLocationTypeByCode(ctx context.Context, code string) (LocationType, error)
 	GetLocationTypeByID(ctx context.Context, id string) (LocationType, error)
+	// Internal use only: no tenant filter. Use GetLotByIDForTenant for HTTP callers.
 	GetLotByID(ctx context.Context, id string) (Lot, error)
+	// Tenant guard prevents cross-tenant lot enumeration via HTTP (S3.5 W2-B).
+	GetLotByIDForTenant(ctx context.Context, arg GetLotByIDForTenantParams) (Lot, error)
 	GetOrCreateUserPreferences(ctx context.Context, userID string) (UserPreference, error)
 	GetPresentationByID(ctx context.Context, presentationID string) (Presentation, error)
 	GetPresentationConversionByFromAndTo(ctx context.Context, arg GetPresentationConversionByFromAndToParams) (PresentationConversion, error)
@@ -122,11 +126,28 @@ type Querier interface {
 	// Schema: db/migrations (locations table)
 	ListLocations(ctx context.Context) ([]ListLocationsRow, error)
 	// Lots CRUD for sqlc
-	// Schema: db/migrations (lots table)
-	ListLots(ctx context.Context) ([]Lot, error)
+	// Schema: db/migrations (lots table; tenant_id added in 000030)
+	// S3.5 W2-B: every public query is tenant-scoped. Internal helpers (GetLotByID) keep
+	// the un-scoped variant for cross-domain joins (lot trace, picking task validation)
+	// where the caller already proved tenancy via the parent record.
+	//
+	// Column order in SELECT/RETURNING must match db/sqlc/models.go::Lot (Postgres appends
+	// tenant_id at the end after the 000030 migration), otherwise sqlc generates per-query
+	// Row structs instead of returning the shared Lot model.
+	// Returns all lots for a tenant, sorted by created_at DESC.
+	ListLots(ctx context.Context, tenantID pgtype.UUID) ([]Lot, error)
 	// Lots by SKU (for UpdateArticle warnings) — internal, no tenant filter (lots table
 	// not yet tenant-scoped; tracked in S3.5 W2).
+	// NOTE (S3.5 W2-B): SELECT column list mirrors db/sqlc/models.go::Lot (tenant_id was
+	// added at the end by migration 000030); without it sqlc would emit a per-query Row
+	// struct and break sqlcLotToDatabase consumers. This query is intentionally global
+	// (no tenant filter) because it powers the article-update warning that surfaces
+	// "lot rows still exist" feedback when an admin disables track_by_lot. ArticlesService
+	// runs in a tenant-scoped controller already; revisiting this for strict tenant scoping
+	// is tracked as an articles-domain follow-up (W1 owns articles.sql).
 	ListLotsBySku(ctx context.Context, sku string) ([]Lot, error)
+	// Tenant-scoped lookup by SKU; replaces the un-scoped ListLotsBySku for HTTP callers.
+	ListLotsBySkuForTenant(ctx context.Context, arg ListLotsBySkuForTenantParams) ([]Lot, error)
 	// Presentation conversions CRUD. Schema: db/migrations (presentation_conversions table)
 	ListPresentationConversions(ctx context.Context) ([]PresentationConversion, error)
 	ListPresentationConversionsAdmin(ctx context.Context) ([]PresentationConversion, error)
@@ -159,6 +180,7 @@ type Querier interface {
 	UpdateClient(ctx context.Context, arg UpdateClientParams) (Client, error)
 	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
+	// Tenant guard prevents cross-tenant updates (S3.5 W2-B).
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)
 	UpdatePresentation(ctx context.Context, arg UpdatePresentationParams) (Presentation, error)
 	UpdatePresentationConversion(ctx context.Context, arg UpdatePresentationConversionParams) (PresentationConversion, error)

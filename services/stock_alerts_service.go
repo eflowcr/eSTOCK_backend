@@ -16,22 +16,25 @@ func NewStockAlertsService(repo ports.StockAlertsRepository) *StockAlertsService
 	}
 }
 
-func (s *StockAlertsService) GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
-	return s.Repository.GetAllStockAlerts(resolved)
+// S3.5 W2-B: every method threads tenantID. Cron callers must iterate the active tenants
+// list and invoke Analyze/LotExpiration per tenant; HTTP callers pass Config.TenantID.
+
+func (s *StockAlertsService) GetAllStockAlerts(tenantID string, resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
+	return s.Repository.GetAllStockAlerts(tenantID, resolved)
 }
 
-func (s *StockAlertsService) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
-	return s.Repository.Analyze()
+func (s *StockAlertsService) Analyze(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
+	return s.Repository.Analyze(tenantID)
 }
 
-func (s *StockAlertsService) LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse) {
-	return s.Repository.LotExpiration()
+func (s *StockAlertsService) LotExpiration(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
+	return s.Repository.LotExpiration(tenantID)
 }
 
-func (s *StockAlertsService) ResolveAlert(alertID string) *responses.InternalResponse {
-	return s.Repository.ResolveAlert(alertID)
+func (s *StockAlertsService) ResolveAlert(tenantID, alertID string) *responses.InternalResponse {
+	return s.Repository.ResolveAlert(tenantID, alertID)
 }
 
-func (s *StockAlertsService) ExportAlertsToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportAlertsToExcel()
+func (s *StockAlertsService) ExportAlertsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportAlertsToExcel(tenantID)
 }

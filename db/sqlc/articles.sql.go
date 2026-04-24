@@ -693,13 +693,20 @@ func (q *Queries) ListArticlesForTenant(ctx context.Context, tenantID pgtype.UUI
 
 const listLotsBySku = `-- name: ListLotsBySku :many
 SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-       lot_notes, manufactured_at, best_before_date
+       lot_notes, manufactured_at, best_before_date, tenant_id
 FROM lots
 WHERE sku = $1
 `
 
 // Lots by SKU (for UpdateArticle warnings) — internal, no tenant filter (lots table
 // not yet tenant-scoped; tracked in S3.5 W2).
+// NOTE (S3.5 W2-B): SELECT column list mirrors db/sqlc/models.go::Lot (tenant_id was
+// added at the end by migration 000030); without it sqlc would emit a per-query Row
+// struct and break sqlcLotToDatabase consumers. This query is intentionally global
+// (no tenant filter) because it powers the article-update warning that surfaces
+// "lot rows still exist" feedback when an admin disables track_by_lot. ArticlesService
+// runs in a tenant-scoped controller already; revisiting this for strict tenant scoping
+// is tracked as an articles-domain follow-up (W1 owns articles.sql).
 func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) {
 	rows, err := q.db.Query(ctx, listLotsBySku, sku)
 	if err != nil {
@@ -721,6 +728,7 @@ func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) 
 			&i.LotNotes,
 			&i.ManufacturedAt,
 			&i.BestBeforeDate,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}

@@ -76,7 +76,21 @@ func LocationsTableConfig() TableConfig {
 }
 
 // LotsTableConfig returns the generic table configuration for lots.
-func LotsTableConfig() TableConfig {
+//
+// S3.5 W2-B: tenantID, when non-empty, is baked into DefaultWhere as a UUID literal so
+// the generic list/export handlers always scope rows to the calling tenant. The literal
+// is single-quoted and ::uuid-cast — Postgres rejects malformed UUIDs at plan time, so
+// an invalid string from a misconfigured route surfaces as a SQL error rather than a
+// silent cross-tenant leak.
+func LotsTableConfig(tenantID ...string) TableConfig {
+	tid := ""
+	if len(tenantID) > 0 {
+		tid = tenantID[0]
+	}
+	defaultWhere := ""
+	if tid != "" {
+		defaultWhere = "l.tenant_id = '" + tid + "'::uuid"
+	}
 	return TableConfig{
 		EntityName: "lotes",
 		FromClause: "lots l",
@@ -89,11 +103,11 @@ func LotsTableConfig() TableConfig {
 			"status":        "l.status",
 			"created_at":    "l.created_at",
 		},
-		SearchFields: []string{"l.lot_number", "l.sku"},
-		DefaultWhere: "",
-		SelectFields: "l.id, l.lot_number, l.sku, l.quantity, l.expiration_date, l.status, l.created_at",
-		CSVFields:    []string{"id", "lot_number", "sku", "quantity", "expiration_at", "status", "created_at"},
-		CSVHeaders:   []string{"ID", "Lote", "SKU", "Cantidad", "Expira en", "Estado", "Creado en"},
+		SearchFields:   []string{"l.lot_number", "l.sku"},
+		DefaultWhere:   defaultWhere,
+		SelectFields:   "l.id, l.lot_number, l.sku, l.quantity, l.expiration_date, l.status, l.created_at",
+		CSVFields:      []string{"id", "lot_number", "sku", "quantity", "expiration_at", "status", "created_at"},
+		CSVHeaders:     []string{"ID", "Lote", "SKU", "Cantidad", "Expira en", "Estado", "Creado en"},
 		DefaultSortBy:  "created_at",
 		DefaultSortDir: "desc",
 	}

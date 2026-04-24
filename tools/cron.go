@@ -88,19 +88,21 @@ func RunStaleReservationsCleanup(db *gorm.DB) error {
 }
 
 // RunStockAlertAnalysis corre el análisis de alertas de stock (low + expiring).
-// HR1-C2: usa pg_try_advisory_xact_lock (transaction-scoped) dentro de db.Transaction(),
-// igual que RunStaleReservationsCleanup. El lock se libera automáticamente al commit/rollback,
-// eliminando el bug donde lock y unlock corrían en distintas conexiones del pool (session-level
-// pg_try_advisory_lock + defer pg_advisory_unlock en conexiones distintas del pool).
-// analyzer() corre dentro de la misma transacción; GORM maneja transacciones anidadas vía
-// savepoints, por lo que los Begin() internos del repo no causan deadlock.
-func RunStockAlertAnalysis(db *gorm.DB, analyzer func() error) error {
+// HR1-C2: usa pg_try_advisory_xact_lock (transaction-scoped) dentro de db.Transaction().
+// El lock se libera automáticamente al commit/rollback.
+//
+// S3.5 W2-B: el analyzer ahora se ejecuta una vez por tenant activo. La firma
+// `analyzer(tenantID string) error` permite al caller (main, admin_cron) inyectar
+// la lógica concreta (Analyze + LotExpiration por tenant) sin dependencia de servicios
+// — evita ciclos de import. La iteración consulta `tenants` directamente; si la tabla
+// no existe (deploys S2/S2.5 antiguos) se hace fallback al tenant default para preservar
+// el comportamiento single-tenant.
+func RunStockAlertAnalysis(db *gorm.DB, analyzer func(tenantID string) error) error {
 	if db == nil {
 		return errors.New("cron: nil db")
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		// Advisory lock a nivel de transacción — un pod a la vez.
-		// Se libera automáticamente al commit/rollback.
 		var locked bool
 		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(987654321)").Scan(&locked).Error; err != nil {
 			return err
@@ -109,8 +111,49 @@ func RunStockAlertAnalysis(db *gorm.DB, analyzer func() error) error {
 			log.Debug().Msg("cron: stock_alerts: otro pod tiene el lock, skipping")
 			return nil
 		}
-		return analyzer()
+
+		tenantIDs, err := activeTenantIDs(tx)
+		if err != nil {
+			return fmt.Errorf("stock_alerts: list tenants: %w", err)
+		}
+
+		for _, tid := range tenantIDs {
+			if err := analyzer(tid); err != nil {
+				// Don't abort the whole run — log and continue so one bad tenant does
+				// not starve every other tenant of fresh alerts.
+				log.Error().Err(err).Str("tenant_id", tid).Msg("cron: stock_alerts: analyzer failed for tenant")
+			}
+		}
+		return nil
 	})
+}
+
+// activeTenantIDs returns the set of tenant UUIDs eligible for cron processing.
+// Falls back to the global default tenant UUID when the `tenants` table is missing
+// (older deployments) or empty — preserves single-tenant behavior pre-S3.
+func activeTenantIDs(tx *gorm.DB) ([]string, error) {
+	const defaultTenantID = "00000000-0000-0000-0000-000000000001"
+
+	// Cheap probe: if `tenants` doesn't exist, return the default tenant.
+	var exists bool
+	if err := tx.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tenants')").
+		Scan(&exists).Error; err != nil || !exists {
+		return []string{defaultTenantID}, nil
+	}
+
+	var ids []string
+	if err := tx.Raw(`
+		SELECT id::text FROM tenants
+		 WHERE deleted_at IS NULL
+		   AND (is_active IS NULL OR is_active = true)
+		   AND (status IS NULL OR status NOT IN ('past_due','cancelled','suspended'))
+	`).Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []string{defaultTenantID}, nil
+	}
+	return ids, nil
 }
 
 // LotExpirationWindow describes a lot approaching expiration.
@@ -363,10 +406,11 @@ func RunTrialExpirationCheck(db *gorm.DB, sendFn func(ctx context.Context, toEma
 // Los errores se loggean sin parar la ejecución del siguiente job.
 //
 // Callbacks (all optional, pass nil to skip):
+//   - analyzer: invoked per active tenant (S3.5 W2-B); receives the tenant UUID string.
 //   - lotNotifyFn: called per expiring lot event (eventType, title, body)
 //   - lowStockNotifyFn: called per unresolved low-stock alert (sku, message)
 //   - trialSendFn: called per trial tenant requiring a reminder or expiration email
-func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType, title, body string) error, lowStockNotifyFn func(sku, message string) error, trialSendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error) {
+func CronDispatch(db *gorm.DB, analyzer func(tenantID string) error, lotNotifyFn func(eventType, title, body string) error, lowStockNotifyFn func(sku, message string) error, trialSendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error) {
 	if err := RunStockAlertAnalysis(db, analyzer); err != nil {
 		log.Error().Err(err).Msg("cron: stock alerts failed")
 	}

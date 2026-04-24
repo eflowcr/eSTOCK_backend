@@ -15,10 +15,15 @@ type LotsRepository struct {
 	DB *gorm.DB
 }
 
-func (r *LotsRepository) GetAllLots() ([]database.Lot, *responses.InternalResponse) {
+// GetAllLots returns lots for a single tenant ordered by creation date (newest first).
+// S3.5 W2-B: tenant filter is mandatory; an empty tenantID yields zero rows by design.
+func (r *LotsRepository) GetAllLots(tenantID string) ([]database.Lot, *responses.InternalResponse) {
 	var lots []database.Lot
 
-	err := r.DB.Table(database.Lot{}.TableName()).Order("created_at DESC").Find(&lots).Error
+	err := r.DB.Table(database.Lot{}.TableName()).
+		Where("tenant_id = ?", tenantID).
+		Order("created_at DESC").
+		Find(&lots).Error
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
@@ -30,10 +35,12 @@ func (r *LotsRepository) GetAllLots() ([]database.Lot, *responses.InternalRespon
 	return lots, nil
 }
 
-func (r *LotsRepository) GetLotsBySKU(sku *string) ([]database.Lot, *responses.InternalResponse) {
+// GetLotsBySKU returns the tenant's lots, optionally filtered by SKU.
+// S3.5 W2-B: tenant filter is always applied; SKU is an additional narrowing filter.
+func (r *LotsRepository) GetLotsBySKU(tenantID string, sku *string) ([]database.Lot, *responses.InternalResponse) {
 	var lots []database.Lot
 
-	query := r.DB.Table(database.Lot{}.TableName())
+	query := r.DB.Table(database.Lot{}.TableName()).Where("tenant_id = ?", tenantID)
 
 	if sku != nil && *sku != "" {
 		query = query.Where("sku = ?", *sku)
@@ -53,7 +60,8 @@ func (r *LotsRepository) GetLotsBySKU(sku *string) ([]database.Lot, *responses.I
 	return lots, nil
 }
 
-func (r *LotsRepository) CreateLot(data *requests.CreateLotRequest) *responses.InternalResponse {
+// CreateLot inserts a new lot owned by tenantID. S3.5 W2-B.
+func (r *LotsRepository) CreateLot(tenantID string, data *requests.CreateLotRequest) *responses.InternalResponse {
 	now := tools.GetCurrentTime()
 
 	// Parse string to time.Time
@@ -74,6 +82,7 @@ func (r *LotsRepository) CreateLot(data *requests.CreateLotRequest) *responses.I
 
 	lot := &database.Lot{
 		ID:             lotID,
+		TenantID:       tenantID,
 		LotNumber:      data.LotNumber,
 		SKU:            data.SKU,
 		Quantity:       data.Quantity,
@@ -94,10 +103,12 @@ func (r *LotsRepository) CreateLot(data *requests.CreateLotRequest) *responses.I
 	return nil
 }
 
-func (r *LotsRepository) UpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
+// UpdateLot mutates a lot scoped to the calling tenant. S3.5 W2-B: cross-tenant updates
+// return NotFound to avoid leaking the existence of a row owned by another tenant.
+func (r *LotsRepository) UpdateLot(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
 	var lot database.Lot
 
-	err := r.DB.First(&lot, "id = ?", id).Error
+	err := r.DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&lot).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &responses.InternalResponse{
 			Message:    "Lot not found",
@@ -115,6 +126,7 @@ func (r *LotsRepository) UpdateLot(id string, data map[string]interface{}) *resp
 
 	protectedFields := map[string]bool{
 		"id":         true,
+		"tenant_id":  true,
 		"created_at": true,
 	}
 
@@ -125,7 +137,7 @@ func (r *LotsRepository) UpdateLot(id string, data map[string]interface{}) *resp
 	data["updated_at"] = tools.GetCurrentTime()
 
 	if err := r.DB.Table(database.Lot{}.TableName()).Where(
-		"id = ?", id,
+		"id = ? AND tenant_id = ?", id, tenantID,
 	).Updates(data).Error; err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
@@ -137,8 +149,9 @@ func (r *LotsRepository) UpdateLot(id string, data map[string]interface{}) *resp
 	return nil
 }
 
-func (r *LotsRepository) DeleteLot(id string) *responses.InternalResponse {
-	result := r.DB.Delete(&database.Lot{}, id)
+// DeleteLot removes a lot scoped to the calling tenant. S3.5 W2-B.
+func (r *LotsRepository) DeleteLot(tenantID, id string) *responses.InternalResponse {
+	result := r.DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&database.Lot{})
 	if result.Error != nil {
 		return &responses.InternalResponse{
 			Error:   result.Error,
@@ -158,6 +171,9 @@ func (r *LotsRepository) DeleteLot(id string) *responses.InternalResponse {
 	return nil
 }
 
+// GetLotByID is the internal-use lookup (no tenant filter). Used by GetLotTrace itself
+// after the tenant guard has already run, and by intra-domain joins where the parent
+// row has already been tenant-checked.
 func (r *LotsRepository) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
 	var lot database.Lot
 	err := r.DB.First(&lot, "id = ?", id).Error
@@ -174,9 +190,30 @@ func (r *LotsRepository) GetLotByID(id string) (*database.Lot, *responses.Intern
 	return &lot, nil
 }
 
-func (r *LotsRepository) GetLotTrace(lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
-	// 1. Lot data
-	lot, resp := r.GetLotByID(lotID)
+// GetLotByIDForTenant scopes the lookup to tenantID. S3.5 W2-B: HTTP callers must use
+// this variant so cross-tenant lot enumeration is impossible.
+func (r *LotsRepository) GetLotByIDForTenant(id, tenantID string) (*database.Lot, *responses.InternalResponse) {
+	var lot database.Lot
+	err := r.DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&lot).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, &responses.InternalResponse{
+			Message:    "Lot not found",
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
+		}
+	}
+	if err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "Failed to retrieve lot", Handled: false}
+	}
+	return &lot, nil
+}
+
+// GetLotTrace returns the full provenance trace for a lot owned by tenantID.
+// S3.5 W2-B: lot lookup is tenant-scoped; downstream joins inherit isolation
+// via inventory_movements/inventory_lots which were tenant-scoped in S2.5.
+func (r *LotsRepository) GetLotTrace(tenantID, lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+	// 1. Lot data (tenant-scoped — guards trace endpoint from cross-tenant enumeration).
+	lot, resp := r.GetLotByIDForTenant(lotID, tenantID)
 	if resp != nil {
 		return nil, resp
 	}

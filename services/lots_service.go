@@ -11,8 +11,8 @@ import (
 )
 
 type LotsService struct {
-	Repository     ports.LotsRepository
-	ArticlesRepo   ports.ArticlesRepository // optional: when set, GetLotsBySKU returns lots in rotation order (FIFO/FEFO)
+	Repository   ports.LotsRepository
+	ArticlesRepo ports.ArticlesRepository // optional: when set, GetLotsBySKU returns lots in rotation order (FIFO/FEFO)
 }
 
 // NewLotsService builds the lots service. articlesRepo may be nil; when set, GetLotsBySKU orders lots by article rotation strategy.
@@ -23,21 +23,24 @@ func NewLotsService(repo ports.LotsRepository, articlesRepo ports.ArticlesReposi
 	}
 }
 
-func (s *LotsService) GetAllLots() ([]database.Lot, *responses.InternalResponse) {
-	return s.Repository.GetAllLots()
+// S3.5 W2-B: every public method takes tenantID so the controller can pass Config.TenantID
+// (or middleware-resolved tenant context) and isolation is enforced one layer below the HTTP boundary.
+
+func (s *LotsService) GetAllLots(tenantID string) ([]database.Lot, *responses.InternalResponse) {
+	return s.Repository.GetAllLots(tenantID)
 }
 
-func (s *LotsService) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
-	return s.Repository.GetLotByID(id)
+func (s *LotsService) GetLotByID(tenantID, id string) (*database.Lot, *responses.InternalResponse) {
+	return s.Repository.GetLotByIDForTenant(id, tenantID)
 }
 
-// GetTrace returns the full provenance trace for a lot: origin, movements, and current stock.
-func (s *LotsService) GetTrace(lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
-	return s.Repository.GetLotTrace(lotID)
+// GetTrace returns the full provenance trace for a lot owned by tenantID.
+func (s *LotsService) GetTrace(tenantID, lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+	return s.Repository.GetLotTrace(tenantID, lotID)
 }
 
-func (s *LotsService) GetLotsBySKU(sku *string) ([]database.Lot, *responses.InternalResponse) {
-	lots, resp := s.Repository.GetLotsBySKU(sku)
+func (s *LotsService) GetLotsBySKU(tenantID string, sku *string) ([]database.Lot, *responses.InternalResponse) {
+	lots, resp := s.Repository.GetLotsBySKU(tenantID, sku)
 	if resp != nil || lots == nil || len(lots) == 0 {
 		return lots, resp
 	}
@@ -84,14 +87,14 @@ func sortLotsByRotationStrategy(lots []database.Lot, strategy string) {
 	})
 }
 
-func (s *LotsService) Create(data *requests.CreateLotRequest) *responses.InternalResponse {
-	return s.Repository.CreateLot(data)
+func (s *LotsService) Create(tenantID string, data *requests.CreateLotRequest) *responses.InternalResponse {
+	return s.Repository.CreateLot(tenantID, data)
 }
 
-func (s *LotsService) UpdateUpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
-	return s.Repository.UpdateLot(id, data)
+func (s *LotsService) UpdateUpdateLot(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
+	return s.Repository.UpdateLot(tenantID, id, data)
 }
 
-func (s *LotsService) DeleteLot(id string) *responses.InternalResponse {
-	return s.Repository.DeleteLot(id)
+func (s *LotsService) DeleteLot(tenantID, id string) *responses.InternalResponse {
+	return s.Repository.DeleteLot(tenantID, id)
 }

@@ -84,13 +84,15 @@ func main() {
 	go func() {
 		time.Sleep(30 * time.Second)
 
-		analyzer := func() error {
+		// S3.5 W2-B: analyzer runs once per active tenant; tools.RunStockAlertAnalysis
+		// iterates the tenants table and invokes this callback for each tenant UUID.
+		analyzer := func(tenantID string) error {
 			repo := &repositories.StockAlertsRepository{DB: db, Redis: redisClient}
 			svc := services.NewStockAlertsService(repo)
-			if _, resp := svc.Analyze(); resp != nil && resp.Error != nil {
+			if _, resp := svc.Analyze(tenantID); resp != nil && resp.Error != nil {
 				return resp.Error
 			}
-			if _, resp := svc.LotExpiration(); resp != nil && resp.Error != nil {
+			if _, resp := svc.LotExpiration(tenantID); resp != nil && resp.Error != nil {
 				return resp.Error
 			}
 			return nil

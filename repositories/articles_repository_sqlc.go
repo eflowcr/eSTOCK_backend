@@ -716,6 +716,7 @@ func sqlcLotToDatabase(l sqlc.Lot) database.Lot {
 	st := l.Status
 	return database.Lot{
 		ID:             l.ID,
+		TenantID:       pgUUIDToString(l.TenantID),
 		LotNumber:      l.LotNumber,
 		SKU:            l.Sku,
 		Quantity:       pgNumericToFloat(l.Quantity),

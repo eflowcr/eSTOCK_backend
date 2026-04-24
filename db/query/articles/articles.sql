@@ -153,8 +153,15 @@ DELETE FROM articles WHERE id = $1 AND tenant_id = $2;
 -- Lots by SKU (for UpdateArticle warnings) — internal, no tenant filter (lots table
 -- not yet tenant-scoped; tracked in S3.5 W2).
 -- name: ListLotsBySku :many
+-- NOTE (S3.5 W2-B): SELECT column list mirrors db/sqlc/models.go::Lot (tenant_id was
+-- added at the end by migration 000030); without it sqlc would emit a per-query Row
+-- struct and break sqlcLotToDatabase consumers. This query is intentionally global
+-- (no tenant filter) because it powers the article-update warning that surfaces
+-- "lot rows still exist" feedback when an admin disables track_by_lot. ArticlesService
+-- runs in a tenant-scoped controller already; revisiting this for strict tenant scoping
+-- is tracked as an articles-domain follow-up (W1 owns articles.sql).
 SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-       lot_notes, manufactured_at, best_before_date
+       lot_notes, manufactured_at, best_before_date, tenant_id
 FROM lots
 WHERE sku = $1;
 
