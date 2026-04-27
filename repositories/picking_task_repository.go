@@ -251,7 +251,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 			pt.task_id,
 			pt.order_number,
 			pt.created_by,
-			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			COALESCE(usr.first_name || ' ' || usr.last_name, '') AS user_creator_name,
 			pt.assigned_to,
 			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
 			pt.status,
@@ -282,7 +282,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 				)
 			) AS items
 		FROM picking_tasks pt
-		INNER JOIN users usr ON pt.created_by = usr.id
+		LEFT JOIN users usr ON pt.created_by = usr.id
 		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
@@ -328,7 +328,7 @@ func (r *PickingTaskRepository) GetAllForTenant(tenantID string) ([]responses.Pi
 			pt.task_id,
 			pt.order_number,
 			pt.created_by,
-			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			COALESCE(usr.first_name || ' ' || usr.last_name, '') AS user_creator_name,
 			pt.assigned_to,
 			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
 			pt.status,
@@ -359,7 +359,7 @@ func (r *PickingTaskRepository) GetAllForTenant(tenantID string) ([]responses.Pi
 				)
 			) AS items
 		FROM picking_tasks pt
-		INNER JOIN users usr ON pt.created_by = usr.id
+		LEFT JOIN users usr ON pt.created_by = usr.id
 		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'

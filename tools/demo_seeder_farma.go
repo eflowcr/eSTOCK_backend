@@ -70,7 +70,17 @@ func prefixedTaskID(tenantID, baseID string) string {
 // demo dataset instead of the second tenant hitting a duplicate-key error or
 // silently inheriting tenant 1's rows. See tenantPrefix and migration 000029 for
 // the full structural-debt context.
-func SeedFarma(ctx context.Context, db *gorm.DB, tenantID string) error {
+//
+// S3.5.3 N3 (CRITICAL): adminUserID is the freshly-created tenant admin's user id
+// and is used as receiving_tasks.created_by + picking_tasks.created_by for every
+// demo row. The previous implementation passed tenantID into created_by, so the
+// repository INNER JOIN to users dropped 100% of demo rows (tenant UUID never
+// matches a users.id). The result was a tenant signup that completed cleanly but
+// served an empty dashboard — silent data invisibility. If adminUserID is empty
+// (legacy callers / direct demo invocations without a real admin), the seeder
+// falls back to tenantID for backwards compatibility and the repository LEFT JOIN
+// fix (S3.5.3 same wave) still keeps rows visible with an empty creator name.
+func SeedFarma(ctx context.Context, db *gorm.DB, tenantID, adminUserID string) error {
 	// ── Idempotency check ────────────────────────────────────────────────────────
 	var existing database.DemoDataSeed
 	err := db.WithContext(ctx).
@@ -120,12 +130,15 @@ func SeedFarma(ctx context.Context, db *gorm.DB, tenantID string) error {
 		}
 
 		// 7. Receiving tasks (10 completed + 10 partial/draft) — uses locationCodes
-		if err := seedReceivingTasks(ctx, tx, tenantID, articles, locationCodes, supplierIDs); err != nil {
+		// S3.5.3 N3: pass adminUserID through so created_by points at a real users.id
+		// and the INNER JOIN in receiving_tasks_repository doesn't silently drop rows.
+		if err := seedReceivingTasks(ctx, tx, tenantID, adminUserID, articles, locationCodes, supplierIDs); err != nil {
 			return fmt.Errorf("seed receiving tasks: %w", err)
 		}
 
 		// 8. Picking tasks (8 completed + 7 partial/draft) — uses locationCodes
-		if err := seedPickingTasks(ctx, tx, tenantID, articles, locationCodes, customerIDs); err != nil {
+		// S3.5.3 N3: same created_by fix as receiving tasks above.
+		if err := seedPickingTasks(ctx, tx, tenantID, adminUserID, articles, locationCodes, customerIDs); err != nil {
 			return fmt.Errorf("seed picking tasks: %w", err)
 		}
 
@@ -461,7 +474,14 @@ func seedInventory(ctx context.Context, tx *gorm.DB, _ string, articles []farmaA
 
 // ─── receiving tasks ─────────────────────────────────────────────────────────
 
-func seedReceivingTasks(ctx context.Context, tx *gorm.DB, tenantID string, articles []farmaArticle, locationIDs, supplierIDs []string) error {
+// seedReceivingTasks accepts adminUserID for the created_by column. Falls back to
+// tenantID if empty (legacy callers without a real admin user); the repository
+// LEFT JOIN guard keeps such rows visible even though the user lookup yields nil.
+func seedReceivingTasks(ctx context.Context, tx *gorm.DB, tenantID, adminUserID string, articles []farmaArticle, locationIDs, supplierIDs []string) error {
+	createdBy := adminUserID
+	if createdBy == "" {
+		createdBy = tenantID
+	}
 	now := time.Now()
 
 	for i := 0; i < 20; i++ {
@@ -522,7 +542,9 @@ func seedReceivingTasks(ctx context.Context, tx *gorm.DB, tenantID string, artic
 			ID:          uuid.NewString(),
 			TaskID:      taskID,
 			InboundNumber: inboundNum,
-			CreatedBy:   tenantID, // system-generated
+			// S3.5.3 N3: real admin user_id (was tenantID — caused INNER JOIN drops
+			// in GetAllForTenant and silent data invisibility on the dashboard).
+			CreatedBy:   createdBy,
 			Status:      status,
 			Priority:    priorityForIndex(i),
 			Items:       json.RawMessage(itemsJSON),
@@ -543,7 +565,13 @@ func seedReceivingTasks(ctx context.Context, tx *gorm.DB, tenantID string, artic
 
 // ─── picking tasks ────────────────────────────────────────────────────────────
 
-func seedPickingTasks(ctx context.Context, tx *gorm.DB, tenantID string, articles []farmaArticle, locationIDs, customerIDs []string) error {
+// seedPickingTasks accepts adminUserID for the created_by column. Falls back to
+// tenantID if empty; see seedReceivingTasks for the same fallback rationale.
+func seedPickingTasks(ctx context.Context, tx *gorm.DB, tenantID, adminUserID string, articles []farmaArticle, locationIDs, customerIDs []string) error {
+	createdBy := adminUserID
+	if createdBy == "" {
+		createdBy = tenantID
+	}
 	now := time.Now()
 
 	for i := 0; i < 15; i++ {
@@ -606,7 +634,8 @@ func seedPickingTasks(ctx context.Context, tx *gorm.DB, tenantID string, article
 			ID:          uuid.NewString(),
 			TaskID:      taskID,
 			OrderNumber: orderNum,
-			CreatedBy:   tenantID,
+			// S3.5.3 N3: real admin user_id (see seedReceivingTasks for full context).
+			CreatedBy:   createdBy,
 			Status:      status,
 			Priority:    priorityForIndex(i),
 			Items:       json.RawMessage(itemsJSON),

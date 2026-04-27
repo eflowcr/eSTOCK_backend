@@ -269,10 +269,13 @@ func TestSeedFarma_Idempotent(t *testing.T) {
 	tenantID := "00000000-0000-0000-0000-000000000001" // default tenant from migration
 
 	// Run SeedFarma twice — should not error on second run.
-	err1 := tools.SeedFarma(ctx, db, tenantID)
+	// Empty adminUserID: legacy behaviour (created_by falls back to tenantID); the
+	// repository LEFT JOIN keeps rows visible regardless. Idempotency does not
+	// depend on the new arg.
+	err1 := tools.SeedFarma(ctx, db, tenantID, "")
 	require.NoError(t, err1, "first SeedFarma should succeed")
 
-	err2 := tools.SeedFarma(ctx, db, tenantID)
+	err2 := tools.SeedFarma(ctx, db, tenantID, "")
 	require.NoError(t, err2, "second SeedFarma should be idempotent (no error)")
 
 	// Verify articles count is not doubled. S3.5 W4: SKUs are now tenant-prefixed
