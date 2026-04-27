@@ -136,7 +136,7 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 			rt.task_id,
 			rt.inbound_number,
 			rt.created_by,
-			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			COALESCE(usr.first_name || ' ' || usr.last_name, '') AS user_creator_name,
 			rt.assigned_to,
 			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
 			rt.status,
@@ -173,7 +173,7 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 				)
 			) AS items
 		FROM receiving_tasks rt
-		INNER JOIN users usr ON rt.created_by = usr.id
+		LEFT JOIN users usr ON rt.created_by = usr.id
 		LEFT JOIN users usr_assignee ON rt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
@@ -227,7 +227,7 @@ func (r *ReceivingTasksRepository) GetAllForTenant(tenantID string) ([]responses
 			rt.task_id,
 			rt.inbound_number,
 			rt.created_by,
-			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			COALESCE(usr.first_name || ' ' || usr.last_name, '') AS user_creator_name,
 			rt.assigned_to,
 			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
 			rt.status,
@@ -264,7 +264,7 @@ func (r *ReceivingTasksRepository) GetAllForTenant(tenantID string) ([]responses
 				)
 			) AS items
 		FROM receiving_tasks rt
-		INNER JOIN users usr ON rt.created_by = usr.id
+		LEFT JOIN users usr ON rt.created_by = usr.id
 		LEFT JOIN users usr_assignee ON rt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
