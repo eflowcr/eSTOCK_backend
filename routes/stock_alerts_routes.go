@@ -33,10 +33,16 @@ func RegisterStockAlertsRoutes(router *gin.RouterGroup, db *gorm.DB, config conf
 		read := tools.RequirePermission(rolesRepo, "stock_alerts", "read")
 		update := tools.RequirePermission(rolesRepo, "stock_alerts", "update")
 
-		route.GET("/:resolved", read, stockAlertsController.GetAllStockAlerts)
+		// S3.5.4 (B15 fix): root listing now responds (defaults to active alerts).
+		// Previously GET /stock-alerts/ returned 404 because only /:resolved existed,
+		// breaking probes / frontend search() helper / endpoint discovery. The /:resolved
+		// variant remains for explicit filtering (true|false).
+		route.GET("", read, stockAlertsController.GetAllStockAlerts)
+		route.GET("/", read, stockAlertsController.GetAllStockAlerts)
 		route.GET("/analyze", read, analyzeRateLimiter, stockAlertsController.Analyze)
 		route.GET("/lot-expiration", read, stockAlertsController.LotExpiration)
-		route.PATCH("/:id/resolve", update, stockAlertsController.ResolveAlert)
 		route.GET("/export", read, stockAlertsController.ExportAlertsToExcel)
+		route.GET("/:resolved", read, stockAlertsController.GetAllStockAlerts)
+		route.PATCH("/:id/resolve", update, stockAlertsController.ResolveAlert)
 	}
 }

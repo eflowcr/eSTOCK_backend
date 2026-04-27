@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/eflowcr/eSTOCK_backend/models/database"
@@ -200,4 +201,47 @@ func TestStockAlertsController_ExportAlertsToExcel_ServiceError(t *testing.T) {
 	ctrl := newStockAlertsController(repo)
 	w := performRequest(ctrl.ExportAlertsToExcel, "GET", "/stock-alerts/export", nil, nil)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// S3.5.4 (B15 fix): root listing routes (with and without trailing slash) must respond 200,
+// not 404. Previously only /:resolved was registered, so direct probes / SDK clients hitting
+// /api/stock-alerts/ got page-not-found. We register both /, "" and /:resolved against
+// GetAllStockAlerts; this test guards against accidental regression of the route table.
+func TestStockAlertsRoutes_RootListingNotFoundRegression(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &mockStockAlertsRepoCtrl{alerts: []database.StockAlert{}}
+	ctrl := newStockAlertsController(repo)
+
+	router := gin.New()
+	api := router.Group("/api")
+	route := api.Group("/stock-alerts")
+	{
+		// Mirror routes/stock_alerts_routes.go (without auth/permission middleware).
+		route.GET("", ctrl.GetAllStockAlerts)
+		route.GET("/", ctrl.GetAllStockAlerts)
+		route.GET("/analyze", ctrl.Analyze)
+		route.GET("/lot-expiration", ctrl.LotExpiration)
+		route.GET("/export", ctrl.ExportAlertsToExcel)
+		route.GET("/:resolved", ctrl.GetAllStockAlerts)
+		route.PATCH("/:id/resolve", ctrl.ResolveAlert)
+	}
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"root no slash", "/api/stock-alerts"},
+		{"root with slash", "/api/stock-alerts/"},
+		{"resolved=true", "/api/stock-alerts/true"},
+		{"resolved=false", "/api/stock-alerts/false"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(http.MethodGet, tc.path, nil)
+			router.ServeHTTP(w, req)
+			assert.NotEqual(t, http.StatusNotFound, w.Code, "GET %s should not return 404 (B15 regression)", tc.path)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
 }
