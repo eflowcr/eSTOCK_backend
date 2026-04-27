@@ -25,12 +25,12 @@ type BillingHandlerError struct {
 
 // validPlans maps plan name → Stripe Price ID (populated at construction from config).
 type BillingService struct {
-	repo        ports.BillingRepository
-	notifSvc    *NotificationsService
-	tenantID    string
-	priceIDs    map[string]string
+	repo          ports.BillingRepository
+	notifSvc      *NotificationsService
+	tenantID      string
+	priceIDs      map[string]string
 	webhookSecret string
-	appURL      string
+	appURL        string
 }
 
 // NewBillingService constructs a BillingService. Stripe API key is set globally (stripe.Key).
@@ -179,6 +179,19 @@ func (s *BillingService) GetSubscription(tenantID string) (*database.Subscriptio
 		tenantID = s.tenantID
 	}
 	return s.repo.GetSubscriptionByTenant(tenantID)
+}
+
+// GetTenantTrialInfo returns the tenant's trial_ends_at + status for the billing endpoint.
+// Used by GET /api/billing/subscription to surface the trial deadline on the frontend banner
+// even when there is no Stripe subscription yet (B4 fix — S3.5.5).
+//
+// Returns (nil, nil) if the tenant row does not exist (defensive — should never happen for an
+// authenticated request, but the controller falls back gracefully).
+func (s *BillingService) GetTenantTrialInfo(tenantID string) (*database.Tenant, *responses.InternalResponse) {
+	if tenantID == "" {
+		tenantID = s.tenantID
+	}
+	return s.repo.GetTenantByID(tenantID)
 }
 
 // HandleCheckoutSessionCompleted processes a checkout.session.completed Stripe event.

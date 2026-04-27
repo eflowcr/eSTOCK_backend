@@ -100,7 +100,23 @@ func (c *BillingController) Checkout(ctx *gin.Context) {
 }
 
 // GetSubscription handles GET /api/billing/subscription (JWT required, tenant-scoped).
-// Returns the current subscription record for the tenant.
+// Returns the current subscription record for the tenant, plus trial_ends_at + tenant_status
+// from the tenants table so the frontend banner can show the real trial deadline regardless of
+// whether a Stripe subscription exists yet (B4 fix — S3.5.5).
+//
+// Response shape:
+//
+//	{
+//	  "data": {
+//	    "subscription": <Subscription | null>,
+//	    "trial_ends_at": "2026-05-11T20:07:37Z" | null,
+//	    "tenant_status": "trial" | "active" | ...
+//	  }
+//	}
+//
+// trial_ends_at is sourced from tenants.trial_ends_at (NOT subscription.trial_end) because the
+// trial period is defined at the tenant level by the signup flow — Stripe's trial_end only
+// applies once a paid plan with a trial is selected.
 func (c *BillingController) GetSubscription(ctx *gin.Context) {
 	tenantID := c.resolveTenantID(ctx)
 	if tenantID == "" {
@@ -112,13 +128,38 @@ func (c *BillingController) GetSubscription(ctx *gin.Context) {
 		writeErrorResponse(ctx, "GetBillingSubscription", "get_billing_subscription", resp)
 		return
 	}
+
+	// Fetch tenant trial info regardless of whether a subscription exists. The frontend
+	// uses tenants.trial_ends_at as the source of truth for the trial banner.
+	// If the tenant lookup fails we log + degrade (return subscription only) — the banner
+	// will fall back to "expires today" but the subscription endpoint stays functional.
+	tenant, tresp := c.Service.GetTenantTrialInfo(tenantID)
+	var trialEndsAt *string
+	tenantStatus := ""
+	if tresp != nil {
+		log.Warn().Err(tresp.Error).Str("tenant_id", tenantID).
+			Msg("billing: failed to load tenant trial info — degrading response without trial_ends_at")
+	} else if tenant != nil {
+		tenantStatus = tenant.Status
+		if !tenant.TrialEndsAt.IsZero() {
+			s := tenant.TrialEndsAt.UTC().Format("2006-01-02T15:04:05Z")
+			trialEndsAt = &s
+		}
+	}
+
+	payload := gin.H{
+		"subscription":  sub,
+		"trial_ends_at": trialEndsAt,
+		"tenant_status": tenantStatus,
+	}
+
 	if sub == nil {
 		tools.ResponseOK(ctx, "GetBillingSubscription", "Sin suscripción activa", "get_billing_subscription",
-			gin.H{"subscription": nil}, false, "")
+			payload, false, "")
 		return
 	}
 	tools.ResponseOK(ctx, "GetBillingSubscription", "Suscripción obtenida", "get_billing_subscription",
-		gin.H{"subscription": sub}, false, "")
+		payload, false, "")
 }
 
 // PortalSession handles POST /api/billing/portal-session (JWT required, tenant-scoped).
@@ -261,4 +302,3 @@ func (c *BillingController) StripeWebhook(ctx *gin.Context) {
 
 	ctx.Status(http.StatusOK)
 }
-

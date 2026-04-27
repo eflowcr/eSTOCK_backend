@@ -41,4 +41,9 @@ type BillingRepository interface {
 
 	// GetTenantAdminUserID returns the user ID of the admin for a tenant (for notifications).
 	GetTenantAdminUserID(tenantID string) (string, *responses.InternalResponse)
+
+	// GetTenantByID returns the tenant row for a tenant ID, or nil if not found.
+	// Used by GET /api/billing/subscription to expose trial_ends_at + status when the
+	// tenant has no Stripe subscription yet (B4 fix — S3.5.5).
+	GetTenantByID(tenantID string) (*database.Tenant, *responses.InternalResponse)
 }

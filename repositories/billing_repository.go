@@ -169,6 +169,20 @@ func (r *BillingRepository) MarkWebhookEventProcessed(eventID string) *responses
 	return nil
 }
 
+// GetTenantByID returns the tenant row for a tenant ID, or nil if not found.
+// Used by GET /api/billing/subscription to expose trial_ends_at + status (B4 fix — S3.5.5).
+func (r *BillingRepository) GetTenantByID(tenantID string) (*database.Tenant, *responses.InternalResponse) {
+	var tenant database.Tenant
+	err := r.DB.Where("id = ?", tenantID).First(&tenant).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Error obteniendo tenant", Handled: false}
+	}
+	return &tenant, nil
+}
+
 // GetTenantAdminUserID returns the user ID of the first active admin user (for notifications).
 // NOTE: the users table has no tenant_id column and no direct role string — it uses role_id (FK to roles).
 // We JOIN users → roles and filter by LOWER(roles.name) = 'admin'.
