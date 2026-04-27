@@ -149,10 +149,16 @@ func (r *StockAlertsRepository) Analyze(tenantID string) (*responses.StockAlertR
 	}
 
 	// Get inventory for this tenant only.
+	// S3.5.4 (B16 fix): inventory + inventory_movements tables do NOT have tenant_id columns
+	// (deferred to S3.6 structural migration). Scope via JOIN through articles.tenant_id,
+	// which is safe because articles.sku has a global UNIQUE index — every SKU belongs to
+	// exactly one tenant.
 	var inventory []database.Inventory
 	err = tx.
-		Table(database.Inventory{}.TableName()).
-		Where("tenant_id = ?", tenantID).
+		Table(database.Inventory{}.TableName()+" AS i").
+		Joins("JOIN articles a ON a.sku = i.sku").
+		Where("a.tenant_id = ?", tenantID).
+		Select("i.*").
 		Find(&inventory).Error
 
 	if err != nil {
@@ -165,13 +171,16 @@ func (r *StockAlertsRepository) Analyze(tenantID string) (*responses.StockAlertR
 	}
 
 	// Batch-fetch all outbound movements in the last 30 days for this tenant — one query.
+	// Same JOIN-via-articles approach: inventory_movements has no tenant_id column.
 	const movementLookbackDays = 30
 	lookbackCutoff := time.Now().AddDate(0, 0, -movementLookbackDays)
 
 	var allMovements []database.InventoryMovement
 	err = tx.
-		Table(database.InventoryMovement{}.TableName()).
-		Where("tenant_id = ? AND movement_type = ? AND created_at >= ?", tenantID, "outbound", lookbackCutoff).
+		Table(database.InventoryMovement{}.TableName()+" AS im").
+		Joins("JOIN articles a ON a.sku = im.sku").
+		Where("a.tenant_id = ? AND im.movement_type = ? AND im.created_at >= ?", tenantID, "outbound", lookbackCutoff).
+		Select("im.*").
 		Find(&allMovements).Error
 
 	if err != nil {
