@@ -284,6 +284,98 @@ func TestSeedFarma_Idempotent(t *testing.T) {
 	assert.EqualValues(t, 50, count, "exactly 50 farma articles should exist for tenant")
 }
 
+// ─── S3.5.2 N1: AssignsAdminRole ─────────────────────────────────────────────
+// Regression test for the prod bug where new tenant admins received the
+// "Operator" role because the case-sensitive `name = 'admin'` lookup missed
+// the canonical capitalized "Admin" row inserted by migration 000016.
+
+func TestSignup_AssignsAdminRole(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	// Do NOT seed an extra lower-case "admin" role — rely on the canonical
+	// capitalized "Admin" row from migration 000016. This mirrors prod and
+	// reproduces the exact condition that triggered N1.
+
+	// Discover the canonical Admin role id so we can assert against it.
+	var adminRole database.Role
+	require.NoError(t, db.Where("LOWER(name) = ?", "admin").First(&adminRole).Error,
+		"migration 000016 should have inserted Admin role")
+
+	repo := signupRepo(db)
+	ctx := context.Background()
+
+	req := requests.SignupRequest{
+		Email:         "n1.assignsadmin@test.com",
+		CompanyName:   "N1 Admin Co",
+		TenantSlug:    "n1adminco",
+		AdminName:     "N1 Admin",
+		AdminPassword: "TestP@ssw0rd!",
+	}
+	require.Nil(t, repo.InitiateSignup(ctx, req))
+
+	var st database.SignupToken
+	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
+
+	result, errResp := repo.VerifySignup(ctx, st.Token)
+	require.Nil(t, errResp)
+	require.NotNil(t, result)
+
+	var user database.User
+	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&user).Error)
+	assert.Equal(t, adminRole.ID, user.RoleID,
+		"new tenant admin must be assigned the Admin role, not Operator/Viewer/etc")
+}
+
+// ─── S3.5.2 N1: FailsLoudIfNoAdminRole ───────────────────────────────────────
+// Regression test for the silent-fallback bug. With no admin role present the
+// signup must fail loudly so ops/devs spot the misconfig instead of inheriting
+// a random "first active role".
+
+func TestSignup_FailsLoudIfNoAdminRole(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	// Hard-delete all admin-named roles (migration may have inserted one).
+	// Cascading FK from users.role_id → roles.id means we also need to detach
+	// any users currently pointing at an admin role; the migration's default
+	// admin user (if any) is fine to retarget at Operator for the test scope.
+	var operatorID string
+	require.NoError(t, db.Raw("SELECT id FROM roles WHERE LOWER(name) = 'operator' LIMIT 1").Scan(&operatorID).Error)
+	if operatorID != "" {
+		require.NoError(t, db.Exec("UPDATE users SET role_id = ? WHERE role_id IN (SELECT id FROM roles WHERE LOWER(name) = 'admin')", operatorID).Error)
+	}
+	require.NoError(t, db.Exec("DELETE FROM roles WHERE LOWER(name) = 'admin'").Error)
+
+	repo := signupRepo(db)
+	ctx := context.Background()
+
+	req := requests.SignupRequest{
+		Email:         "n1.failsloud@test.com",
+		CompanyName:   "N1 Fails Co",
+		TenantSlug:    "n1failsco",
+		AdminName:     "N1 Fails",
+		AdminPassword: "TestP@ssw0rd!",
+	}
+	require.Nil(t, repo.InitiateSignup(ctx, req))
+
+	var st database.SignupToken
+	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
+
+	result, errResp := repo.VerifySignup(ctx, st.Token)
+	assert.Nil(t, result, "result must be nil when admin role missing")
+	require.NotNil(t, errResp, "VerifySignup must error loud, not silently assign a random role")
+	if errResp.Error != nil {
+		assert.Contains(t, errResp.Error.Error(), "admin role not found",
+			"error should clearly identify the missing-role root cause")
+	}
+
+	// Sanity: tenant must NOT have been committed (the tx aborted).
+	var tenantCount int64
+	require.NoError(t, db.Model(&database.Tenant{}).Where("slug = ?", req.TenantSlug).Count(&tenantCount).Error)
+	assert.EqualValues(t, 0, tenantCount, "transaction must have rolled back when admin role missing")
+}
+
 // ─── Test: Rate-limit middleware integration (route-level) ───────────────────
 // Note: full rate-limit integration uses net/http/httptest with the router.
 // This is a unit-level smoke test in signup_controller_test.go.

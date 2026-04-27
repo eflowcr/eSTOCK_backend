@@ -182,16 +182,17 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 		}
 
 		// 2. Find the "admin" role (by name — canonical identifier per S2 roles migration).
-		var roleID string
+		// S3.5.2 N1: case-insensitive lookup. Postgres equality is case-sensitive and prod
+		// rows are stored capitalized ("Admin"); the previous lower-case match silently
+		// fell through to "first active role" (typically "Operator") and assigned the wrong
+		// role to every freshly signed-up tenant admin. Robust against future renames too.
+		// If no admin role exists at all the signup is unrecoverable — fail loud instead of
+		// quietly assigning a random role.
 		var role database.Role
-		if err := tx.Where("name = ?", "admin").First(&role).Error; err == nil {
-			roleID = role.ID
-		} else {
-			// Fallback: first active role.
-			if err2 := tx.Where("is_active = true").First(&role).Error; err2 == nil {
-				roleID = role.ID
-			}
+		if err := tx.Where("LOWER(name) = ?", "admin").First(&role).Error; err != nil {
+			return fmt.Errorf("admin role not found in roles table — signup cannot complete: %w", err)
 		}
+		roleID := role.ID
 
 		// 3. Create admin user using the pre-encrypted password stored in the token.
 		adminID = uuid.NewString()
