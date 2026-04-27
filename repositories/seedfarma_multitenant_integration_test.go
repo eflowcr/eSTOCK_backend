@@ -61,8 +61,10 @@ func TestSeedFarma_MultiTenantIsolation(t *testing.T) {
 	seedTenantRow(t, db, tenantB, "tenantb-seedtest", "b@seedtest.com")
 
 	// ── Seed both tenants ────────────────────────────────────────────────────
-	require.NoError(t, tools.SeedFarma(ctx, db, tenantA), "seed for tenant A")
-	require.NoError(t, tools.SeedFarma(ctx, db, tenantB), "seed for tenant B (must NOT collide on global UNIQUE indexes)")
+	// adminUserID empty: this test only proves multi-tenant isolation of the data
+	// itself; created_by visibility is covered by separate S3.5.3 N3 tests.
+	require.NoError(t, tools.SeedFarma(ctx, db, tenantA, ""), "seed for tenant A")
+	require.NoError(t, tools.SeedFarma(ctx, db, tenantB, ""), "seed for tenant B (must NOT collide on global UNIQUE indexes)")
 
 	// ── Per-tenant article counts ────────────────────────────────────────────
 	repo := &ArticlesRepository{DB: db}
@@ -116,8 +118,8 @@ func TestSeedFarma_MultiTenantIsolation(t *testing.T) {
 	assert.EqualValues(t, 2, seedCount, "demo_data_seeds should carry exactly one row per tenant")
 
 	// ── Re-running SeedFarma for either tenant is a no-op (idempotency) ──────
-	require.NoError(t, tools.SeedFarma(ctx, db, tenantA), "second seed call for tenant A must be idempotent")
-	require.NoError(t, tools.SeedFarma(ctx, db, tenantB), "second seed call for tenant B must be idempotent")
+	require.NoError(t, tools.SeedFarma(ctx, db, tenantA, ""), "second seed call for tenant A must be idempotent")
+	require.NoError(t, tools.SeedFarma(ctx, db, tenantB, ""), "second seed call for tenant B must be idempotent")
 
 	// Counts unchanged after re-run.
 	var countA, countB int64

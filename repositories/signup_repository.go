@@ -273,13 +273,16 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 
 	// After tx: trigger farma demo seed in background goroutine.
 	// SeedFarma is idempotent (checks demo_data_seeds before inserting).
-	go func(tID string) {
+	// S3.5.3 N3: pass adminID through so seeded receiving + picking tasks reference
+	// a real users.id and survive the repository INNER JOIN to users. Previously
+	// tenantID was implicitly used, dropping every demo row from the dashboard.
+	go func(tID, aID string) {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		if err := tools.SeedFarma(bgCtx, r.DB, tID); err != nil {
+		if err := tools.SeedFarma(bgCtx, r.DB, tID, aID); err != nil {
 			log.Error().Err(err).Str("tenant_id", tID).Msg("farma demo seed failed (background)")
 		}
-	}(tenantID)
+	}(tenantID, adminID)
 
 	adminName := st.AdminName
 	if adminName == "" {
