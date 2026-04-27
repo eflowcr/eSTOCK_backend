@@ -25,14 +25,16 @@ import (
 // ─── mock billing repository ─────────────────────────────────────────────────
 
 type mockBillingRepo struct {
-	sub              *database.Subscription
-	getSubErr        *responses.InternalResponse
-	upsertErr        *responses.InternalResponse
-	updateStatusErr  *responses.InternalResponse
+	sub               *database.Subscription
+	tenant            *database.Tenant
+	getSubErr         *responses.InternalResponse
+	getTenantErr      *responses.InternalResponse
+	upsertErr         *responses.InternalResponse
+	updateStatusErr   *responses.InternalResponse
 	updateCustomerErr *responses.InternalResponse
-	updateTenantErr  *responses.InternalResponse
-	processedEvents  map[string]bool
-	adminUserID      string
+	updateTenantErr   *responses.InternalResponse
+	processedEvents   map[string]bool
+	adminUserID       string
 }
 
 func (m *mockBillingRepo) GetSubscriptionByTenant(_ string) (*database.Subscription, *responses.InternalResponse) {
@@ -95,6 +97,10 @@ func (m *mockBillingRepo) GetTenantAdminUserID(_ string) (string, *responses.Int
 	return m.adminUserID, nil
 }
 
+func (m *mockBillingRepo) GetTenantByID(_ string) (*database.Tenant, *responses.InternalResponse) {
+	return m.tenant, m.getTenantErr
+}
+
 var _ ports.BillingRepository = (*mockBillingRepo)(nil)
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -107,13 +113,13 @@ const (
 
 func newTestBillingConfig() configuration.Config {
 	return configuration.Config{
-		StripeSecretKey:      "sk_test_dummy",
-		StripeWebhookSecret:  testWebhookSecret,
-		StripePriceStarter:   testPriceStarter,
-		StripePricePro:       "price_pro_test",
+		StripeSecretKey:       "sk_test_dummy",
+		StripeWebhookSecret:   testWebhookSecret,
+		StripePriceStarter:    testPriceStarter,
+		StripePricePro:        "price_pro_test",
 		StripePriceEnterprise: "price_enterprise_test",
-		AppURL:               "http://localhost:4200",
-		TenantID:             testTenantID,
+		AppURL:                "http://localhost:4200",
+		TenantID:              testTenantID,
 	}
 }
 
@@ -226,6 +232,42 @@ func TestBillingController_GetSubscription_WithSub(t *testing.T) {
 	assert.Equal(t, "active", sub["status"])
 }
 
+// TestBillingSubscription_NullSubscriptionReturnsTrialEndsAt verifies the B4 fix (S3.5.5):
+// when the tenant has NO Stripe subscription yet but is in trial period, the response must
+// surface tenant.trial_ends_at + tenant.status so the frontend banner shows the real deadline.
+func TestBillingSubscription_NullSubscriptionReturnsTrialEndsAt(t *testing.T) {
+	trialEnd := time.Date(2026, 5, 11, 20, 7, 37, 0, time.UTC)
+	repo := &mockBillingRepo{
+		sub: nil, // tenant has no Stripe subscription
+		tenant: &database.Tenant{
+			ID:          testTenantID,
+			Name:        "Acme Inc",
+			Status:      "trial",
+			TrialEndsAt: trialEnd,
+			IsActive:    true,
+		},
+	}
+	ctrl := newBillingController(repo)
+	r := newBillingRouter(ctrl)
+
+	req := httptest.NewRequest(http.MethodGet, "/billing/subscription", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	data := resp["data"].(map[string]interface{})
+
+	// Subscription stays null.
+	assert.Nil(t, data["subscription"])
+
+	// trial_ends_at and tenant_status MUST be present (B4 root cause).
+	require.NotNil(t, data["trial_ends_at"], "trial_ends_at must be exposed when subscription is null")
+	assert.Equal(t, "2026-05-11T20:07:37Z", data["trial_ends_at"])
+	assert.Equal(t, "trial", data["tenant_status"])
+}
+
 func TestBillingController_GetSubscription_RepoError(t *testing.T) {
 	repo := &mockBillingRepo{
 		getSubErr: &responses.InternalResponse{
@@ -322,10 +364,10 @@ func TestBillingController_Webhook_UnknownEventType_Returns200(t *testing.T) {
 		"data": map[string]interface{}{
 			"object": map[string]interface{}{},
 		},
-		"livemode":          false,
-		"pending_webhooks":  0,
-		"request":           nil,
-		"api_version":       "2024-06-20",
+		"livemode":         false,
+		"pending_webhooks": 0,
+		"request":          nil,
+		"api_version":      "2024-06-20",
 	}
 	payload, err := json.Marshal(eventPayload)
 	require.NoError(t, err)
@@ -547,9 +589,9 @@ func TestBillingService_HandleSubscriptionUpdated(t *testing.T) {
 
 	now := time.Now()
 	stripeSub := &stripe.Subscription{
-		ID:                subID,
-		Status:            stripe.SubscriptionStatus("past_due"),
-		CancelAtPeriodEnd: true,
+		ID:                 subID,
+		Status:             stripe.SubscriptionStatus("past_due"),
+		CancelAtPeriodEnd:  true,
 		CurrentPeriodStart: now.Unix(),
 		CurrentPeriodEnd:   now.Add(30 * 24 * time.Hour).Unix(),
 		Metadata: map[string]string{
