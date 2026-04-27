@@ -38,6 +38,15 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// S3.5.2 N2 (Part B): SMTP/email observability. The pod silently skipping signup
+	// verify emails was undetectable until QA caught it in prod. Make the misconfig
+	// loud at startup so ops sees it on first log read instead of debugging a stuck
+	// signup hours later. We treat either RESEND_API_KEY or SMTP_HOST as "email
+	// configured"; only warn if both are empty.
+	if os.Getenv("SMTP_HOST") == "" && config.ResendAPIKey == "" {
+		log.Warn().Msg("SMTP_HOST and RESEND_API_KEY both unset — signup verify emails will be skipped. Tokens will be logged to stdout for ops debugging.")
+	}
+
 	dbURL := configuration.DatabaseURL(config)
 	if err := tools.RunMigrations(config.MigrationURL, dbURL); err != nil {
 		log.Fatal().Err(err).Msg("migrations failed")

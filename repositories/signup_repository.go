@@ -123,6 +123,26 @@ func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.Sign
 	}
 	verifyLink := fmt.Sprintf("%s/verify-signup?token=%s", appURL, token)
 
+	// S3.5.2 N2 (Part C): "SMTP/email skipped" decision — when the configured sender
+	// is nil OR the prod-build was started without RESEND_API_KEY (LoggerEmailSender
+	// in a production environment), real users never receive the verify email and
+	// ops needs the raw token to recover the signup. We compute the skip flag here
+	// and log a fallback line *before* attempting to send so the token is recoverable
+	// even if the goroutine never runs to completion.
+	emailSkipped := r.EmailSender == nil
+	if !emailSkipped {
+		if _, isLogger := r.EmailSender.(*tools.LoggerEmailSender); isLogger && r.Config.Environment == "production" {
+			emailSkipped = true
+		}
+	}
+	if emailSkipped {
+		log.Warn().
+			Str("email", req.Email).
+			Str("token", token).
+			Str("verify_url", fmt.Sprintf("%s/api/signup/verify (POST {token})", appURL)).
+			Msg("signup verify token created — email skipped (SMTP/RESEND not configured)")
+	}
+
 	go func() {
 		if r.EmailSender == nil {
 			return
@@ -131,6 +151,14 @@ func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.Sign
 		htmlBody, textBody := renderSignupVerifyEmail(req.AdminName, req.CompanyName, verifyLink)
 		if err := r.EmailSender.Send(context.Background(), req.Email, subject, htmlBody, textBody); err != nil {
 			log.Error().Err(err).Str("email", req.Email).Msg("signup verify email send failed")
+			// S3.5.2 N2 (Part C): on send failure, surface the token so ops can complete
+			// the signup manually without DB access. Only fires on actual error — the
+			// happy path stays silent and tokens never leak when SMTP is healthy.
+			log.Warn().
+				Str("email", req.Email).
+				Str("token", token).
+				Str("verify_url", fmt.Sprintf("%s/api/signup/verify (POST {token})", appURL)).
+				Msg("signup verify token created — email send failed, fallback log for ops")
 		}
 	}()
 
