@@ -54,5 +54,10 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterStockSettingsRoutes(api, pool, config, rolesRepo)
 	RegisterNotificationsRoutes(api, db, config, notifSvc)
 
+	// Mobile companion app surface — keeps web /api/* untouched.
+	// W0.6: thread auditSvc + notifSvc since wire.NewPickingTask / NewReceivingTasks
+	// gained those deps in dev (sprint-s2).
+	RegisterMobileRoutes(api, db, pool, config, rolesRepo, redisClient, auditSvc, notifSvc)
+
 	RegisterDocsRoutes(r)
 }

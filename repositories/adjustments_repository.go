@@ -179,257 +179,290 @@ func (r *AdjustmentsRepository) GetAdjustmentDetails(id string) (*dto.Adjustment
 func (r *AdjustmentsRepository) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
 	var created *database.Adjustment
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
-
-		// Get inventory
-		var inventory database.Inventory
-
-		err := tx.
-			Table(database.Inventory{}.TableName()).
-			Where("sku = ? AND location = ?", adjustment.SKU, adjustment.Location).
-			First(&inventory).Error
-
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return errors.New("inventario no encontrado para este ajuste")
-			}
-
-			return errors.New("error al obtener los detalles del inventario")
+		c, ierr := r.createAdjustmentInTx(tx, userId, adjustment)
+		if ierr != nil {
+			return ierr
 		}
-
-		adjustmentQuantity := adjustment.AdjustmentQuantity
-		currentQuantity := inventory.Quantity
-		newQuantity := currentQuantity + adjustmentQuantity
-
-		// count_reconcile is allowed to set any qty (including below reserved or below 0 — physical reality).
-		// decrease/increase checks are enforced by the service before this point.
-		isCountReconcile := adjustment.AdjustmentType == "count_reconcile"
-		if !isCountReconcile {
-			if newQuantity < 0 {
-				return errors.New("la cantidad de ajuste resulta en un inventario negativo")
-			}
-			// B3e (A6): block adjustment if new qty would fall below reserved_qty.
-			if newQuantity < inventory.ReservedQty {
-				return fmt.Errorf(
-					"no puede ajustar a %.2f — hay %.2f uds reservadas en pickings activos. Cancele los pickings antes de ajustar",
-					newQuantity, inventory.ReservedQty,
-				)
-			}
-		}
-
-		adjType := adjustment.AdjustmentType
-		if adjType == "" {
-			adjType = "increase"
-		}
-
-		// Create the adjustment record
-		adjID, err := tools.GenerateNanoid(tx)
-		if err != nil {
-			return fmt.Errorf("generate adjustment id: %w", err)
-		}
-		newAdjustment := database.Adjustment{
-			ID:               adjID,
-			SKU:              adjustment.SKU,
-			Location:         adjustment.Location,
-			PreviousQuantity: int(math.Round(float64(currentQuantity))),
-			AdjustmentQty:    int(math.Round(float64(adjustmentQuantity))),
-			NewQuantity:      int(math.Round(float64(newQuantity))),
-			Reason:           adjustment.Reason,
-			Notes:            &adjustment.Notes,
-			UserID:           userId,
-			AdjustmentType:   adjType,
-		}
-
-		err = tx.
-			Table(newAdjustment.TableName()).
-			Create(&newAdjustment).Error
-
-		if err != nil {
-			return errors.New("error al crear el ajuste")
-		}
-		created = &newAdjustment
-
-		// Update inventory
-		inventory.Quantity = newQuantity
-		err = tx.
-			Table(inventory.TableName()).
-			Save(&inventory).Error
-
-		if err != nil {
-			return errors.New("error al actualizar el inventario")
-		}
-
-		// Handle lots and serials
-		if adjustmentQuantity > 0 {
-			// Get article by SKU
-			var article database.Article
-
-			err = tx.
-				Table(database.Article{}.TableName()).
-				Where("sku = ?", adjustment.SKU).
-				First(&article).Error
-
-			if err != nil {
-				if err == gorm.ErrRecordNotFound {
-					return errors.New("artículo no encontrado para este ajuste")
-				}
-				return errors.New("error al obtener los detalles del artículo")
-			}
-
-			if article.TrackByLot && adjustment.Lots != nil {
-				for i := 0; i < len(adjustment.Lots); i++ {
-					lotQuantity := float64(adjustment.Lots[i].Quantity)
-
-					// Get existing lot
-					var lot database.Lot
-					err = tx.
-						Table(database.Lot{}.TableName()).
-						Where("sku = ? AND lot_number = ?", adjustment.SKU, adjustment.Lots[i].LotNumber).
-						First(&lot).Error
-
-					if err != nil && err != gorm.ErrRecordNotFound {
-						return errors.New("error al obtener los detalles del lote")
-					}
-
-					// If lot does not exist, create it
-					if err == gorm.ErrRecordNotFound {
-						adjLotID, lotIDErr := tools.GenerateNanoid(tx)
-						if lotIDErr != nil {
-							return fmt.Errorf("generate lot id: %w", lotIDErr)
-						}
-						lot = database.Lot{
-							ID:             adjLotID,
-							LotNumber:      adjustment.Lots[i].LotNumber,
-							SKU:            adjustment.SKU,
-							Quantity:       lotQuantity,
-							ExpirationDate: adjustment.Lots[i].ExpirationDate,
-						}
-
-						err = tx.Table(lot.TableName()).Create(&lot).Error
-						if err != nil {
-							return errors.New("error al crear el lote")
-						}
-
-						// Create associate the lot with the adjustment
-						adjInvLotID, adjILErr := tools.GenerateNanoid(tx)
-						if adjILErr != nil {
-							return fmt.Errorf("generate inventory_lot id: %w", adjILErr)
-						}
-						inventoryLot := database.InventoryLot{
-							ID:          adjInvLotID,
-							InventoryID: inventory.ID,
-							LotID:       lot.ID,
-							Quantity:    lotQuantity,
-							Location:    adjustment.Location,
-						}
-
-						err = tx.Table(inventoryLot.TableName()).Create(&inventoryLot).Error
-						if err != nil {
-							return errors.New("error al asociar el lote con el inventario")
-						}
-					} else {
-						// Update existing lot
-						lot.Quantity += lotQuantity
-						err = tx.Table(lot.TableName()).Save(&lot).Error
-						if err != nil {
-							return errors.New("error al actualizar el lote")
-						}
-					}
-				}
-			}
-
-			if article.TrackBySerial && adjustment.Serials != nil {
-				for i := 0; i < len(adjustment.Serials); i++ {
-					newSerial := database.Serial{
-						SerialNumber: adjustment.Serials[i],
-						SKU:          adjustment.SKU,
-						Status:       "available",
-					}
-
-					err = tx.Table(newSerial.TableName()).Create(&newSerial).Error
-					if err != nil {
-						return errors.New("error al crear la serie")
-					}
-
-					// Associate the serial with the inventory
-					inventorySerial := database.InventorySerial{
-						InventoryID: inventory.ID,
-						SerialID:    newSerial.ID,
-						Location:    adjustment.Location,
-					}
-
-					err = tx.Table(inventorySerial.TableName()).Create(&inventorySerial).Error
-					if err != nil {
-						return errors.New("error al asociar la serie con el inventario")
-					}
-				}
-			}
-		}
-
-		// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
-		adjMovID, err := tools.GenerateNanoid(tx)
-		if err != nil {
-			return fmt.Errorf("generate adjustment movement id: %w", err)
-		}
-		refType := "adjustment"
-		refID := created.ID
-		beforeQtyAdj := currentQuantity
-		afterQtyAdj := newQuantity
-		movements := database.InventoryMovement{
-			ID:             adjMovID,
-			SKU:            adjustment.SKU,
-			Location:       adjustment.Location,
-			MovementType:   "adjustment",
-			Quantity:       adjustment.AdjustmentQuantity,
-			RemainingStock: newQuantity,
-			Reason:         &adjustment.Reason,
-			CreatedBy:      userId,
-			CreatedAt:      tools.GetCurrentTime(),
-			ReferenceType:  &refType,
-			ReferenceID:    &refID,
-			BeforeQty:      &beforeQtyAdj,
-			AfterQty:       &afterQtyAdj,
-			UserID:         &userId,
-		}
-
-		err = tx.Table(database.InventoryMovement{}.TableName()).Create(&movements).Error
-		if err != nil {
-			return errors.New("error al crear el movimiento de inventario")
-		}
-
+		created = c
 		return nil
 	})
 
 	if err != nil {
-		handledErrors := map[string]bool{
-			"inventario no encontrado para este ajuste": true,
-			"artículo no encontrado para este ajuste":   true,
-		}
-
-		errorMessage := err.Error()
-		isHandled := handledErrors[errorMessage]
-
-		if strings.Contains(errorMessage, "duplicate key value") {
-			isHandled = true
-			errorMessage = "El registro ya existe en la base de datos"
-		}
-
-		statusCode := 0
-		if isHandled {
-			if strings.Contains(errorMessage, "no encontrado") {
-				statusCode = responses.StatusNotFound
-			} else if strings.Contains(errorMessage, "duplicate") || strings.Contains(errorMessage, "ya existe") {
-				statusCode = responses.StatusConflict
-			}
-		}
-		return nil, &responses.InternalResponse{
-			Error:      err,
-			Message:    errorMessage,
-			Handled:    isHandled,
-			StatusCode: statusCode,
-		}
+		return nil, mapAdjustmentCreateError(err)
 	}
 
 	return created, nil
+}
+
+// CreateAdjustmentTx runs the same logic as CreateAdjustment but reuses the caller's
+// transaction. Used by InventoryCountsRepository.SubmitWithAdjustments to make the
+// fan-out + count.MarkSubmitted atomic.
+func (r *AdjustmentsRepository) CreateAdjustmentTx(tx *gorm.DB, userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+	created, err := r.createAdjustmentInTx(tx, userId, adjustment)
+	if err != nil {
+		return nil, mapAdjustmentCreateError(err)
+	}
+	return created, nil
+}
+
+// createAdjustmentInTx is the core mutation flow shared by CreateAdjustment and
+// CreateAdjustmentTx. It returns a domain error that the caller must translate via
+// mapAdjustmentCreateError.
+//
+// W0.6 merge note: integrates dev's sprint-s2 enhancements on top of W0.5 refactor:
+//   - count_reconcile bypasses negative + reserved_qty guards (physical reality).
+//   - B3e (A6): block adjustment if newQuantity < inventory.ReservedQty.
+//   - Explicit Nanoid generation for adjustment / lot / inventory_lot / movement IDs.
+//   - AdjustmentType propagated to the row (default "increase").
+//   - M3 retrofit on inventory_movements (reference_type/id, before/after, user_id).
+func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, error) {
+	// Get inventory
+	var inventory database.Inventory
+
+	err := tx.
+		Table(database.Inventory{}.TableName()).
+		Where("sku = ? AND location = ?", adjustment.SKU, adjustment.Location).
+		First(&inventory).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.New("inventario no encontrado para este ajuste")
+		}
+
+		return nil, errors.New("error al obtener los detalles del inventario")
+	}
+
+	adjustmentQuantity := adjustment.AdjustmentQuantity
+	currentQuantity := inventory.Quantity
+	newQuantity := currentQuantity + adjustmentQuantity
+
+	// count_reconcile is allowed to set any qty (including below reserved or below 0 — physical reality).
+	// decrease/increase checks are enforced by the service before this point.
+	isCountReconcile := adjustment.AdjustmentType == "count_reconcile"
+	if !isCountReconcile {
+		if newQuantity < 0 {
+			return nil, errors.New("la cantidad de ajuste resulta en un inventario negativo")
+		}
+		// B3e (A6): block adjustment if new qty would fall below reserved_qty.
+		if newQuantity < inventory.ReservedQty {
+			return nil, fmt.Errorf(
+				"no puede ajustar a %.2f — hay %.2f uds reservadas en pickings activos. Cancele los pickings antes de ajustar",
+				newQuantity, inventory.ReservedQty,
+			)
+		}
+	}
+
+	adjType := adjustment.AdjustmentType
+	if adjType == "" {
+		adjType = "increase"
+	}
+
+	// Create the adjustment record
+	adjID, err := tools.GenerateNanoid(tx)
+	if err != nil {
+		return nil, fmt.Errorf("generate adjustment id: %w", err)
+	}
+	newAdjustment := database.Adjustment{
+		ID:               adjID,
+		SKU:              adjustment.SKU,
+		Location:         adjustment.Location,
+		PreviousQuantity: int(math.Round(float64(currentQuantity))),
+		AdjustmentQty:    int(math.Round(float64(adjustmentQuantity))),
+		NewQuantity:      int(math.Round(float64(newQuantity))),
+		Reason:           adjustment.Reason,
+		Notes:            &adjustment.Notes,
+		UserID:           userId,
+		AdjustmentType:   adjType,
+	}
+
+	err = tx.
+		Table(newAdjustment.TableName()).
+		Create(&newAdjustment).Error
+
+	if err != nil {
+		return nil, errors.New("error al crear el ajuste")
+	}
+	created := &newAdjustment
+
+	// Update inventory
+	inventory.Quantity = newQuantity
+	err = tx.
+		Table(inventory.TableName()).
+		Save(&inventory).Error
+
+	if err != nil {
+		return nil, errors.New("error al actualizar el inventario")
+	}
+
+	// Handle lots and serials
+	if adjustmentQuantity > 0 {
+		// Get article by SKU
+		var article database.Article
+
+		err = tx.
+			Table(database.Article{}.TableName()).
+			Where("sku = ?", adjustment.SKU).
+			First(&article).Error
+
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, errors.New("artículo no encontrado para este ajuste")
+			}
+			return nil, errors.New("error al obtener los detalles del artículo")
+		}
+
+		if article.TrackByLot && adjustment.Lots != nil {
+			for i := 0; i < len(adjustment.Lots); i++ {
+				lotQuantity := float64(adjustment.Lots[i].Quantity)
+
+				// Get existing lot
+				var lot database.Lot
+				err = tx.
+					Table(database.Lot{}.TableName()).
+					Where("sku = ? AND lot_number = ?", adjustment.SKU, adjustment.Lots[i].LotNumber).
+					First(&lot).Error
+
+				if err != nil && err != gorm.ErrRecordNotFound {
+					return nil, errors.New("error al obtener los detalles del lote")
+				}
+
+				// If lot does not exist, create it
+				if err == gorm.ErrRecordNotFound {
+					adjLotID, lotIDErr := tools.GenerateNanoid(tx)
+					if lotIDErr != nil {
+						return nil, fmt.Errorf("generate lot id: %w", lotIDErr)
+					}
+					lot = database.Lot{
+						ID:             adjLotID,
+						LotNumber:      adjustment.Lots[i].LotNumber,
+						SKU:            adjustment.SKU,
+						Quantity:       lotQuantity,
+						ExpirationDate: adjustment.Lots[i].ExpirationDate,
+					}
+
+					err = tx.Table(lot.TableName()).Create(&lot).Error
+					if err != nil {
+						return nil, errors.New("error al crear el lote")
+					}
+
+					// Create associate the lot with the adjustment
+					adjInvLotID, adjILErr := tools.GenerateNanoid(tx)
+					if adjILErr != nil {
+						return nil, fmt.Errorf("generate inventory_lot id: %w", adjILErr)
+					}
+					inventoryLot := database.InventoryLot{
+						ID:          adjInvLotID,
+						InventoryID: inventory.ID,
+						LotID:       lot.ID,
+						Quantity:    lotQuantity,
+						Location:    adjustment.Location,
+					}
+
+					err = tx.Table(inventoryLot.TableName()).Create(&inventoryLot).Error
+					if err != nil {
+						return nil, errors.New("error al asociar el lote con el inventario")
+					}
+				} else {
+					// Update existing lot
+					lot.Quantity += lotQuantity
+					err = tx.Table(lot.TableName()).Save(&lot).Error
+					if err != nil {
+						return nil, errors.New("error al actualizar el lote")
+					}
+				}
+			}
+		}
+
+		if article.TrackBySerial && adjustment.Serials != nil {
+			for i := 0; i < len(adjustment.Serials); i++ {
+				newSerial := database.Serial{
+					SerialNumber: adjustment.Serials[i],
+					SKU:          adjustment.SKU,
+					Status:       "available",
+				}
+
+				err = tx.Table(newSerial.TableName()).Create(&newSerial).Error
+				if err != nil {
+					return nil, errors.New("error al crear la serie")
+				}
+
+				// Associate the serial with the inventory
+				inventorySerial := database.InventorySerial{
+					InventoryID: inventory.ID,
+					SerialID:    newSerial.ID,
+					Location:    adjustment.Location,
+				}
+
+				err = tx.Table(inventorySerial.TableName()).Create(&inventorySerial).Error
+				if err != nil {
+					return nil, errors.New("error al asociar la serie con el inventario")
+				}
+			}
+		}
+	}
+
+	// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
+	adjMovID, err := tools.GenerateNanoid(tx)
+	if err != nil {
+		return nil, fmt.Errorf("generate adjustment movement id: %w", err)
+	}
+	refType := "adjustment"
+	refID := created.ID
+	beforeQtyAdj := currentQuantity
+	afterQtyAdj := newQuantity
+	movements := database.InventoryMovement{
+		ID:             adjMovID,
+		SKU:            adjustment.SKU,
+		Location:       adjustment.Location,
+		MovementType:   "adjustment",
+		Quantity:       adjustment.AdjustmentQuantity,
+		RemainingStock: newQuantity,
+		Reason:         &adjustment.Reason,
+		CreatedBy:      userId,
+		CreatedAt:      tools.GetCurrentTime(),
+		ReferenceType:  &refType,
+		ReferenceID:    &refID,
+		BeforeQty:      &beforeQtyAdj,
+		AfterQty:       &afterQtyAdj,
+		UserID:         &userId,
+	}
+
+	err = tx.Table(database.InventoryMovement{}.TableName()).Create(&movements).Error
+	if err != nil {
+		return nil, errors.New("error al crear el movimiento de inventario")
+	}
+
+	return created, nil
+}
+
+func mapAdjustmentCreateError(err error) *responses.InternalResponse {
+	handledErrors := map[string]bool{
+		"inventario no encontrado para este ajuste": true,
+		"artículo no encontrado para este ajuste":   true,
+	}
+
+	errorMessage := err.Error()
+	isHandled := handledErrors[errorMessage]
+
+	if strings.Contains(errorMessage, "duplicate key value") {
+		isHandled = true
+		errorMessage = "El registro ya existe en la base de datos"
+	}
+
+	statusCode := 0
+	if isHandled {
+		if strings.Contains(errorMessage, "no encontrado") {
+			statusCode = responses.StatusNotFound
+		} else if strings.Contains(errorMessage, "duplicate") || strings.Contains(errorMessage, "ya existe") {
+			statusCode = responses.StatusConflict
+		}
+	}
+	return &responses.InternalResponse{
+		Error:      err,
+		Message:    errorMessage,
+		Handled:    isHandled,
+		StatusCode: statusCode,
+	}
 }
 
 func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {

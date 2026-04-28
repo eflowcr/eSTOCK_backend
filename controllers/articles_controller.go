@@ -291,6 +291,8 @@ func writeErrorResponse(ctx *gin.Context, transactionType, endpointCode string, 
 	switch resp.StatusCode {
 	case responses.StatusBadRequest:
 		tools.ResponseBadRequest(ctx, transactionType, resp.Message, endpointCode)
+	case responses.StatusForbidden:
+		tools.ResponseForbidden(ctx, transactionType, resp.Message, endpointCode)
 	case responses.StatusNotFound:
 		tools.ResponseNotFound(ctx, transactionType, resp.Message, endpointCode)
 	case responses.StatusConflict:

@@ -10,7 +10,16 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/ports"
+	"gorm.io/gorm"
 )
+
+// adjustmentsTxCapable is an internal capability check: when the underlying
+// AdjustmentsRepository supports tx-scoped writes, AdjustmentsService can run
+// CreateAdjustment within a caller-supplied transaction (used by the inventory
+// counts Submit fan-out for atomicity — see N1-2 in the W0 hostile review).
+type adjustmentsTxCapable interface {
+	CreateAdjustmentTx(tx *gorm.DB, userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse)
+}
 
 type AdjustmentsService struct {
 	Repository            ports.AdjustmentsRepository
@@ -136,4 +145,47 @@ func (s *AdjustmentsService) CreateAdjustment(userId string, adjustment requests
 
 func (s *AdjustmentsService) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
 	return s.Repository.ExportAdjustmentsToExcel()
+}
+
+// CreateAdjustmentTx applies the same reason-code/sign logic as CreateAdjustment
+// but persists through the caller's *gorm.DB transaction (used for atomicity
+// during inventory-count submit fan-out). The underlying repository must
+// implement CreateAdjustmentTx; otherwise this returns a 500 InternalResponse.
+func (s *AdjustmentsService) CreateAdjustmentTx(tx *gorm.DB, userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+	if adjustment.AdjustmentQuantity < 0 {
+		return nil, &responses.InternalResponse{
+			Message:    "adjustment quantity must be zero or positive; add or subtract is determined by the reason code",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+	signedQuantity := adjustment.AdjustmentQuantity
+	if s.ReasonCodesRepository != nil {
+		reasonCode, resp := s.ReasonCodesRepository.GetAdjustmentReasonCodeByCode(adjustment.Reason)
+		if resp != nil {
+			return nil, resp
+		}
+		if reasonCode == nil {
+			return nil, &responses.InternalResponse{
+				Message:    "invalid or inactive reason code for adjustment",
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+		}
+		if reasonCode.Direction == "outbound" {
+			signedQuantity = -adjustment.AdjustmentQuantity
+		}
+	}
+	req := adjustment
+	req.AdjustmentQuantity = signedQuantity
+
+	repo, ok := s.Repository.(adjustmentsTxCapable)
+	if !ok {
+		return nil, &responses.InternalResponse{
+			Message:    "AdjustmentsRepository no soporta transacciones explícitas",
+			Handled:    false,
+			StatusCode: responses.StatusInternalServerError,
+		}
+	}
+	return repo.CreateAdjustmentTx(tx, userId, req)
 }
