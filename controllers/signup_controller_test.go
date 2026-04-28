@@ -24,7 +24,7 @@ type mockSignupRepoCtrl struct {
 	verifyErr    *responses.InternalResponse
 }
 
-func (m *mockSignupRepoCtrl) InitiateSignup(_ context.Context, _ requests.SignupRequest) *responses.InternalResponse {
+func (m *mockSignupRepoCtrl) InitiateSignup(_ context.Context, _ requests.SignupRequest, _ string) *responses.InternalResponse {
 	return m.initiateResp
 }
 

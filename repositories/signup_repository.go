@@ -39,7 +39,7 @@ type SignupRepository struct {
 // Add a CronDispatch cleanup job:
 //   DELETE FROM signup_tokens WHERE expires_at < NOW() - INTERVAL '7 days'
 // Deferred to S3.5; at current signup volume the table won't grow to problematic size in the near term.
-func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.SignupRequest) *responses.InternalResponse {
+func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.SignupRequest, originURL string) *responses.InternalResponse {
 	// Extra validation: slug pattern (validator tag handles min/max length but not regex).
 	if !slugRegexp.MatchString(req.TenantSlug) {
 		return &responses.InternalResponse{
@@ -133,10 +133,7 @@ func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.Sign
 	}
 
 	// Send verification email — non-blocking on failure (token already persisted).
-	appURL := r.Config.AppURL
-	if appURL == "" {
-		appURL = "http://localhost:4200"
-	}
+	appURL := tools.ResolveFrontendURL(originURL, r.Config.AppURL)
 	verifyLink := fmt.Sprintf("%s/verify-signup?token=%s", appURL, token)
 
 	// S3.5.2 N2 (Part C): "SMTP/email skipped" decision — when the configured sender

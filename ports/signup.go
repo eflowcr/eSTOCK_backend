@@ -11,7 +11,10 @@ import (
 type SignupRepository interface {
 	// InitiateSignup validates uniqueness, stores a pending signup token, and sends a
 	// verification email. Returns nil on success (202 Accepted path).
-	InitiateSignup(ctx context.Context, req requests.SignupRequest) *responses.InternalResponse
+	// originURL is the request's Origin header value (may be empty); when it
+	// matches the ALLOWED_ORIGINS allowlist the verification link is built from it,
+	// otherwise the configured AppURL (or localhost dev fallback) is used.
+	InitiateSignup(ctx context.Context, req requests.SignupRequest, originURL string) *responses.InternalResponse
 
 	// VerifySignup atomically creates the tenant, admin user, and demo seed record,
 	// then returns a JWT for immediate login.
