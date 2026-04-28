@@ -184,9 +184,10 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 	}
 
 	var (
-		tenantID string
-		adminID  string
-		adminJWT string
+		tenantID    string
+		adminID     string
+		adminJWT    string
+		adminRoleID string // S3.5.6 B22: captured for service-layer role+permissions enrichment
 	)
 
 	txErr := r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -221,6 +222,7 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 			return fmt.Errorf("admin role not found in roles table — signup cannot complete: %w", err)
 		}
 		roleID := role.ID
+		adminRoleID = roleID // surface to outer scope for the response payload
 
 		// 3. Create admin user using the pre-encrypted password stored in the token.
 		adminID = uuid.NewString()
@@ -288,11 +290,16 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 	if adminName == "" {
 		adminName = st.TenantName + " Admin"
 	}
+	// S3.5.6 B22: surface roleID so the service layer can attach the role name and
+	// permissions JSON (mirrors AuthenticationService.Login enrichment). Without this
+	// the auto-login post-verify lands on /dashboard with role=undefined and a menu
+	// collapsed to a single item until the user logs out and back in.
 	return &responses.SignupVerifiedResponse{
 		Token:    adminJWT,
 		TenantID: tenantID,
 		Email:    st.Email,
 		Name:     adminName,
+		RoleID:   adminRoleID,
 	}, nil
 }
 

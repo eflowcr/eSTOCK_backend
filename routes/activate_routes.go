@@ -68,7 +68,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	// S3-W5-A: Public SaaS self-service signup (no auth required).
 	// Gated by ENABLE_SIGNUP env var — keep false in prod until S3.5 (articles tenant_id isolation).
 	if config.EnableSignup {
-		RegisterSignupRoutes(api, db, config)
+		RegisterSignupRoutes(api, db, config, rolesRepo)
 	}
 
 	RegisterDocsRoutes(r)

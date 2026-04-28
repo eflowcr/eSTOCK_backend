@@ -24,13 +24,18 @@ var _ ports.SignupRepository = (*repositories.SignupRepository)(nil)
 //
 //   POST /api/signup        — 5 per hour per IP
 //   POST /api/signup/verify — 10 per hour per IP
-func RegisterSignupRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config) {
+//
+// rolesRepo is optional; when supplied the verify response is enriched with the
+// admin role name + permissions so the frontend's auto-login produces a fully
+// hydrated session (S3.5.6 B22). When nil, behavior degrades gracefully and the
+// frontend recovers via logout+login.
+func RegisterSignupRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository) {
 	repo := &repositories.SignupRepository{
 		DB:          db,
 		Config:      config,
 		EmailSender: wire.EmailSenderForConfig(config),
 	}
-	svc := services.NewSignupService(repo)
+	svc := services.NewSignupService(repo, rolesRepo)
 	ctrl := controllers.NewSignupController(svc)
 
 	signup := router.Group("/signup")
