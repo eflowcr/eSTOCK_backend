@@ -57,6 +57,14 @@ func resetAllowedOriginsForTest() {
 
 // isOriginAllowed returns true when the request Origin is in the allowlist.
 func isOriginAllowed(origin string) bool {
+	return IsAllowedOrigin(origin)
+}
+
+// IsAllowedOrigin reports whether origin is present in the ALLOWED_ORIGINS
+// allowlist (or the default allowlist when the env var is unset/empty).
+// It is exported so other packages (e.g. tools.ResolveFrontendURL) can reuse
+// the same allowlist without duplicating parsing logic.
+func IsAllowedOrigin(origin string) bool {
 	if origin == "" {
 		return false
 	}

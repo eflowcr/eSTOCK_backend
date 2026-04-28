@@ -78,7 +78,7 @@ func TestSignup_FullFlow_InitiateAndVerify(t *testing.T) {
 	}
 
 	// Step 1: Initiate signup
-	err := repo.InitiateSignup(ctx, req)
+	err := repo.InitiateSignup(ctx, req, "")
 	assert.Nil(t, err, "InitiateSignup should succeed")
 
 	// Verify signup_token was created
@@ -151,12 +151,12 @@ func TestSignup_InitiateSignup_DuplicateEmail_Rejected(t *testing.T) {
 	}
 
 	// First signup
-	require.Nil(t, repo.InitiateSignup(ctx, req))
+	require.Nil(t, repo.InitiateSignup(ctx, req, ""))
 
 	// Second signup with same email
 	req2 := req
 	req2.TenantSlug = "dupcorp2"
-	errResp := repo.InitiateSignup(ctx, req2)
+	errResp := repo.InitiateSignup(ctx, req2, "")
 	require.NotNil(t, errResp)
 	assert.Contains(t, errResp.Message, "email")
 }
@@ -183,7 +183,7 @@ func TestSignup_InitiateSignup_DuplicateSlug_Rejected(t *testing.T) {
 		AdminPassword: "password123",
 	}
 
-	errResp := repo.InitiateSignup(ctx, req)
+	errResp := repo.InitiateSignup(ctx, req, "")
 	require.NotNil(t, errResp)
 	assert.Contains(t, errResp.Message, "subdominio")
 }
@@ -254,7 +254,7 @@ func TestSignup_InitiateSignup_InvalidSlug_Rejected(t *testing.T) {
 			AdminName:     "Admin",
 			AdminPassword: "password123",
 		}
-		errResp := repo.InitiateSignup(ctx, req)
+		errResp := repo.InitiateSignup(ctx, req, "")
 		require.NotNil(t, errResp, "expected error for slug %q", slug)
 	}
 }
@@ -315,7 +315,7 @@ func TestSignup_AssignsAdminRole(t *testing.T) {
 		AdminName:     "N1 Admin",
 		AdminPassword: "TestP@ssw0rd!",
 	}
-	require.Nil(t, repo.InitiateSignup(ctx, req))
+	require.Nil(t, repo.InitiateSignup(ctx, req, ""))
 
 	var st database.SignupToken
 	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
@@ -360,7 +360,7 @@ func TestSignup_FailsLoudIfNoAdminRole(t *testing.T) {
 		AdminName:     "N1 Fails",
 		AdminPassword: "TestP@ssw0rd!",
 	}
-	require.Nil(t, repo.InitiateSignup(ctx, req))
+	require.Nil(t, repo.InitiateSignup(ctx, req, ""))
 
 	var st database.SignupToken
 	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
@@ -433,7 +433,7 @@ func TestSignup_SeedDemoDataTrue_RunsSeeder(t *testing.T) {
 		AdminPassword: "TestP@ssw0rd!",
 		SeedDemoData:  boolPtr(true),
 	}
-	require.Nil(t, repo.InitiateSignup(ctx, req))
+	require.Nil(t, repo.InitiateSignup(ctx, req, ""))
 
 	var st database.SignupToken
 	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
@@ -464,7 +464,7 @@ func TestSignup_SeedDemoDataFalse_SkipsSeeder(t *testing.T) {
 		AdminPassword: "TestP@ssw0rd!",
 		SeedDemoData:  boolPtr(false),
 	}
-	require.Nil(t, repo.InitiateSignup(ctx, req))
+	require.Nil(t, repo.InitiateSignup(ctx, req, ""))
 
 	var st database.SignupToken
 	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
@@ -511,7 +511,7 @@ func TestSignup_SeedDemoDataNil_DefaultsToTrue(t *testing.T) {
 		AdminPassword: "TestP@ssw0rd!",
 		// SeedDemoData intentionally omitted (nil)
 	}
-	require.Nil(t, repo.InitiateSignup(ctx, req))
+	require.Nil(t, repo.InitiateSignup(ctx, req, ""))
 
 	var st database.SignupToken
 	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)

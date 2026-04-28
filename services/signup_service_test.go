@@ -21,7 +21,7 @@ type mockSignupRepo struct {
 	verifyErr    *responses.InternalResponse
 }
 
-func (m *mockSignupRepo) InitiateSignup(_ context.Context, _ requests.SignupRequest) *responses.InternalResponse {
+func (m *mockSignupRepo) InitiateSignup(_ context.Context, _ requests.SignupRequest, _ string) *responses.InternalResponse {
 	return m.initiateResp
 }
 
@@ -41,7 +41,7 @@ func TestSignupService_InitiateSignup_Success(t *testing.T) {
 		TenantSlug:    "newcompany",
 		AdminName:     "John Doe",
 		AdminPassword: "supersecret123",
-	})
+	}, "")
 
 	assert.Nil(t, resp, "expected no error on success")
 }
@@ -62,7 +62,7 @@ func TestSignupService_InitiateSignup_EmailConflict(t *testing.T) {
 		TenantSlug:    "company",
 		AdminName:     "Admin",
 		AdminPassword: "password123",
-	})
+	}, "")
 
 	require.NotNil(t, resp)
 	assert.Equal(t, responses.StatusConflict, resp.StatusCode)
@@ -84,7 +84,7 @@ func TestSignupService_InitiateSignup_RepositoryError(t *testing.T) {
 		TenantSlug:    "company",
 		AdminName:     "Admin",
 		AdminPassword: "password123",
-	})
+	}, "")
 
 	require.NotNil(t, resp)
 	assert.NotNil(t, resp.Error)
