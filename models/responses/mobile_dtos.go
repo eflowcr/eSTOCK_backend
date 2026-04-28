@@ -102,6 +102,48 @@ type MobilePickingTaskDetailDto struct {
 	Lines        []MobilePickingLineDto `json:"lines"`
 }
 
+// MobileReceivingTaskDetailDto is the GET /api/mobile/receiving-tasks/:id payload.
+//
+// W7 N1-B fix: previously the endpoint returned database.ReceivingTask raw,
+// whose `items` jsonb shape is []ReceivingTaskItem with no per-line line_id and
+// no flat location surface. The mobile client could not echo a stable line
+// identifier back into CompleteReceivingLine, so the controller synthesized
+// ExpectedQuantity = picked_qty (W0.7-equivalent picking bug). This DTO mirrors
+// MobilePickingTaskDetailDto so the same line_id round-trip and tolerance
+// validation pattern works for receiving.
+type MobileReceivingTaskDetailDto struct {
+	ID           string                   `json:"id"`
+	TaskID       string                   `json:"task_id"`
+	OrderNumber  string                   `json:"order_number"`
+	Status       string                   `json:"status"`
+	Priority     string                   `json:"priority"`
+	AssignedTo   *string                  `json:"assigned_to,omitempty"`
+	AssigneeName *string                  `json:"assignee_name,omitempty"`
+	CreatedAt    *time.Time               `json:"created_at,omitempty"`
+	CompletedAt  *time.Time               `json:"completed_at,omitempty"`
+	Lines        []MobileReceivingLineDto `json:"lines"`
+}
+
+// MobileReceivingLineDto mirrors MobilePickingLineDto but for receiving lines.
+//
+// LineID is a session-scoped deterministic SHA1[:12] hash of (sku|lot|serial|location)
+// — same scheme as picking. Stable across GET → POST round-trip without
+// requiring a per-line id column on the receiving_task_items jsonb.
+//
+// Status: "pending" (received_qty == 0), "partial" (0 < received_qty < expected),
+// or "done" (received_qty >= expected).
+type MobileReceivingLineDto struct {
+	LineID      string  `json:"line_id"`
+	SKU         string  `json:"sku"`
+	Name        string  `json:"name,omitempty"`
+	ExpectedQty float64 `json:"expected_qty"`
+	ReceivedQty float64 `json:"received_qty"`
+	Status      string  `json:"status"`
+	Location    string  `json:"location"`
+	Lot         string  `json:"lot,omitempty"`
+	Serial      string  `json:"serial,omitempty"`
+}
+
 // MobilePickingLineDto is the per-line shape under MobilePickingTaskDetailDto.
 //
 // LineID is a deterministic identifier for a line within a task: it is a

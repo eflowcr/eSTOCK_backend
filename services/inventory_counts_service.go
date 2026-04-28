@@ -35,6 +35,13 @@ func (s *InventoryCountsService) List(status, locationID string) ([]database.Inv
 	return s.Repository.List(status, locationID)
 }
 
+// ResolveLocationIDByCode delegates to the repository's inverse resolver for
+// the mobile scan-line path (W7 N1-A). Mobile scans encode the location code,
+// not the UUID; the controller calls this when body.LocationID is not a UUID.
+func (s *InventoryCountsService) ResolveLocationIDByCode(code string) (string, *responses.InternalResponse) {
+	return s.Repository.GetLocationIDByCode(code)
+}
+
 func (s *InventoryCountsService) GetDetail(id string) (*responses.InventoryCountDetail, *responses.InternalResponse) {
 	return s.Repository.GetDetail(id)
 }
