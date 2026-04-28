@@ -1,11 +1,13 @@
 package tools
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +16,7 @@ const testSecret = "test-secret-key"
 const testTenantID = "tenant-test-1"
 
 func TestGenerateToken(t *testing.T) {
-	token, err := GenerateToken(testSecret, "user-1", "john", "john@test.com", "admin", testTenantID)
+	token, err := GenerateToken(testSecret, "user-1", "john", "john@test.com", "admin", testTenantID, nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 	// JWT has 3 dot-separated parts
@@ -22,7 +24,7 @@ func TestGenerateToken(t *testing.T) {
 }
 
 func TestGetUserId(t *testing.T) {
-	token, err := GenerateToken(testSecret, "user-42", "jane", "jane@test.com", "user", testTenantID)
+	token, err := GenerateToken(testSecret, "user-42", "jane", "jane@test.com", "user", testTenantID, nil)
 	require.NoError(t, err)
 
 	t.Run("from raw token", func(t *testing.T) {
@@ -49,7 +51,7 @@ func TestGetUserId(t *testing.T) {
 }
 
 func TestGetUserName(t *testing.T) {
-	token, err := GenerateToken(testSecret, "u1", "alice", "alice@test.com", "viewer", testTenantID)
+	token, err := GenerateToken(testSecret, "u1", "alice", "alice@test.com", "viewer", testTenantID, nil)
 	require.NoError(t, err)
 
 	name, err := GetUserName(testSecret, "Bearer "+token)
@@ -58,7 +60,7 @@ func TestGetUserName(t *testing.T) {
 }
 
 func TestGetEmail(t *testing.T) {
-	token, err := GenerateToken(testSecret, "u1", "bob", "bob@test.com", "viewer", testTenantID)
+	token, err := GenerateToken(testSecret, "u1", "bob", "bob@test.com", "viewer", testTenantID, nil)
 	require.NoError(t, err)
 
 	email, err := GetEmail(testSecret, "Bearer "+token)
@@ -67,7 +69,7 @@ func TestGetEmail(t *testing.T) {
 }
 
 func TestGetRole(t *testing.T) {
-	token, err := GenerateToken(testSecret, "u1", "carol", "carol@test.com", "manager", testTenantID)
+	token, err := GenerateToken(testSecret, "u1", "carol", "carol@test.com", "manager", testTenantID, nil)
 	require.NoError(t, err)
 
 	role, err := GetRole(testSecret, "Bearer "+token)
@@ -78,7 +80,7 @@ func TestGetRole(t *testing.T) {
 // S3.5 W3: tenant_id claim plumbing.
 
 func TestGenerateToken_EmbedsTenantID(t *testing.T) {
-	token, err := GenerateToken(testSecret, "u1", "user", "u@test.com", "admin", "tenant-abc")
+	token, err := GenerateToken(testSecret, "u1", "user", "u@test.com", "admin", "tenant-abc", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -116,4 +118,83 @@ func TestTenantIDFromContext_EmptyWhenWrongType(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Set(ContextKeyTenantID, 12345) // wrong type
 	assert.Equal(t, "", TenantIDFromContext(c))
+}
+
+// S3.8 — permissions claim plumbing.
+
+// GenerateToken with non-nil permissions embeds the blob in the signed claims.
+// We decode the JWT directly (not via middleware) to assert the wire-level shape.
+func TestGenerateToken_WithPermissions(t *testing.T) {
+	perms := json.RawMessage(`{"articles":{"read":true,"create":true}}`)
+	token, err := GenerateToken(testSecret, "u1", "alice", "alice@test.com", "admin", testTenantID, perms)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	parsed, err := jwt.ParseWithClaims(token, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		return []byte(testSecret), nil
+	})
+	require.NoError(t, err)
+	claims, ok := parsed.Claims.(*Claims)
+	require.True(t, ok)
+	assert.JSONEq(t, string(perms), string(claims.Permissions))
+}
+
+// nil permissions → claim omitted from JSON via omitempty; decoded value is nil/empty.
+// Important for backwards compat: legacy tokens (issued without permissions) must round-trip.
+func TestGenerateToken_NilPermissions_OmitsClaim(t *testing.T) {
+	token, err := GenerateToken(testSecret, "u1", "alice", "alice@test.com", "admin", testTenantID, nil)
+	require.NoError(t, err)
+
+	parsed, err := jwt.ParseWithClaims(token, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		return []byte(testSecret), nil
+	})
+	require.NoError(t, err)
+	claims, ok := parsed.Claims.(*Claims)
+	require.True(t, ok)
+	assert.Empty(t, claims.Permissions, "nil permissions param must not produce a populated claim")
+}
+
+// JWTAuthMiddleware decodes a token-with-permissions and exposes the blob via
+// PermissionsFromContext, ready for RequirePermission to consume.
+func TestJWTAuthMiddleware_SurfacesPermissionsClaim(t *testing.T) {
+	perms := json.RawMessage(`{"articles":{"read":true}}`)
+	token, err := GenerateToken(testSecret, "u1", "alice", "a@test.com", "admin", "tenant-1", perms)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	_, r := gin.CreateTestContext(w)
+	var captured json.RawMessage
+	r.Use(JWTAuthMiddleware(testSecret))
+	r.GET("/", func(c *gin.Context) {
+		captured = PermissionsFromContext(c)
+		c.Status(200)
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w, req)
+
+	require.NotNil(t, captured)
+	assert.JSONEq(t, string(perms), string(captured))
+}
+
+// Legacy token (no permissions) → context key remains unset → PermissionsFromContext returns nil.
+func TestJWTAuthMiddleware_NoPermissionsClaim_ContextNil(t *testing.T) {
+	token, err := GenerateToken(testSecret, "u1", "alice", "a@test.com", "admin", "tenant-1", nil)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	_, r := gin.CreateTestContext(w)
+	var captured json.RawMessage
+	r.Use(JWTAuthMiddleware(testSecret))
+	r.GET("/", func(c *gin.Context) {
+		captured = PermissionsFromContext(c)
+		c.Status(200)
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w, req)
+
+	assert.Nil(t, captured)
 }

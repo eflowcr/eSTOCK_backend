@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/rs/zerolog/log"
@@ -22,6 +24,11 @@ type AuthenticationRepository struct {
 	Config       configuration.Config
 	EmailSender  tools.EmailSender
 	AuditService *services.AuditService
+	// RolesRepository is optional. When set (S3.8+), Login looks up the role's permissions
+	// blob and embeds it into the issued JWT so RequirePermission can authorize without
+	// a per-request DB roundtrip. When nil, GenerateToken receives nil permissions and the
+	// resulting token forces RequirePermission to fall back to the DB lookup (legacy path).
+	RolesRepository ports.RolesRepository
 }
 
 func (a *AuthenticationRepository) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
@@ -74,7 +81,22 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 	if tenantClaim == "" {
 		tenantClaim = a.Config.TenantID
 	}
-	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID, tenantClaim)
+
+	// S3.8 — embed the role's permissions blob into the JWT so RequirePermission
+	// can authorize without a per-request DB lookup. Failure here is non-fatal:
+	// we issue a permissions-less token and RequirePermission falls back to the
+	// DB lookup (legacy path). Avoids breaking login if the roles table is
+	// briefly unreachable; permissions remain enforced either way.
+	var permsClaim json.RawMessage
+	if a.RolesRepository != nil && user.RoleID != "" {
+		if perms, permErr := a.RolesRepository.GetRolePermissions(context.Background(), user.RoleID); permErr == nil && len(perms) > 0 {
+			permsClaim = perms
+		} else if permErr != nil {
+			log.Warn().Err(permErr).Str("role_id", user.RoleID).Msg("login: failed to load role permissions for JWT — issuing token without permissions claim (DB fallback will apply)")
+		}
+	}
+
+	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID, tenantClaim, permsClaim)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,

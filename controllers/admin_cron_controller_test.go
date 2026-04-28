@@ -37,7 +37,7 @@ func performCronRequest(role string, rolesRepo ports.RolesRepository, handler gi
 	gin.SetMode(gin.TestMode)
 	const testSecret = "test-secret-key"
 
-	token, _ := tools.GenerateToken(testSecret, "user-1", "test", "test@test.com", role, "tenant-test")
+	token, _ := tools.GenerateToken(testSecret, "user-1", "test", "test@test.com", role, "tenant-test", nil)
 
 	w := httptest.NewRecorder()
 	_, r := gin.CreateTestContext(w)

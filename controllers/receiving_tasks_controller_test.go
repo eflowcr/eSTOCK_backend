@@ -88,7 +88,7 @@ func (m *mockReceivingTasksRepoCtrl) LinkSupplier(taskID string, supplierID *str
 const testJWTSecret = "test-secret"
 
 func makeTestToken() string {
-	token, _ := tools.GenerateToken(testJWTSecret, "user-1", "testuser", "test@test.com", "admin", "tenant-test")
+	token, _ := tools.GenerateToken(testJWTSecret, "user-1", "testuser", "test@test.com", "admin", "tenant-test", nil)
 	return "Bearer " + token
 }
 

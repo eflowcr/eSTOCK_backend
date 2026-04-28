@@ -55,7 +55,7 @@ func TestLogin_EmbedsUserTenantID(t *testing.T) {
 
 	// End-to-end: feed that into GenerateToken (the production code path) and
 	// decode the resulting JWT; the claim must round-trip.
-	token, err := tools.GenerateToken(jwtSecret, user.ID, user.Name, user.Email, user.RoleID, tenantClaim)
+	token, err := tools.GenerateToken(jwtSecret, user.ID, user.Name, user.Email, user.RoleID, tenantClaim, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
