@@ -1,0 +1,1 @@
+DELETE FROM public.adjustment_reason_codes WHERE code IN ('INVENTORY_COUNT_INBOUND', 'INVENTORY_COUNT_OUTBOUND');

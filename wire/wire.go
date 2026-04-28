@@ -227,11 +227,15 @@ func NewStockTransfers(pool *pgxpool.Pool) (ports.StockTransfersRepository, *ser
 }
 
 // NewInventoryCounts builds InventoryCountsRepository and InventoryCountsService (mobile-only module).
-// Wires AdjustmentsRepository so Submit() can persist adjustments per variance line.
-func NewInventoryCounts(db *gorm.DB) (ports.InventoryCountsRepository, *services.InventoryCountsService) {
+// Wires AdjustmentsService (NOT AdjustmentsRepository directly) so Submit() goes
+// through the reason-code-aware sign flipping (W0 hostile review N1-1). When pool
+// is nil (sqlserver mode) we still inject the service, just without a reason-codes
+// repo — the service falls back to keeping quantity positive, which works for the
+// counts module because the repo orchestration applies its own direction logic.
+func NewInventoryCounts(db *gorm.DB, pool *pgxpool.Pool) (ports.InventoryCountsRepository, *services.InventoryCountsService) {
 	repo := &repositories.InventoryCountsRepository{DB: db}
-	adjRepo := &repositories.AdjustmentsRepository{DB: db}
-	return repo, services.NewInventoryCountsService(repo, adjRepo)
+	_, adjSvc := NewAdjustments(db, pool)
+	return repo, services.NewInventoryCountsService(repo, adjSvc)
 }
 
 // NewUserPreferences builds UserPreferencesRepository. Returns nil if pool is nil (no Postgres).

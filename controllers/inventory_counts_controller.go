@@ -81,7 +81,14 @@ func (c *InventoryCountsController) Cancel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if resp := c.Service.Cancel(id); resp != nil {
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "CancelInventoryCount", "Token inválido", "invalid_token")
+		return
+	}
+	role, _ := tools.GetRole(c.JWTSecret, token) // role optional; empty role → only creator allowed
+	if resp := c.Service.Cancel(id, userID, role); resp != nil {
 		writeErrorResponse(ctx, "CancelInventoryCount", "cancel_inventory_count", resp)
 		return
 	}
@@ -127,7 +134,8 @@ func (c *InventoryCountsController) Submit(ctx *gin.Context) {
 		tools.ResponseUnauthorized(ctx, "SubmitInventoryCount", "Token inválido", "invalid_token")
 		return
 	}
-	updated, resp := c.Service.Submit(id, userID)
+	role, _ := tools.GetRole(c.JWTSecret, token) // role optional; empty role → only creator allowed
+	updated, resp := c.Service.Submit(id, userID, role)
 	if resp != nil {
 		writeErrorResponse(ctx, "SubmitInventoryCount", "submit_inventory_count", resp)
 		return

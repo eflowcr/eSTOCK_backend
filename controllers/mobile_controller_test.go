@@ -9,6 +9,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -163,6 +164,12 @@ func (m *ctrlCountsRepoStub) MarkStarted(id string) *responses.InternalResponse 
 }
 func (m *ctrlCountsRepoStub) MarkCancelled(id string) *responses.InternalResponse { return nil }
 func (m *ctrlCountsRepoStub) MarkSubmitted(id, submittedBy, adjustmentID string) *responses.InternalResponse {
+	if m.count != nil {
+		m.count.Status = "submitted"
+	}
+	return nil
+}
+func (m *ctrlCountsRepoStub) SubmitWithAdjustments(countID, userID string, creator ports.InventoryAdjustmentsCreator) *responses.InternalResponse {
 	if m.count != nil {
 		m.count.Status = "submitted"
 	}

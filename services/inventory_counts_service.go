@@ -10,18 +10,25 @@ import (
 )
 
 // InventoryCountsService orchestrates the count-sheet workflow:
-//   draft → in_progress (Start) → in_review → submitted (creates adjustment) | cancelled.
+//   draft → in_progress (Start) → in_review → submitted (creates adjustments) | cancelled.
 //
-// Service holds a reference to AdjustmentsRepository so Submit can persist the adjustment
-// rolling up all variance lines. AdjustmentsRepo is optional — when nil, Submit returns the
-// count without creating an adjustment (useful in tests).
+// AdjustmentsCreator is the narrow port that flips signs based on reason code and
+// persists the actual stock mutation. When nil, Submit transitions the count to
+// "submitted" without creating any adjustments (test-only path; in production the
+// wire layer must always inject a real creator — see wire.NewInventoryCounts).
+//
+// Variance handling: variance is computed at scan-time AND recomputed at submit-time
+// (inside the repo's SubmitWithAdjustments transaction). This is the "recompute at
+// submit" approach — see N2-2 in the W0 hostile review. Concurrent stock movement
+// between scan and submit is tolerated because the persisted variance always
+// reflects the latest expected_qty at the moment of submit.
 type InventoryCountsService struct {
-	Repository       ports.InventoryCountsRepository
-	AdjustmentsRepo  ports.AdjustmentsRepository
+	Repository         ports.InventoryCountsRepository
+	AdjustmentsCreator ports.InventoryAdjustmentsCreator
 }
 
-func NewInventoryCountsService(repo ports.InventoryCountsRepository, adjRepo ports.AdjustmentsRepository) *InventoryCountsService {
-	return &InventoryCountsService{Repository: repo, AdjustmentsRepo: adjRepo}
+func NewInventoryCountsService(repo ports.InventoryCountsRepository, creator ports.InventoryAdjustmentsCreator) *InventoryCountsService {
+	return &InventoryCountsService{Repository: repo, AdjustmentsCreator: creator}
 }
 
 func (s *InventoryCountsService) List(status, locationID string) ([]database.InventoryCount, *responses.InternalResponse) {
@@ -53,7 +60,9 @@ func (s *InventoryCountsService) Start(id string) *responses.InternalResponse {
 	return s.Repository.MarkStarted(id)
 }
 
-func (s *InventoryCountsService) Cancel(id string) *responses.InternalResponse {
+// Cancel transitions a non-closed count to "cancelled". Only the creator or an
+// admin may cancel a count (W0 hostile review N2-1: prevent operator griefing).
+func (s *InventoryCountsService) Cancel(id, callerUserID, callerRole string) *responses.InternalResponse {
 	c, resp := s.Repository.GetByID(id)
 	if resp != nil {
 		return resp
@@ -64,6 +73,9 @@ func (s *InventoryCountsService) Cancel(id string) *responses.InternalResponse {
 			Handled:    true,
 			StatusCode: responses.StatusBadRequest,
 		}
+	}
+	if !isCountOwnerOrAdmin(c, callerUserID, callerRole) {
+		return forbidCountAction("cancelar")
 	}
 	return s.Repository.MarkCancelled(id)
 }
@@ -143,13 +155,20 @@ func (s *InventoryCountsService) ScanLine(countID, userID string, req *requests.
 
 // Submit aggregates variance lines into adjustments and closes the count.
 //
-// Each non-zero variance line yields a CreateAdjustment call (one adjustment per line —
-// keeps things idempotent w.r.t. existing reason-code/direction logic in the
-// AdjustmentsService). The first adjustment ID is recorded against the count for traceability.
+// The orchestration (re-fetch expected qty per line → recompute variance →
+// fan out one CreateAdjustment per non-zero line → MarkSubmitted) runs inside
+// a single GORM transaction at the repository layer (W0 hostile review N1-2:
+// atomicity — partial failure rolls back every adjustment plus the state
+// transition). The repo delegates per-line adjustment creation to
+// AdjustmentsCreator.CreateAdjustmentTx which is responsible for the reason-code
+// driven sign flip (W0 hostile review N1-1).
 //
-// When AdjustmentsRepo is nil (tests), no adjustments are created but the count is still
-// transitioned to "submitted".
-func (s *InventoryCountsService) Submit(id, userID string) (*database.InventoryCount, *responses.InternalResponse) {
+// Ownership: only the count creator or an admin may submit (W0 hostile review N2-1).
+//
+// When AdjustmentsCreator is nil (tests only), the count is transitioned to
+// submitted without any stock mutation — the production wire layer always
+// injects a real creator.
+func (s *InventoryCountsService) Submit(id, userID, callerRole string) (*database.InventoryCount, *responses.InternalResponse) {
 	c, resp := s.Repository.GetByID(id)
 	if resp != nil {
 		return nil, resp
@@ -161,51 +180,34 @@ func (s *InventoryCountsService) Submit(id, userID string) (*database.InventoryC
 			StatusCode: responses.StatusBadRequest,
 		}
 	}
-
-	lines, resp := s.Repository.ListLines(id)
-	if resp != nil {
-		return nil, resp
+	if !isCountOwnerOrAdmin(c, userID, callerRole) {
+		return nil, forbidCountAction("enviar")
 	}
 
-	firstAdjID := ""
-	if s.AdjustmentsRepo != nil {
-		for _, line := range lines {
-			if line.VarianceQty == 0 {
-				continue
-			}
-			locCode, locResp := s.Repository.GetLocationCodeByID(line.LocationID)
-			if locResp != nil {
-				return nil, locResp
-			}
-
-			direction := "inbound" // positive variance: stock found extra → add
-			absQty := line.VarianceQty
-			if absQty < 0 {
-				direction = "outbound"
-				absQty = -absQty
-			}
-
-			notes := "inventory_count " + c.Code
-			adj := requests.CreateAdjustment{
-				SKU:                line.SKU,
-				Location:           locCode,
-				AdjustmentQuantity: absQty,
-				Reason:             "INVENTORY_COUNT_" + strings.ToUpper(direction),
-				Notes:              notes,
-			}
-			created, adjResp := s.AdjustmentsRepo.CreateAdjustment(userID, adj)
-			if adjResp != nil {
-				return nil, adjResp
-			}
-			if firstAdjID == "" && created != nil {
-				firstAdjID = created.ID
-			}
-		}
-	}
-
-	if resp := s.Repository.MarkSubmitted(id, userID, firstAdjID); resp != nil {
+	if resp := s.Repository.SubmitWithAdjustments(id, userID, s.AdjustmentsCreator); resp != nil {
 		return nil, resp
 	}
 	updated, _ := s.Repository.GetByID(id)
 	return updated, nil
+}
+
+// isCountOwnerOrAdmin returns true when callerUserID created the count or has the
+// admin role. Used to gate destructive transitions (Submit, Cancel) per the
+// W0 hostile review N2-1 finding.
+func isCountOwnerOrAdmin(c *database.InventoryCount, callerUserID, callerRole string) bool {
+	if c == nil {
+		return false
+	}
+	if c.CreatedBy == callerUserID {
+		return true
+	}
+	return strings.EqualFold(callerRole, "admin")
+}
+
+func forbidCountAction(verb string) *responses.InternalResponse {
+	return &responses.InternalResponse{
+		Message:    "Solo el creador del conteo o un administrador pueden " + verb + " este conteo",
+		Handled:    true,
+		StatusCode: responses.StatusForbidden,
+	}
 }

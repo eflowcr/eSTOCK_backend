@@ -57,7 +57,7 @@ func RegisterMobileRoutes(
 	mobileCtrl := controllers.NewMobileController(pickingSvc, receivingSvc, transfersSvc, inventorySvc, movementsSvc, alertsSvc, config)
 
 	// Counts service & controller (mobile-only).
-	_, countsSvc := wire.NewInventoryCounts(db)
+	_, countsSvc := wire.NewInventoryCounts(db, pool)
 	countsCtrl := controllers.NewInventoryCountsController(*countsSvc, config.JWTSecret)
 
 	mobile := router.Group("/mobile")
