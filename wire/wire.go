@@ -226,6 +226,14 @@ func NewStockTransfers(pool *pgxpool.Pool) (ports.StockTransfersRepository, *ser
 	return r, services.NewStockTransfersService(r)
 }
 
+// NewInventoryCounts builds InventoryCountsRepository and InventoryCountsService (mobile-only module).
+// Wires AdjustmentsRepository so Submit() can persist adjustments per variance line.
+func NewInventoryCounts(db *gorm.DB) (ports.InventoryCountsRepository, *services.InventoryCountsService) {
+	repo := &repositories.InventoryCountsRepository{DB: db}
+	adjRepo := &repositories.AdjustmentsRepository{DB: db}
+	return repo, services.NewInventoryCountsService(repo, adjRepo)
+}
+
 // NewUserPreferences builds UserPreferencesRepository. Returns nil if pool is nil (no Postgres).
 func NewUserPreferences(pool *pgxpool.Pool) ports.UserPreferencesRepository {
 	if pool == nil {

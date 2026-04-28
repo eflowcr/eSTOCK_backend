@@ -1,0 +1,622 @@
+// Package-level note: MobileController is the thin facade that mobile clients
+// hit at /api/mobile/*. It does NOT duplicate business logic — every method
+// reuses an existing service. Mobile-specific concerns it owns:
+//   - JWT-based health endpoint
+//   - Trimmed list DTOs (drop heavy jsonb columns from list view payloads)
+//   - JSON-body line-complete endpoints (mirror of existing URL-param endpoints)
+//   - Reading filters from query string instead of route params for cleaner mobile UX
+package controllers
+
+import (
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/eflowcr/eSTOCK_backend/configuration"
+	"github.com/eflowcr/eSTOCK_backend/models/database"
+	"github.com/eflowcr/eSTOCK_backend/models/requests"
+	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/services"
+	"github.com/eflowcr/eSTOCK_backend/tools"
+	"github.com/gin-gonic/gin"
+)
+
+type MobileController struct {
+	Picking            *services.PickingTaskService
+	Receiving          *services.ReceivingTasksService
+	StockTransfers     *services.StockTransfersService
+	Inventory          *services.InventoryService
+	InventoryMovements *services.InventoryMovementsService
+	StockAlerts        *services.StockAlertsService
+	Config             configuration.Config
+}
+
+func NewMobileController(
+	picking *services.PickingTaskService,
+	receiving *services.ReceivingTasksService,
+	transfers *services.StockTransfersService,
+	inventory *services.InventoryService,
+	movements *services.InventoryMovementsService,
+	alerts *services.StockAlertsService,
+	config configuration.Config,
+) *MobileController {
+	return &MobileController{
+		Picking:            picking,
+		Receiving:          receiving,
+		StockTransfers:     transfers,
+		Inventory:          inventory,
+		InventoryMovements: movements,
+		StockAlerts:        alerts,
+		Config:             config,
+	}
+}
+
+// ─── Health ──────────────────────────────────────────────────────────────────
+
+// Health returns user/tenant/role info from the JWT plus server time + version.
+// Mobile clients call this on cold-start to verify token validity before showing the home screen.
+func (c *MobileController) Health(ctx *gin.Context) {
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileHealth", "Token inválido", "mobile_health")
+		return
+	}
+	role, _ := tools.GetRole(c.Config.JWTSecret, token)
+	userName, _ := tools.GetUserName(c.Config.JWTSecret, token)
+	email, _ := tools.GetEmail(c.Config.JWTSecret, token)
+
+	version := c.Config.Version
+	if version == "" {
+		version = "dev"
+	}
+
+	resp := responses.MobileHealthResponse{
+		Tenant:     "", // single-tenant codebase; reserved for future
+		User:       userID,
+		UserName:   userName,
+		Email:      email,
+		Role:       role,
+		ServerTime: time.Now().UTC(),
+		Version:    version,
+	}
+	tools.ResponseOK(ctx, "MobileHealth", "OK", "mobile_health", resp, false, "")
+}
+
+// ─── Picking ─────────────────────────────────────────────────────────────────
+
+// ListPickingTasks supports `assigned_to_me=true` and `status=pending,in_progress` filters.
+// Filtering is applied in-memory after fetching from the existing service (the underlying
+// repo doesn't yet expose filtered list APIs; this is fine for mobile MVP volume).
+func (c *MobileController) ListPickingTasks(ctx *gin.Context) {
+	tasks, resp := c.Picking.GetAllPickingTasks()
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileListPickingTasks", "mobile_list_picking_tasks", resp)
+		return
+	}
+
+	assignedToMe := strings.EqualFold(ctx.Query("assigned_to_me"), "true")
+	statusFilter := parseCSVFilter(ctx.Query("status"))
+
+	var userID string
+	if assignedToMe {
+		token := ctx.Request.Header.Get("Authorization")
+		uid, err := tools.GetUserId(c.Config.JWTSecret, token)
+		if err != nil {
+			tools.ResponseUnauthorized(ctx, "MobileListPickingTasks", "Token inválido", "mobile_list_picking_tasks")
+			return
+		}
+		userID = uid
+	}
+
+	out := make([]responses.MobilePickingTaskSummary, 0, len(tasks))
+	for _, t := range tasks {
+		if assignedToMe && (t.AssignedTo == nil || *t.AssignedTo != userID) {
+			continue
+		}
+		if len(statusFilter) > 0 && !statusFilter[strings.ToLower(t.Status)] {
+			continue
+		}
+		out = append(out, responses.MobilePickingTaskSummary{
+			ID:           t.ID,
+			TaskID:       t.TaskID,
+			OrderNumber:  t.OrderNumber,
+			Status:       t.Status,
+			Priority:     t.Priority,
+			AssignedTo:   t.AssignedTo,
+			AssigneeName: t.UserAssigneeName,
+			CreatedAt:    t.CreatedAt,
+			CompletedAt:  t.CompletedAt,
+		})
+	}
+	tools.ResponseOK(ctx, "MobileListPickingTasks", "Tareas de picking obtenidas", "mobile_list_picking_tasks", out, false, "")
+}
+
+// GetPickingTask returns the full record (header + items jsonb) so mobile can render lines.
+func (c *MobileController) GetPickingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileGetPickingTask", "mobile_get_picking_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	task, resp := c.Picking.GetPickingTaskByID(id)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileGetPickingTask", "mobile_get_picking_task", resp)
+		return
+	}
+	if task == nil {
+		tools.ResponseNotFound(ctx, "MobileGetPickingTask", "Tarea no encontrada", "mobile_get_picking_task")
+		return
+	}
+	tools.ResponseOK(ctx, "MobileGetPickingTask", "Tarea obtenida", "mobile_get_picking_task", task, false, "")
+}
+
+func (c *MobileController) StartPickingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileStartPickingTask", "mobile_start_picking_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	resp := c.Picking.UpdatePickingTask(id, map[string]interface{}{"status": "in_progress"})
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileStartPickingTask", "mobile_start_picking_task", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileStartPickingTask", "Tarea iniciada", "mobile_start_picking_task", nil, false, "")
+}
+
+// CompletePickingLine accepts JSON body {line_id, picked_qty, location_scanned, lot, serial}
+// and forwards to the existing CompletePickingLine service (reuses the URL-param shape internally).
+func (c *MobileController) CompletePickingLine(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompletePickingLine", "mobile_complete_picking_line", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileCompletePickingLine", "Token inválido", "invalid_token")
+		return
+	}
+
+	var body responses.MobileCompleteLineRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingLine", "Cuerpo inválido", "mobile_complete_picking_line")
+		return
+	}
+	if strings.TrimSpace(body.LocationScanned) == "" {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingLine", "location_scanned es requerido", "mobile_complete_picking_line")
+		return
+	}
+
+	item := requests.PickingTaskItemRequest{
+		SKU:      body.SKU,
+		Location: body.LocationScanned,
+	}
+	if body.PickedQty > 0 {
+		item.ExpectedQuantity = int(body.PickedQty)
+	}
+	if body.Lot != "" {
+		item.LotNumbers = []requests.CreateLotRequest{{
+			LotNumber: body.Lot,
+			SKU:       body.SKU,
+			Quantity:  body.PickedQty,
+		}}
+	}
+	if body.Serial != "" {
+		item.SerialNumbers = []database.Serial{{SerialNumber: body.Serial, SKU: body.SKU}}
+	}
+
+	resp := c.Picking.CompletePickingLine(id, body.LocationScanned, userID, item)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileCompletePickingLine", "mobile_complete_picking_line", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileCompletePickingLine", "Línea completada", "mobile_complete_picking_line", nil, false, "")
+}
+
+// CompletePickingTask body: {location_scanned}
+func (c *MobileController) CompletePickingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompletePickingTask", "mobile_complete_picking_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileCompletePickingTask", "Token inválido", "invalid_token")
+		return
+	}
+	var body responses.MobileCompleteTaskRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingTask", "Cuerpo inválido", "mobile_complete_picking_task")
+		return
+	}
+	if strings.TrimSpace(body.LocationScanned) == "" {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingTask", "location_scanned es requerido", "mobile_complete_picking_task")
+		return
+	}
+	resp := c.Picking.CompletePickingTask(id, body.LocationScanned, userID)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileCompletePickingTask", "mobile_complete_picking_task", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileCompletePickingTask", "Tarea completada", "mobile_complete_picking_task", nil, false, "")
+}
+
+// ─── Receiving ───────────────────────────────────────────────────────────────
+
+func (c *MobileController) ListReceivingTasks(ctx *gin.Context) {
+	tasks, resp := c.Receiving.GetAllReceivingTasks()
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileListReceivingTasks", "mobile_list_receiving_tasks", resp)
+		return
+	}
+
+	assignedToMe := strings.EqualFold(ctx.Query("assigned_to_me"), "true")
+	statusFilter := parseCSVFilter(ctx.Query("status"))
+
+	var userID string
+	if assignedToMe {
+		token := ctx.Request.Header.Get("Authorization")
+		uid, err := tools.GetUserId(c.Config.JWTSecret, token)
+		if err != nil {
+			tools.ResponseUnauthorized(ctx, "MobileListReceivingTasks", "Token inválido", "mobile_list_receiving_tasks")
+			return
+		}
+		userID = uid
+	}
+
+	out := make([]responses.MobileReceivingTaskSummary, 0, len(tasks))
+	for _, t := range tasks {
+		if assignedToMe && (t.AssignedTo == nil || *t.AssignedTo != userID) {
+			continue
+		}
+		if len(statusFilter) > 0 && !statusFilter[strings.ToLower(t.Status)] {
+			continue
+		}
+		out = append(out, responses.MobileReceivingTaskSummary{
+			ID:            t.ID,
+			TaskID:        t.TaskID,
+			InboundNumber: t.InboundNumber,
+			Status:        t.Status,
+			Priority:      t.Priority,
+			AssignedTo:    t.AssignedTo,
+			AssigneeName:  t.UserAssigneeName,
+			CreatedAt:     t.CreatedAt,
+			CompletedAt:   t.CompletedAt,
+		})
+	}
+	tools.ResponseOK(ctx, "MobileListReceivingTasks", "Tareas de recepción obtenidas", "mobile_list_receiving_tasks", out, false, "")
+}
+
+func (c *MobileController) GetReceivingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileGetReceivingTask", "mobile_get_receiving_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	task, resp := c.Receiving.GetReceivingTaskByID(id)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileGetReceivingTask", "mobile_get_receiving_task", resp)
+		return
+	}
+	if task == nil {
+		tools.ResponseNotFound(ctx, "MobileGetReceivingTask", "Tarea no encontrada", "mobile_get_receiving_task")
+		return
+	}
+	tools.ResponseOK(ctx, "MobileGetReceivingTask", "Tarea obtenida", "mobile_get_receiving_task", task, false, "")
+}
+
+func (c *MobileController) CompleteReceivingLine(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompleteReceivingLine", "mobile_complete_receiving_line", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileCompleteReceivingLine", "Token inválido", "invalid_token")
+		return
+	}
+	var body responses.MobileCompleteLineRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingLine", "Cuerpo inválido", "mobile_complete_receiving_line")
+		return
+	}
+	if strings.TrimSpace(body.LocationScanned) == "" {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingLine", "location_scanned es requerido", "mobile_complete_receiving_line")
+		return
+	}
+	item := requests.ReceivingTaskItemRequest{
+		SKU:      body.SKU,
+		Location: body.LocationScanned,
+	}
+	if body.PickedQty > 0 {
+		item.ExpectedQuantity = int(body.PickedQty)
+	}
+	if body.Lot != "" {
+		item.LotNumbers = []requests.CreateLotRequest{{
+			LotNumber: body.Lot,
+			SKU:       body.SKU,
+			Quantity:  body.PickedQty,
+		}}
+	}
+	if body.Serial != "" {
+		item.SerialNumbers = []database.Serial{{SerialNumber: body.Serial, SKU: body.SKU}}
+	}
+	resp := c.Receiving.CompleteReceivingLine(id, body.LocationScanned, userID, item)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileCompleteReceivingLine", "mobile_complete_receiving_line", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileCompleteReceivingLine", "Línea completada", "mobile_complete_receiving_line", nil, false, "")
+}
+
+func (c *MobileController) CompleteReceivingTask(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompleteReceivingTask", "mobile_complete_receiving_task", "ID de tarea inválido")
+	if !ok {
+		return
+	}
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileCompleteReceivingTask", "Token inválido", "invalid_token")
+		return
+	}
+	var body responses.MobileCompleteTaskRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingTask", "Cuerpo inválido", "mobile_complete_receiving_task")
+		return
+	}
+	if strings.TrimSpace(body.LocationScanned) == "" {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingTask", "location_scanned es requerido", "mobile_complete_receiving_task")
+		return
+	}
+	resp := c.Receiving.CompleteFullTask(id, body.LocationScanned, userID)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileCompleteReceivingTask", "mobile_complete_receiving_task", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileCompleteReceivingTask", "Tarea completada", "mobile_complete_receiving_task", nil, false, "")
+}
+
+// ─── Stock Transfers ─────────────────────────────────────────────────────────
+
+func (c *MobileController) ListStockTransfers(ctx *gin.Context) {
+	if c.StockTransfers == nil {
+		tools.ResponseOK(ctx, "MobileListStockTransfers", "Sin traslados", "mobile_list_stock_transfers", []responses.MobileStockTransferSummary{}, false, "")
+		return
+	}
+	statusFilter := parseCSVFilter(ctx.Query("status"))
+
+	var single string
+	if len(statusFilter) == 1 {
+		for k := range statusFilter {
+			single = k
+		}
+	}
+
+	transfers, resp := c.StockTransfers.ListStockTransfers(single)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileListStockTransfers", "mobile_list_stock_transfers", resp)
+		return
+	}
+
+	assignedToMe := strings.EqualFold(ctx.Query("assigned_to_me"), "true")
+	var userID string
+	if assignedToMe {
+		token := ctx.Request.Header.Get("Authorization")
+		uid, err := tools.GetUserId(c.Config.JWTSecret, token)
+		if err != nil {
+			tools.ResponseUnauthorized(ctx, "MobileListStockTransfers", "Token inválido", "mobile_list_stock_transfers")
+			return
+		}
+		userID = uid
+	}
+
+	out := make([]responses.MobileStockTransferSummary, 0, len(transfers))
+	for _, t := range transfers {
+		if assignedToMe && (t.AssignedTo == nil || *t.AssignedTo != userID) {
+			continue
+		}
+		if len(statusFilter) > 1 && !statusFilter[strings.ToLower(t.Status)] {
+			continue
+		}
+		out = append(out, responses.MobileStockTransferSummary{
+			ID:             t.ID,
+			TransferNumber: t.TransferNumber,
+			Status:         t.Status,
+			FromLocationID: t.FromLocationID,
+			ToLocationID:   t.ToLocationID,
+			AssignedTo:     t.AssignedTo,
+			CreatedAt:      t.CreatedAt,
+			CompletedAt:    t.CompletedAt,
+		})
+	}
+	tools.ResponseOK(ctx, "MobileListStockTransfers", "Traslados obtenidos", "mobile_list_stock_transfers", out, false, "")
+}
+
+func (c *MobileController) GetStockTransfer(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileGetStockTransfer", "mobile_get_stock_transfer", "ID inválido")
+	if !ok {
+		return
+	}
+	if c.StockTransfers == nil {
+		tools.ResponseNotFound(ctx, "MobileGetStockTransfer", "Servicio no disponible", "mobile_get_stock_transfer")
+		return
+	}
+	tr, resp := c.StockTransfers.GetStockTransferByID(id)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileGetStockTransfer", "mobile_get_stock_transfer", resp)
+		return
+	}
+	if tr == nil {
+		tools.ResponseNotFound(ctx, "MobileGetStockTransfer", "Traslado no encontrado", "mobile_get_stock_transfer")
+		return
+	}
+	lines, _ := c.StockTransfers.ListStockTransferLines(id)
+	tools.ResponseOK(ctx, "MobileGetStockTransfer", "Traslado obtenido", "mobile_get_stock_transfer", gin.H{"transfer": tr, "lines": lines}, false, "")
+}
+
+func (c *MobileController) ExecuteStockTransfer(ctx *gin.Context) {
+	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileExecuteStockTransfer", "mobile_execute_stock_transfer", "ID inválido")
+	if !ok {
+		return
+	}
+	if c.StockTransfers == nil {
+		tools.ResponseInternal(ctx, "MobileExecuteStockTransfer", "Servicio no disponible", "mobile_execute_stock_transfer")
+		return
+	}
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileExecuteStockTransfer", "Token inválido", "invalid_token")
+		return
+	}
+	tr, resp := c.StockTransfers.ExecuteTransfer(id, userID)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileExecuteStockTransfer", "mobile_execute_stock_transfer", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileExecuteStockTransfer", "Traslado ejecutado", "mobile_execute_stock_transfer", tr, false, "")
+}
+
+// ─── Inventory ───────────────────────────────────────────────────────────────
+
+// QueryInventory accepts ?sku=, ?barcode=, or ?location=. With sku and location → exact SKU lookup
+// at that location; with sku only → all locations for that SKU; with location only → all SKUs at
+// that location. Reuses GetAllInventory + filtering for simplicity; for high-cardinality data,
+// the underlying repo can later expose dedicated query methods.
+func (c *MobileController) QueryInventory(ctx *gin.Context) {
+	sku := strings.TrimSpace(ctx.Query("sku"))
+	barcode := strings.TrimSpace(ctx.Query("barcode"))
+	location := strings.TrimSpace(ctx.Query("location"))
+
+	// Currently barcode is treated as SKU lookup (matches repository.ResolveSKUByBarcode placeholder).
+	if sku == "" && barcode != "" {
+		sku = barcode
+	}
+
+	if sku != "" && location != "" {
+		item, resp := c.Inventory.GetInventoryBySkuAndLocation(sku, location)
+		if resp != nil {
+			writeErrorResponse(ctx, "MobileQueryInventory", "mobile_query_inventory", resp)
+			return
+		}
+		if item == nil {
+			tools.ResponseOK(ctx, "MobileQueryInventory", "Sin resultados", "mobile_query_inventory", []interface{}{}, false, "")
+			return
+		}
+		tools.ResponseOK(ctx, "MobileQueryInventory", "OK", "mobile_query_inventory", []interface{}{item}, false, "")
+		return
+	}
+
+	all, resp := c.Inventory.GetAllInventory()
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileQueryInventory", "mobile_query_inventory", resp)
+		return
+	}
+	if all == nil {
+		all = nil
+	}
+
+	filtered := all[:0:0]
+	for _, inv := range all {
+		if sku != "" && !strings.EqualFold(inv.SKU, sku) {
+			continue
+		}
+		if location != "" && !strings.EqualFold(inv.Location, location) {
+			continue
+		}
+		filtered = append(filtered, inv)
+	}
+	tools.ResponseOK(ctx, "MobileQueryInventory", "OK", "mobile_query_inventory", filtered, false, "")
+}
+
+// GetLotsBySKU returns all lots for a SKU. Reuses GetInventoryLots indirectly is awkward
+// (it expects an inventoryID), so for mobile we walk the inventory list and aggregate lots.
+// For the volumes mobile sees this is fine; later the repo can expose a direct method.
+func (c *MobileController) GetLotsBySKU(ctx *gin.Context) {
+	sku := strings.TrimSpace(ctx.Param("sku"))
+	if sku == "" {
+		tools.ResponseBadRequest(ctx, "MobileGetLotsBySKU", "SKU requerido", "mobile_get_lots_by_sku")
+		return
+	}
+	all, resp := c.Inventory.GetAllInventory()
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileGetLotsBySKU", "mobile_get_lots_by_sku", resp)
+		return
+	}
+	out := []interface{}{}
+	for _, inv := range all {
+		if !strings.EqualFold(inv.SKU, sku) {
+			continue
+		}
+		lots, lresp := c.Inventory.GetInventoryLots(inv.ID)
+		if lresp != nil {
+			continue
+		}
+		for _, l := range lots {
+			out = append(out, gin.H{
+				"location": inv.Location,
+				"lot":      l,
+			})
+		}
+	}
+	tools.ResponseOK(ctx, "MobileGetLotsBySKU", "OK", "mobile_get_lots_by_sku", out, false, "")
+}
+
+// GetMovementsBySKU mirrors /inventory_movements/:sku but with optional ?limit query.
+func (c *MobileController) GetMovementsBySKU(ctx *gin.Context) {
+	sku := strings.TrimSpace(ctx.Param("sku"))
+	if sku == "" {
+		tools.ResponseBadRequest(ctx, "MobileGetMovementsBySKU", "SKU requerido", "mobile_get_movements_by_sku")
+		return
+	}
+	movs, resp := c.InventoryMovements.GetAllInventoryMovements(sku)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileGetMovementsBySKU", "mobile_get_movements_by_sku", resp)
+		return
+	}
+	limit := 20
+	if ls := ctx.Query("limit"); ls != "" {
+		if parsed, err := strconv.Atoi(ls); err == nil && parsed > 0 && parsed < 500 {
+			limit = parsed
+		}
+	}
+	if len(movs) > limit {
+		movs = movs[:limit]
+	}
+	tools.ResponseOK(ctx, "MobileGetMovementsBySKU", "OK", "mobile_get_movements_by_sku", movs, false, "")
+}
+
+// ─── Stock Alerts ────────────────────────────────────────────────────────────
+
+func (c *MobileController) ListStockAlerts(ctx *gin.Context) {
+	if c.StockAlerts == nil {
+		tools.ResponseOK(ctx, "MobileListStockAlerts", "Sin alertas", "mobile_list_stock_alerts", []interface{}{}, false, "")
+		return
+	}
+	resolved := strings.EqualFold(ctx.Query("resolved"), "true")
+	alerts, resp := c.StockAlerts.GetAllStockAlerts(resolved)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileListStockAlerts", "mobile_list_stock_alerts", resp)
+		return
+	}
+	tools.ResponseOK(ctx, "MobileListStockAlerts", "OK", "mobile_list_stock_alerts", alerts, false, "")
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+func parseCSVFilter(raw string) map[string]bool {
+	out := map[string]bool{}
+	if raw == "" {
+		return out
+	}
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" {
+			out[p] = true
+		}
+	}
+	return out
+}
+

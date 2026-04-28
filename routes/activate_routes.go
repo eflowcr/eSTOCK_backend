@@ -49,5 +49,8 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterLotsRoutes(api, db, pool, config, rolesRepo)
 	RegisterRolesRoutes(api, config, rolesRepo)
 
+	// Mobile companion app surface — keeps web /api/* untouched.
+	RegisterMobileRoutes(api, db, pool, config, rolesRepo, redisClient)
+
 	RegisterDocsRoutes(r)
 }
