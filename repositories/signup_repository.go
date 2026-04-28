@@ -100,6 +100,15 @@ func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.Sign
 		return &responses.InternalResponse{Error: err, Message: "Error al procesar contraseña", Handled: false}
 	}
 
+	// S3.7 companion (B23): persist the user's demo-data choice on the pending
+	// token row so VerifySignup can honor it. nil → default true (backwards
+	// compat with older frontends + pre-existing pending tokens migrated with
+	// DEFAULT TRUE in 000036).
+	seedDemoData := true
+	if req.SeedDemoData != nil {
+		seedDemoData = *req.SeedDemoData
+	}
+
 	id := uuid.NewString()
 	st := database.SignupToken{
 		ID:               id,
@@ -109,6 +118,7 @@ func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.Sign
 		Token:            token,
 		AdminName:        req.AdminName,
 		AdminPasswordEnc: encryptedPwd,
+		SeedDemoData:     seedDemoData,
 		ExpiresAt:        time.Now().Add(24 * time.Hour),
 	}
 
@@ -273,18 +283,30 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 		return nil, &responses.InternalResponse{Error: txErr, Message: "Error al completar registro", Handled: false}
 	}
 
-	// After tx: trigger farma demo seed in background goroutine.
+	// After tx: trigger farma demo seed in background goroutine — but only when
+	// the signup explicitly opted in (or the request omitted the field, which
+	// defaults to true via the column DEFAULT + InitiateSignup nil-check). When
+	// the user opted out we skip SeedFarma entirely so the tenant lands on a
+	// blank WMS (0 articles / 0 tasks / 0 locations).
+	//
 	// SeedFarma is idempotent (checks demo_data_seeds before inserting).
 	// S3.5.3 N3: pass adminID through so seeded receiving + picking tasks reference
 	// a real users.id and survive the repository INNER JOIN to users. Previously
 	// tenantID was implicitly used, dropping every demo row from the dashboard.
-	go func(tID, aID string) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		if err := tools.SeedFarma(bgCtx, r.DB, tID, aID); err != nil {
-			log.Error().Err(err).Str("tenant_id", tID).Msg("farma demo seed failed (background)")
-		}
-	}(tenantID, adminID)
+	if st.SeedDemoData {
+		go func(tID, aID string) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if err := tools.SeedFarma(bgCtx, r.DB, tID, aID); err != nil {
+				log.Error().Err(err).Str("tenant_id", tID).Msg("farma demo seed failed (background)")
+			}
+		}(tenantID, adminID)
+	} else {
+		log.Info().
+			Str("tenant_id", tenantID).
+			Str("email", st.Email).
+			Msg("signup verified — demo data seed skipped (seed_demo_data=false)")
+	}
 
 	adminName := st.AdminName
 	if adminName == "" {
