@@ -511,6 +511,7 @@ type SignupToken struct {
 	CreatedAt        time.Time          `json:"created_at"`
 	AdminName        string             `json:"admin_name"`
 	AdminPasswordEnc string             `json:"admin_password_enc"`
+	SeedDemoData     bool               `json:"seed_demo_data"`
 }
 
 type StockAlert struct {

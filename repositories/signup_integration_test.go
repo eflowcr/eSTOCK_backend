@@ -384,3 +384,144 @@ func TestSignup_FailsLoudIfNoAdminRole(t *testing.T) {
 // This is a unit-level smoke test in signup_controller_test.go.
 // The heavy rate-limit test (TCP-level, 6 real requests) is left as a manual
 // smoke test to avoid flakiness in CI (timing-sensitive).
+
+// ─── S3.7 companion (B23): seed_demo_data flag honored ──────────────────────
+//
+// Until S3.7 backend always ran SeedFarma. The frontend (PR #32) shipped a
+// checkbox letting users opt out, but the backend silently ignored the flag.
+// These regression tests pin the new contract:
+//   * seed_demo_data=true            → SeedFarma runs (50 RX articles seeded)
+//   * seed_demo_data=false           → SeedFarma SKIPPED (0 articles)
+//   * seed_demo_data omitted (nil)   → defaults to true (backwards compat)
+//
+// SeedFarma runs in a goroutine, so the "true" cases poll demo_data_seeds.
+// The "false" case asserts the column persisted false AND no demo_data_seeds
+// row appeared after a short wait (proving the goroutine never fired).
+
+func boolPtr(b bool) *bool { return &b }
+
+// waitForFarmaSeed polls demo_data_seeds for up to `d` waiting for the async
+// SeedFarma goroutine to insert its row. Returns true if found.
+func waitForFarmaSeed(t *testing.T, db *gorm.DB, tenantID string, d time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		var count int64
+		if err := db.Model(&database.DemoDataSeed{}).
+			Where("tenant_id = ? AND seed_name = ?", tenantID, tools.FarmaSeedName).
+			Count(&count).Error; err == nil && count > 0 {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
+func TestSignup_SeedDemoDataTrue_RunsSeeder(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	seedAdminRole(t, db)
+	repo := signupRepo(db)
+	ctx := context.Background()
+
+	req := requests.SignupRequest{
+		Email:         "seed.true@test.com",
+		CompanyName:   "Seed True Co",
+		TenantSlug:    "seedtrueco",
+		AdminName:     "Seed True Admin",
+		AdminPassword: "TestP@ssw0rd!",
+		SeedDemoData:  boolPtr(true),
+	}
+	require.Nil(t, repo.InitiateSignup(ctx, req))
+
+	var st database.SignupToken
+	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
+	assert.True(t, st.SeedDemoData, "explicit true must persist on signup_tokens row")
+
+	result, errResp := repo.VerifySignup(ctx, st.Token)
+	require.Nil(t, errResp)
+	require.NotNil(t, result)
+
+	// Async SeedFarma should populate demo_data_seeds within a few seconds.
+	assert.True(t, waitForFarmaSeed(t, db, result.TenantID, 10*time.Second),
+		"SeedFarma must run when seed_demo_data=true (no demo_data_seeds row appeared)")
+}
+
+func TestSignup_SeedDemoDataFalse_SkipsSeeder(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	seedAdminRole(t, db)
+	repo := signupRepo(db)
+	ctx := context.Background()
+
+	req := requests.SignupRequest{
+		Email:         "seed.false@test.com",
+		CompanyName:   "Seed False Co",
+		TenantSlug:    "seedfalseco",
+		AdminName:     "Seed False Admin",
+		AdminPassword: "TestP@ssw0rd!",
+		SeedDemoData:  boolPtr(false),
+	}
+	require.Nil(t, repo.InitiateSignup(ctx, req))
+
+	var st database.SignupToken
+	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
+	assert.False(t, st.SeedDemoData, "explicit false must persist on signup_tokens row")
+
+	result, errResp := repo.VerifySignup(ctx, st.Token)
+	require.Nil(t, errResp)
+	require.NotNil(t, result)
+
+	// Wait long enough that a real SeedFarma goroutine would have started AND
+	// written its demo_data_seeds marker. If we still see zero rows the skip
+	// branch was taken.
+	time.Sleep(2 * time.Second)
+
+	var seedCount int64
+	require.NoError(t, db.Model(&database.DemoDataSeed{}).
+		Where("tenant_id = ? AND seed_name = ?", result.TenantID, tools.FarmaSeedName).
+		Count(&seedCount).Error)
+	assert.EqualValues(t, 0, seedCount,
+		"SeedFarma must NOT run when seed_demo_data=false (demo_data_seeds row should not exist)")
+
+	var articleCount int64
+	require.NoError(t, db.Model(&database.Article{}).
+		Where("tenant_id = ?", result.TenantID).Count(&articleCount).Error)
+	assert.EqualValues(t, 0, articleCount,
+		"tenant must land on a blank WMS (0 articles) when opted out of demo data")
+}
+
+func TestSignup_SeedDemoDataNil_DefaultsToTrue(t *testing.T) {
+	db, cleanup := setupGORMTestDB(t)
+	defer cleanup()
+
+	seedAdminRole(t, db)
+	repo := signupRepo(db)
+	ctx := context.Background()
+
+	// Backwards-compat: older frontends (pre-S3.7) don't send seed_demo_data.
+	// nil pointer must default to TRUE so existing clients keep seeding.
+	req := requests.SignupRequest{
+		Email:         "seed.nil@test.com",
+		CompanyName:   "Seed Nil Co",
+		TenantSlug:    "seednilco",
+		AdminName:     "Seed Nil Admin",
+		AdminPassword: "TestP@ssw0rd!",
+		// SeedDemoData intentionally omitted (nil)
+	}
+	require.Nil(t, repo.InitiateSignup(ctx, req))
+
+	var st database.SignupToken
+	require.NoError(t, db.Where("LOWER(email) = LOWER(?)", req.Email).First(&st).Error)
+	assert.True(t, st.SeedDemoData,
+		"nil SeedDemoData must default to TRUE for backwards compatibility")
+
+	result, errResp := repo.VerifySignup(ctx, st.Token)
+	require.Nil(t, errResp)
+	require.NotNil(t, result)
+
+	assert.True(t, waitForFarmaSeed(t, db, result.TenantID, 10*time.Second),
+		"SeedFarma must run when seed_demo_data is omitted (nil → default true)")
+}
