@@ -10,6 +10,10 @@ type CreateAdjustment struct {
 	Notes              string          `json:"notes" validate:"max=1000"`
 	Lots               []AdjustmentLot `json:"lots,omitempty"`
 	Serials            []string        `json:"serials,omitempty"`
+	// S2 D1: explicit adjustment type. Defaults to "increase" when empty (backward compat).
+	// increase: add stock (existing behavior); decrease: subtract, blocked if violates reserved_qty;
+	// count_reconcile: absolute physical count — target qty, always notifies admin.
+	AdjustmentType string `json:"adjustment_type,omitempty" validate:"omitempty,oneof=increase decrease count_reconcile"`
 }
 
 type AdjustmentLot struct {

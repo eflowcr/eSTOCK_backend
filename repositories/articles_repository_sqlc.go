@@ -49,6 +49,10 @@ func (r *ArticlesRepositorySQLC) GetAllArticles() ([]database.Article, *response
 			TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
 			MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
 			IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+			CategoryID: a.CategoryID, ShelfLifeInDays: a.ShelfLifeInDays, SafetyStock: a.SafetyStock,
+			BatchNumberSeries: a.BatchNumberSeries, SerialNumberSeries: a.SerialNumberSeries,
+			MinOrderQty: a.MinOrderQty, DefaultLocationID: a.DefaultLocationID,
+			ReceivingNotes: a.ReceivingNotes, ShippingNotes: a.ShippingNotes,
 		})
 	}
 	return out, nil
@@ -74,6 +78,10 @@ func (r *ArticlesRepositorySQLC) GetArticleByID(id string) (*database.Article, *
 		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
 		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
 		IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CategoryID: a.CategoryID, ShelfLifeInDays: a.ShelfLifeInDays, SafetyStock: a.SafetyStock,
+		BatchNumberSeries: a.BatchNumberSeries, SerialNumberSeries: a.SerialNumberSeries,
+		MinOrderQty: a.MinOrderQty, DefaultLocationID: a.DefaultLocationID,
+		ReceivingNotes: a.ReceivingNotes, ShippingNotes: a.ShippingNotes,
 	})
 	return &art, nil
 }
@@ -98,6 +106,10 @@ func (r *ArticlesRepositorySQLC) GetBySku(sku string) (*database.Article, *respo
 		TrackExpiration: a.TrackExpiration, RotationStrategy: a.RotationStrategy,
 		MinQuantity: a.MinQuantity, MaxQuantity: a.MaxQuantity, ImageUrl: a.ImageUrl,
 		IsActive: a.IsActive, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CategoryID: a.CategoryID, ShelfLifeInDays: a.ShelfLifeInDays, SafetyStock: a.SafetyStock,
+		BatchNumberSeries: a.BatchNumberSeries, SerialNumberSeries: a.SerialNumberSeries,
+		MinOrderQty: a.MinOrderQty, DefaultLocationID: a.DefaultLocationID,
+		ReceivingNotes: a.ReceivingNotes, ShippingNotes: a.ShippingNotes,
 	})
 	return &art, nil
 }
@@ -123,18 +135,27 @@ func (r *ArticlesRepositorySQLC) CreateArticle(data *requests.Article) *response
 	}
 
 	arg := sqlc.CreateArticleParams{
-		Sku:              data.SKU,
-		Name:             data.Name,
-		Description:      ptrStringToPgText(data.Description),
-		UnitPrice:        ptrFloatToPgNumeric(data.UnitPrice),
-		Presentation:     data.Presentation,
-		TrackByLot:       data.TrackByLot,
-		TrackBySerial:   data.TrackBySerial,
-		TrackExpiration:  data.TrackExpiration,
-		RotationStrategy: rotationStrategy,
-		MinQuantity:      ptrIntToPgInt4(data.MinQuantity),
-		MaxQuantity:     ptrIntToPgInt4(data.MaxQuantity),
-		ImageUrl:         ptrStringToPgText(data.ImageURL),
+		Sku:                data.SKU,
+		Name:               data.Name,
+		Description:        ptrStringToPgText(data.Description),
+		UnitPrice:          ptrFloatToPgNumeric(data.UnitPrice),
+		Presentation:       data.Presentation,
+		TrackByLot:         data.TrackByLot,
+		TrackBySerial:      data.TrackBySerial,
+		TrackExpiration:    data.TrackExpiration,
+		RotationStrategy:   rotationStrategy,
+		MinQuantity:        ptrIntToPgInt4(data.MinQuantity),
+		MaxQuantity:        ptrIntToPgInt4(data.MaxQuantity),
+		ImageUrl:           ptrStringToPgText(data.ImageURL),
+		CategoryID:         ptrStringToPgText(data.CategoryID),
+		ShelfLifeInDays:    ptrIntToPgInt4(data.ShelfLifeInDays),
+		SafetyStock:        floatToPgNumeric(data.SafetyStock),
+		BatchNumberSeries:  ptrStringToPgText(data.BatchNumberSeries),
+		SerialNumberSeries: ptrStringToPgText(data.SerialNumberSeries),
+		MinOrderQty:        floatToPgNumeric(data.MinOrderQty),
+		DefaultLocationID:  ptrStringToPgText(data.DefaultLocationID),
+		ReceivingNotes:     ptrStringToPgText(data.ReceivingNotes),
+		ShippingNotes:      ptrStringToPgText(data.ShippingNotes),
 	}
 
 	_, err = r.queries.CreateArticle(ctx, arg)
@@ -172,20 +193,29 @@ func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article
 	}
 
 	arg := sqlc.UpdateArticleParams{
-		ID:               existing.ID,
-		Sku:              data.SKU,
-		Name:             data.Name,
-		Description:      ptrStringToPgText(data.Description),
-		UnitPrice:        ptrFloatToPgNumeric(data.UnitPrice),
-		Presentation:     data.Presentation,
-		TrackByLot:       data.TrackByLot,
-		TrackBySerial:    data.TrackBySerial,
-		TrackExpiration:  data.TrackExpiration,
-		RotationStrategy: rotationStrategy,
-		MinQuantity:      ptrIntToPgInt4(data.MinQuantity),
-		MaxQuantity:      ptrIntToPgInt4(data.MaxQuantity),
-		ImageUrl:         ptrStringToPgText(data.ImageURL),
-		IsActive:         existing.IsActive,
+		ID:                 existing.ID,
+		Sku:                data.SKU,
+		Name:               data.Name,
+		Description:        ptrStringToPgText(data.Description),
+		UnitPrice:          ptrFloatToPgNumeric(data.UnitPrice),
+		Presentation:       data.Presentation,
+		TrackByLot:         data.TrackByLot,
+		TrackBySerial:      data.TrackBySerial,
+		TrackExpiration:    data.TrackExpiration,
+		RotationStrategy:   rotationStrategy,
+		MinQuantity:        ptrIntToPgInt4(data.MinQuantity),
+		MaxQuantity:        ptrIntToPgInt4(data.MaxQuantity),
+		ImageUrl:           ptrStringToPgText(data.ImageURL),
+		IsActive:           existing.IsActive,
+		CategoryID:         ptrStringToPgText(data.CategoryID),
+		ShelfLifeInDays:    ptrIntToPgInt4(data.ShelfLifeInDays),
+		SafetyStock:        floatToPgNumeric(data.SafetyStock),
+		BatchNumberSeries:  ptrStringToPgText(data.BatchNumberSeries),
+		SerialNumberSeries: ptrStringToPgText(data.SerialNumberSeries),
+		MinOrderQty:        floatToPgNumeric(data.MinOrderQty),
+		DefaultLocationID:  ptrStringToPgText(data.DefaultLocationID),
+		ReceivingNotes:     ptrStringToPgText(data.ReceivingNotes),
+		ShippingNotes:      ptrStringToPgText(data.ShippingNotes),
 	}
 
 	updated, err := r.queries.UpdateArticle(ctx, arg)
@@ -198,6 +228,10 @@ func (r *ArticlesRepositorySQLC) UpdateArticle(id string, data *requests.Article
 		TrackExpiration: updated.TrackExpiration, RotationStrategy: updated.RotationStrategy,
 		MinQuantity: updated.MinQuantity, MaxQuantity: updated.MaxQuantity, ImageUrl: updated.ImageUrl,
 		IsActive: updated.IsActive, CreatedAt: updated.CreatedAt, UpdatedAt: updated.UpdatedAt,
+		CategoryID: updated.CategoryID, ShelfLifeInDays: updated.ShelfLifeInDays, SafetyStock: updated.SafetyStock,
+		BatchNumberSeries: updated.BatchNumberSeries, SerialNumberSeries: updated.SerialNumberSeries,
+		MinOrderQty: updated.MinOrderQty, DefaultLocationID: updated.DefaultLocationID,
+		ReceivingNotes: updated.ReceivingNotes, ShippingNotes: updated.ShippingNotes,
 	})
 	return &art, nil
 }
@@ -405,22 +439,31 @@ func (r *ArticlesRepositorySQLC) ExportArticlesToExcel() ([]byte, *responses.Int
 
 // articleRowData holds the common shape of sqlc article row types (ListArticlesRow, GetArticleByIDRow, GetArticleBySkuRow, UpdateArticleRow).
 type articleRowData struct {
-	ID               string
-	Sku              string
-	Name             string
-	Description      pgtype.Text
-	UnitPrice        pgtype.Numeric
-	Presentation     string
-	TrackByLot       bool
-	TrackBySerial    bool
-	TrackExpiration  bool
-	RotationStrategy string
-	MinQuantity      pgtype.Int4
-	MaxQuantity      pgtype.Int4
-	ImageUrl         pgtype.Text
-	IsActive         pgtype.Bool
-	CreatedAt        pgtype.Timestamp
-	UpdatedAt        pgtype.Timestamp
+	ID                 string
+	Sku                string
+	Name               string
+	Description        pgtype.Text
+	UnitPrice          pgtype.Numeric
+	Presentation       string
+	TrackByLot         bool
+	TrackBySerial      bool
+	TrackExpiration    bool
+	RotationStrategy   string
+	MinQuantity        pgtype.Int4
+	MaxQuantity        pgtype.Int4
+	ImageUrl           pgtype.Text
+	IsActive           pgtype.Bool
+	CreatedAt          pgtype.Timestamp
+	UpdatedAt          pgtype.Timestamp
+	CategoryID         pgtype.Text
+	ShelfLifeInDays    pgtype.Int4
+	SafetyStock        pgtype.Numeric
+	BatchNumberSeries  pgtype.Text
+	SerialNumberSeries pgtype.Text
+	MinOrderQty        pgtype.Numeric
+	DefaultLocationID  pgtype.Text
+	ReceivingNotes     pgtype.Text
+	ShippingNotes      pgtype.Text
 }
 
 func articleRowToDatabase(a articleRowData) database.Article {
@@ -429,22 +472,31 @@ func articleRowToDatabase(a articleRowData) database.Article {
 		rotationStrategy = "fifo"
 	}
 	return database.Article{
-		ID:               a.ID,
-		SKU:              a.Sku,
-		Name:             a.Name,
-		Description:      pgTextToPtrString(a.Description),
-		UnitPrice:        pgNumericToPtrFloat(a.UnitPrice),
-		Presentation:     a.Presentation,
-		TrackByLot:       a.TrackByLot,
-		TrackBySerial:    a.TrackBySerial,
-		TrackExpiration:  a.TrackExpiration,
-		RotationStrategy: rotationStrategy,
-		MinQuantity:      pgInt4ToPtrInt(a.MinQuantity),
-		MaxQuantity:      pgInt4ToPtrInt(a.MaxQuantity),
-		ImageURL:         pgTextToPtrString(a.ImageUrl),
-		IsActive:         pgBoolToPtrBool(a.IsActive),
-		CreatedAt:        pgTimestampToTime(a.CreatedAt),
-		UpdatedAt:        pgTimestampToTime(a.UpdatedAt),
+		ID:                 a.ID,
+		SKU:                a.Sku,
+		Name:               a.Name,
+		Description:        pgTextToPtrString(a.Description),
+		UnitPrice:          pgNumericToPtrFloat(a.UnitPrice),
+		Presentation:       a.Presentation,
+		TrackByLot:         a.TrackByLot,
+		TrackBySerial:      a.TrackBySerial,
+		TrackExpiration:    a.TrackExpiration,
+		RotationStrategy:   rotationStrategy,
+		MinQuantity:        pgInt4ToPtrInt(a.MinQuantity),
+		MaxQuantity:        pgInt4ToPtrInt(a.MaxQuantity),
+		ImageURL:           pgTextToPtrString(a.ImageUrl),
+		IsActive:           pgBoolToPtrBool(a.IsActive),
+		CreatedAt:          pgTimestampToTime(a.CreatedAt),
+		UpdatedAt:          pgTimestampToTime(a.UpdatedAt),
+		CategoryID:         pgTextToPtrString(a.CategoryID),
+		ShelfLifeInDays:    pgInt4ToPtrInt(a.ShelfLifeInDays),
+		SafetyStock:        pgNumericToFloat(a.SafetyStock),
+		BatchNumberSeries:  pgTextToPtrString(a.BatchNumberSeries),
+		SerialNumberSeries: pgTextToPtrString(a.SerialNumberSeries),
+		MinOrderQty:        pgNumericToFloat(a.MinOrderQty),
+		DefaultLocationID:  pgTextToPtrString(a.DefaultLocationID),
+		ReceivingNotes:     pgTextToPtrString(a.ReceivingNotes),
+		ShippingNotes:      pgTextToPtrString(a.ShippingNotes),
 	}
 }
 
@@ -459,6 +511,9 @@ func sqlcLotToDatabase(l sqlc.Lot) database.Lot {
 		CreatedAt:      pgTimestampToTime(l.CreatedAt),
 		UpdatedAt:      pgTimestampToTime(l.UpdatedAt),
 		Status:         &st,
+		LotNotes:       pgTextToPtrString(l.LotNotes),
+		ManufacturedAt: pgDateToPtrTime(l.ManufacturedAt),
+		BestBeforeDate: pgDateToPtrTime(l.BestBeforeDate),
 	}
 }
 
@@ -554,6 +609,24 @@ func pgTimestampToPtrTime(t pgtype.Timestamp) *time.Time {
 		return nil
 	}
 	return &t.Time
+}
+
+func pgDateToPtrTime(d pgtype.Date) *time.Time {
+	if !d.Valid || d.Time.IsZero() {
+		return nil
+	}
+	return &d.Time
+}
+
+func ptrStringToPgDate(s *string) pgtype.Date {
+	if s == nil || *s == "" {
+		return pgtype.Date{}
+	}
+	t, err := time.Parse("2006-01-02", *s)
+	if err != nil {
+		return pgtype.Date{}
+	}
+	return pgtype.Date{Time: t, Valid: true}
 }
 
 

@@ -27,6 +27,15 @@ func (s *LotsService) GetAllLots() ([]database.Lot, *responses.InternalResponse)
 	return s.Repository.GetAllLots()
 }
 
+func (s *LotsService) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
+	return s.Repository.GetLotByID(id)
+}
+
+// GetTrace returns the full provenance trace for a lot: origin, movements, and current stock.
+func (s *LotsService) GetTrace(lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+	return s.Repository.GetLotTrace(lotID)
+}
+
 func (s *LotsService) GetLotsBySKU(sku *string) ([]database.Lot, *responses.InternalResponse) {
 	lots, resp := s.Repository.GetLotsBySKU(sku)
 	if resp != nil || lots == nil || len(lots) == 0 {

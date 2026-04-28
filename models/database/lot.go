@@ -11,6 +11,10 @@ type Lot struct {
 	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 	Status         *string    `gorm:"column:status;default:'pending'" json:"status,omitempty"`
+	// M2 extended fields
+	LotNotes       *string    `gorm:"column:lot_notes" json:"lot_notes,omitempty"`
+	ManufacturedAt *time.Time `gorm:"column:manufactured_at" json:"manufactured_at,omitempty"`
+	BestBeforeDate *time.Time `gorm:"column:best_before_date" json:"best_before_date,omitempty"`
 }
 
 func (Lot) TableName() string {

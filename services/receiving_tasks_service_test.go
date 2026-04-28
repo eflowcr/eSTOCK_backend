@@ -76,6 +76,10 @@ func (m *mockReceivingTasksRepo) GenerateImportTemplate(language string) ([]byte
 	return m.templateBytes, m.templateErr
 }
 
+func (m *mockReceivingTasksRepo) LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse {
+	return nil
+}
+
 // --- Tests ---
 
 func TestReceivingTasksService_GetAllReceivingTasks_Success(t *testing.T) {
@@ -290,4 +294,161 @@ func TestReceivingTasksService_GenerateImportTemplate_Error(t *testing.T) {
 	data, err := svc.GenerateImportTemplate("xx")
 	require.Error(t, err)
 	assert.Nil(t, data)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R1 — accepted/rejected backfill
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestApplyAcceptedRejectedBackfill_BothNil_ReceivedSet(t *testing.T) {
+	// Legacy call: only received_qty set — accepted should be backfilled.
+	rv := 50
+	item := requests.ReceivingTaskItemRequest{
+		SKU:              "SKU-1",
+		ReceivedQuantity: &rv,
+	}
+	result := applyAcceptedRejectedBackfill(item)
+	require.NotNil(t, result.AcceptedQty)
+	assert.Equal(t, float64(50), *result.AcceptedQty)
+}
+
+func TestApplyAcceptedRejectedBackfill_AcceptedAlreadySet_NoBackfill(t *testing.T) {
+	rv := 50
+	accepted := 30.0
+	item := requests.ReceivingTaskItemRequest{
+		SKU:              "SKU-1",
+		ReceivedQuantity: &rv,
+		AcceptedQty:      &accepted,
+	}
+	result := applyAcceptedRejectedBackfill(item)
+	require.NotNil(t, result.AcceptedQty)
+	assert.Equal(t, 30.0, *result.AcceptedQty)
+}
+
+func TestApplyAcceptedRejectedBackfill_ReceivedNil_NoBackfill(t *testing.T) {
+	item := requests.ReceivingTaskItemRequest{SKU: "SKU-1"}
+	result := applyAcceptedRejectedBackfill(item)
+	assert.Nil(t, result.AcceptedQty)
+}
+
+func TestReceivingTasksService_CompleteReceivingLine_LegacyBackfill(t *testing.T) {
+	// Legacy request with only received_qty — service should backfill and call repo.
+	rv := 20
+	calledWithItem := &requests.ReceivingTaskItemRequest{}
+	repo := &mockReceivingTasksRepoCapture{captured: calledWithItem}
+	svc := NewReceivingTasksService(repo)
+
+	item := requests.ReceivingTaskItemRequest{
+		SKU:              "SKU-1",
+		Location:         "LOC-A",
+		ReceivedQuantity: &rv,
+	}
+	errResp := svc.CompleteReceivingLine("task-1", "LOC-A", "user-1", item)
+	require.Nil(t, errResp)
+	require.NotNil(t, calledWithItem.AcceptedQty)
+	assert.Equal(t, float64(20), *calledWithItem.AcceptedQty)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R2 — supplier/customer validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestReceivingTasksService_LinkSupplier_ValidSupplier(t *testing.T) {
+	repo := &mockReceivingTasksRepo{}
+	cs := &mockClientsServiceForReceiving{
+		client: &database.Client{ID: "c1", Type: "supplier"},
+	}
+	svc := NewReceivingTasksService(repo).WithClientsService(cs)
+	supplierID := "c1"
+	resp := svc.LinkSupplier("task-1", &supplierID)
+	require.Nil(t, resp)
+}
+
+func TestReceivingTasksService_LinkSupplier_WrongType_Returns400(t *testing.T) {
+	repo := &mockReceivingTasksRepo{}
+	cs := &mockClientsServiceForReceiving{
+		client: &database.Client{ID: "c1", Type: "customer"},
+	}
+	svc := NewReceivingTasksService(repo).WithClientsService(cs)
+	supplierID := "c1"
+	resp := svc.LinkSupplier("task-1", &supplierID)
+	require.NotNil(t, resp)
+	assert.Equal(t, responses.StatusBadRequest, resp.StatusCode)
+}
+
+func TestReceivingTasksService_LinkSupplier_Unlink(t *testing.T) {
+	repo := &mockReceivingTasksRepo{}
+	svc := NewReceivingTasksService(repo)
+	resp := svc.LinkSupplier("task-1", nil)
+	require.Nil(t, resp)
+}
+
+func TestReceivingTasksService_CreateReceivingTask_InvalidSupplier_Returns400(t *testing.T) {
+	repo := &mockReceivingTasksRepo{}
+	cs := &mockClientsServiceForReceiving{
+		client: &database.Client{ID: "c1", Type: "customer"},
+	}
+	svc := NewReceivingTasksService(repo).WithClientsService(cs)
+	supplierID := "c1"
+	req := &requests.CreateReceivingTaskRequest{
+		InboundNumber: "INB-001",
+		SupplierID:    &supplierID,
+	}
+	resp := svc.CreateReceivingTask("user-1", req)
+	require.NotNil(t, resp)
+	assert.Equal(t, responses.StatusBadRequest, resp.StatusCode)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// mockReceivingTasksRepoCapture captures the item passed to CompleteReceivingLine.
+type mockReceivingTasksRepoCapture struct {
+	captured *requests.ReceivingTaskItemRequest
+}
+
+func (m *mockReceivingTasksRepoCapture) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockReceivingTasksRepoCapture) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockReceivingTasksRepoCapture) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+	return nil
+}
+func (m *mockReceivingTasksRepoCapture) UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse {
+	return nil
+}
+func (m *mockReceivingTasksRepoCapture) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+	return nil
+}
+func (m *mockReceivingTasksRepoCapture) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+	return nil, nil
+}
+func (m *mockReceivingTasksRepoCapture) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {
+	return nil
+}
+func (m *mockReceivingTasksRepoCapture) CompleteReceivingLine(id string, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse {
+	*m.captured = item
+	return nil
+}
+func (m *mockReceivingTasksRepoCapture) GenerateImportTemplate(language string) ([]byte, error) {
+	return nil, nil
+}
+func (m *mockReceivingTasksRepoCapture) LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse {
+	return nil
+}
+
+// mockClientsServiceForReceiving is a minimal fake ClientsService for tests.
+type mockClientsServiceForReceiving struct {
+	client  *database.Client
+	getErr  *responses.InternalResponse
+}
+
+func (m *mockClientsServiceForReceiving) GetByID(id string) (*database.Client, *responses.InternalResponse) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	return m.client, nil
 }

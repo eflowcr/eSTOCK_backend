@@ -8,4 +8,6 @@ type CreatePickingTaskRequest struct {
 	Priority       string          `json:"priority" validate:"max=20"`
 	Notes          *string         `json:"notes,omitempty" validate:"omitempty,max=1000"`
 	Items          json.RawMessage `gorm:"column:items;type:jsonb" json:"items" validate:"required"`
+	// S2 R2 customer field
+	CustomerID *string `json:"customer_id,omitempty" validate:"omitempty,max=40"`
 }

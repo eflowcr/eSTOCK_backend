@@ -23,6 +23,7 @@ type Adjustment struct {
 	Notes              pgtype.Text      `json:"notes"`
 	UserID             string           `json:"user_id"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	AdjustmentType     string           `json:"adjustment_type"`
 }
 
 // Reason codes for stock adjustments; direction determines add (inbound) or subtract (outbound).
@@ -55,7 +56,16 @@ type Article struct {
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	// WMS rotation rule: fifo = oldest first, fefo = earliest expiry first (requires track_expiration)
-	RotationStrategy string `json:"rotation_strategy"`
+	RotationStrategy   string         `json:"rotation_strategy"`
+	CategoryID         pgtype.Text    `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4    `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text    `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text    `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text    `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text    `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text    `json:"shipping_notes"`
 }
 
 type AuditLog struct {
@@ -82,6 +92,33 @@ type Badge struct {
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
+type Category struct {
+	ID        string      `json:"id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Name      string      `json:"name"`
+	ParentID  pgtype.Text `json:"parent_id"`
+	IsActive  bool        `json:"is_active"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+type Client struct {
+	ID        string      `json:"id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Type      string      `json:"type"`
+	Code      string      `json:"code"`
+	Name      string      `json:"name"`
+	Email     pgtype.Text `json:"email"`
+	Phone     pgtype.Text `json:"phone"`
+	Address   pgtype.Text `json:"address"`
+	TaxID     pgtype.Text `json:"tax_id"`
+	Notes     pgtype.Text `json:"notes"`
+	IsActive  bool        `json:"is_active"`
+	CreatedBy pgtype.Text `json:"created_by"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
 type Inventory struct {
 	ID           string           `json:"id"`
 	Sku          string           `json:"sku"`
@@ -94,6 +131,7 @@ type Inventory struct {
 	UnitPrice    pgtype.Numeric   `json:"unit_price"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	ReservedQty  pgtype.Numeric   `json:"reserved_qty"`
 }
 
 type InventoryLot struct {
@@ -115,6 +153,14 @@ type InventoryMovement struct {
 	Reason         pgtype.Text      `json:"reason"`
 	CreatedBy      string           `json:"created_by"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	ReferenceType  pgtype.Text      `json:"reference_type"`
+	ReferenceID    pgtype.Text      `json:"reference_id"`
+	LotID          pgtype.Text      `json:"lot_id"`
+	SerialID       pgtype.Text      `json:"serial_id"`
+	UnitCost       pgtype.Numeric   `json:"unit_cost"`
+	BeforeQty      pgtype.Numeric   `json:"before_qty"`
+	AfterQty       pgtype.Numeric   `json:"after_qty"`
+	UserID         pgtype.Text      `json:"user_id"`
 }
 
 type InventorySerial struct {
@@ -158,6 +204,44 @@ type Lot struct {
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 	Status         string           `json:"status"`
+	LotNotes       pgtype.Text      `json:"lot_notes"`
+	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
+	BestBeforeDate pgtype.Date      `json:"best_before_date"`
+}
+
+type Notification struct {
+	ID           string             `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	UserID       string             `json:"user_id"`
+	EventType    string             `json:"event_type"`
+	Title        string             `json:"title"`
+	Body         pgtype.Text        `json:"body"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	Channels     string             `json:"channels"`
+	IsRead       bool               `json:"is_read"`
+	ReadAt       pgtype.Timestamptz `json:"read_at"`
+	SentEmailAt  pgtype.Timestamptz `json:"sent_email_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+}
+
+type NotificationPreference struct {
+	UserID    string      `json:"user_id"`
+	EventType string      `json:"event_type"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	InApp     bool        `json:"in_app"`
+	Email     bool        `json:"email"`
+	Push      bool        `json:"push"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+type PasswordResetToken struct {
+	ID        string             `json:"id"`
+	UserID    string             `json:"user_id"`
+	Token     string             `json:"token"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt time.Time          `json:"created_at"`
 }
 
 type PickingTask struct {
@@ -173,6 +257,7 @@ type PickingTask struct {
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 	CompletedAt pgtype.Timestamp `json:"completed_at"`
+	CustomerID  pgtype.Text      `json:"customer_id"`
 }
 
 type Presentation struct {
@@ -203,18 +288,23 @@ type PresentationType struct {
 }
 
 type ReceivingTask struct {
-	ID            string           `json:"id"`
-	TaskID        string           `json:"task_id"`
-	InboundNumber string           `json:"inbound_number"`
-	CreatedBy     string           `json:"created_by"`
-	AssignedTo    pgtype.Text      `json:"assigned_to"`
-	Status        string           `json:"status"`
-	Priority      string           `json:"priority"`
-	Notes         pgtype.Text      `json:"notes"`
-	Items         json.RawMessage  `json:"items"`
-	CreatedAt     pgtype.Timestamp `json:"created_at"`
-	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
-	CompletedAt   pgtype.Timestamp `json:"completed_at"`
+	ID              string           `json:"id"`
+	TaskID          string           `json:"task_id"`
+	InboundNumber   string           `json:"inbound_number"`
+	CreatedBy       string           `json:"created_by"`
+	AssignedTo      pgtype.Text      `json:"assigned_to"`
+	Status          string           `json:"status"`
+	Priority        string           `json:"priority"`
+	Notes           pgtype.Text      `json:"notes"`
+	Items           json.RawMessage  `json:"items"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+	CompletedAt     pgtype.Timestamp `json:"completed_at"`
+	SupplierID      pgtype.Text      `json:"supplier_id"`
+	VendorRef       pgtype.Text      `json:"vendor_ref"`
+	TrackingNumber  pgtype.Text      `json:"tracking_number"`
+	ReceptionMethod pgtype.Text      `json:"reception_method"`
+	Incoterms       pgtype.Text      `json:"incoterms"`
 }
 
 // RBAC roles; name is the stable identifier (Admin, Operator, Viewer).
@@ -292,6 +382,21 @@ type StockAlert struct {
 	DaysToExpiration      pgtype.Int4      `json:"days_to_expiration"`
 	CreatedAt             pgtype.Timestamp `json:"created_at"`
 	ResolvedAt            pgtype.Timestamp `json:"resolved_at"`
+}
+
+type StockSetting struct {
+	TenantID                  pgtype.UUID    `json:"tenant_id"`
+	ValuationMethod           string         `json:"valuation_method"`
+	PickBatchBasedOn          string         `json:"pick_batch_based_on"`
+	OverReceiptAllowancePct   pgtype.Numeric `json:"over_receipt_allowance_pct"`
+	OverDeliveryAllowancePct  pgtype.Numeric `json:"over_delivery_allowance_pct"`
+	OverPickingAllowancePct   pgtype.Numeric `json:"over_picking_allowance_pct"`
+	AutoReserveStock          bool           `json:"auto_reserve_stock"`
+	AllowPartialReservation   bool           `json:"allow_partial_reservation"`
+	ExpiryAlertDays           int32          `json:"expiry_alert_days"`
+	AutoCreateMaterialRequest bool           `json:"auto_create_material_request"`
+	PartialDeliveryPolicy     string         `json:"partial_delivery_policy"`
+	UpdatedAt                 time.Time      `json:"updated_at"`
 }
 
 type StockTransfer struct {

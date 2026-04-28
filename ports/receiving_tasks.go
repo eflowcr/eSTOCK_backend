@@ -17,4 +17,6 @@ type ReceivingTasksRepository interface {
 	CompleteFullTask(id string, location, userId string) *responses.InternalResponse
 	CompleteReceivingLine(id string, location, userId string, item requests.ReceivingTaskItemRequest) *responses.InternalResponse
 	GenerateImportTemplate(language string) ([]byte, error)
+	// LinkSupplier links or unlinks a supplier on a receiving task (S2 R2 E1.7).
+	LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse
 }

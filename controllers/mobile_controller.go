@@ -155,7 +155,14 @@ func (c *MobileController) StartPickingTask(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	resp := c.Picking.UpdatePickingTask(id, map[string]interface{}{"status": "in_progress"})
+	// W0.6: dev sprint-s2 added (ctx, userId) to UpdatePickingTask signature.
+	token := ctx.Request.Header.Get("Authorization")
+	userID, err := tools.GetUserId(c.Config.JWTSecret, token)
+	if err != nil {
+		tools.ResponseUnauthorized(ctx, "MobileStartPickingTask", "Token inválido", "invalid_token")
+		return
+	}
+	resp := c.Picking.UpdatePickingTask(ctx.Request.Context(), id, map[string]interface{}{"status": "in_progress"}, userID)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileStartPickingTask", "mobile_start_picking_task", resp)
 		return
@@ -187,25 +194,34 @@ func (c *MobileController) CompletePickingLine(ctx *gin.Context) {
 		return
 	}
 
+	// W0.6: dev sprint-s2 (S1 A1 cross-location) replaced PickingTaskItemRequest.Location
+	// with []LocationAllocation. For mobile single-location pick we synthesize a single
+	// allocation matching LocationScanned + PickedQty. ExpectedQuantity is float64.
+	pickedQty := body.PickedQty
 	item := requests.PickingTaskItemRequest{
-		SKU:      body.SKU,
-		Location: body.LocationScanned,
-	}
-	if body.PickedQty > 0 {
-		item.ExpectedQuantity = int(body.PickedQty)
+		SKU:              body.SKU,
+		ExpectedQuantity: pickedQty,
+		Allocations: []database.LocationAllocation{{
+			Location:  body.LocationScanned,
+			Quantity:  pickedQty,
+			PickedQty: &pickedQty,
+		}},
+		PickedQty: &pickedQty,
 	}
 	if body.Lot != "" {
-		item.LotNumbers = []requests.CreateLotRequest{{
+		item.LotNumbers = []database.LotEntry{{
 			LotNumber: body.Lot,
 			SKU:       body.SKU,
-			Quantity:  body.PickedQty,
+			Quantity:  pickedQty,
 		}}
 	}
 	if body.Serial != "" {
 		item.SerialNumbers = []database.Serial{{SerialNumber: body.Serial, SKU: body.SKU}}
 	}
 
-	resp := c.Picking.CompletePickingLine(id, body.LocationScanned, userID, item)
+	// W0.6: CompletePickingLine signature is (ctx, id, userId, item). location_scanned
+	// is now embedded in item.Allocations.
+	resp := c.Picking.CompletePickingLine(ctx.Request.Context(), id, userID, item)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileCompletePickingLine", "mobile_complete_picking_line", resp)
 		return
@@ -234,7 +250,9 @@ func (c *MobileController) CompletePickingTask(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "MobileCompletePickingTask", "location_scanned es requerido", "mobile_complete_picking_task")
 		return
 	}
-	resp := c.Picking.CompletePickingTask(id, body.LocationScanned, userID)
+	// W0.6: CompletePickingTask signature is (ctx, id, userId) — no location_scanned.
+	_ = body.LocationScanned
+	resp := c.Picking.CompletePickingTask(ctx.Request.Context(), id, userID)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileCompletePickingTask", "mobile_complete_picking_task", resp)
 		return

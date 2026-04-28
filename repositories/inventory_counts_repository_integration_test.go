@@ -175,6 +175,14 @@ func (s *recomputeStubCreator) CreateAdjustmentTx(tx *gorm.DB, userId string, ad
 	s.calls = append(s.calls, adj)
 	s.seq++
 	id := "adj-stub-" + adj.SKU + "-" + adj.Reason
+	// W0.6 merge fix: dev sprint-s2 added CHECK constraint on adjustment_type
+	// (must be 'increase' / 'decrease' / 'count_reconcile'). Counts always emit
+	// count_reconcile per AdjustmentsService.CreateAdjustmentTx contract; mirror
+	// that here so the stub satisfies the constraint.
+	adjType := adj.AdjustmentType
+	if adjType == "" {
+		adjType = "count_reconcile"
+	}
 	row := database.Adjustment{
 		ID:               id,
 		SKU:              adj.SKU,
@@ -185,6 +193,7 @@ func (s *recomputeStubCreator) CreateAdjustmentTx(tx *gorm.DB, userId string, ad
 		Reason:           adj.Reason,
 		Notes:            &adj.Notes,
 		UserID:           userId,
+		AdjustmentType:   adjType,
 		CreatedAt:        time.Now(),
 	}
 	if err := tx.Table((database.Adjustment{}).TableName()).Create(&row).Error; err != nil {

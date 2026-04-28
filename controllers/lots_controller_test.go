@@ -50,6 +50,19 @@ func (m *mockLotsRepoCtrl) DeleteLot(id string) *responses.InternalResponse {
 	return m.deleteErr
 }
 
+func (m *mockLotsRepoCtrl) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
+	for i := range m.lots {
+		if m.lots[i].ID == id {
+			return &m.lots[i], nil
+		}
+	}
+	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
+}
+
+func (m *mockLotsRepoCtrl) GetLotTrace(_ string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+	return nil, nil
+}
+
 // ─── helper ──────────────────────────────────────────────────────────────────
 
 func newLotsController(repo *mockLotsRepoCtrl) *LotsController {

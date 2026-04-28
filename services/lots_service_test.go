@@ -59,6 +59,19 @@ func (m *mockLotsRepo) DeleteLot(id string) *responses.InternalResponse {
 	return nil
 }
 
+func (m *mockLotsRepo) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
+	for i := range m.lots {
+		if m.lots[i].ID == id {
+			return &m.lots[i], nil
+		}
+	}
+	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
+}
+
+func (m *mockLotsRepo) GetLotTrace(_ string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+	return nil, nil
+}
+
 // mockArticlesRepoForLots returns a fixed article for GetBySku for rotation-order tests.
 type mockArticlesRepoForLots struct {
 	rotationStrategy string
@@ -222,6 +235,66 @@ func TestLotsService_GetLotsBySKU_OrdersByFEFO(t *testing.T) {
 	require.Nil(t, errResp)
 	require.Len(t, list, 2)
 	// FEFO: earliest expiry first -> L2 (exp2), L1 (exp1)
+	assert.Equal(t, "L2", list[0].LotNumber)
+	assert.Equal(t, "L1", list[1].LotNumber)
+}
+
+// ─── L1: Extended lot fields ──────────────────────────────────────────────────
+
+func TestLotsService_CreateLot_WithExtendedFields(t *testing.T) {
+	repo := &mockLotsRepo{}
+	svc := NewLotsService(repo, nil)
+	notes := "test lot notes"
+	mfgDate := "2026-01-15"
+	bbd := "2026-12-31"
+	req := &requests.CreateLotRequest{
+		LotNumber:      "LOT-EXT-001",
+		SKU:            "SKU-001",
+		Quantity:       100,
+		LotNotes:       &notes,
+		ManufacturedAt: &mfgDate,
+		BestBeforeDate: &bbd,
+	}
+	errResp := svc.Create(req)
+	require.Nil(t, errResp)
+}
+
+func TestLotsService_GetLotByID_Found(t *testing.T) {
+	now := time.Now()
+	repo := &mockLotsRepo{lots: []database.Lot{
+		{ID: "lot-abc", LotNumber: "L1", SKU: "SKU-001", CreatedAt: now},
+	}}
+	svc := NewLotsService(repo, nil)
+	lot, errResp := svc.GetLotByID("lot-abc")
+	require.Nil(t, errResp)
+	require.NotNil(t, lot)
+	assert.Equal(t, "L1", lot.LotNumber)
+}
+
+func TestLotsService_GetLotByID_NotFound(t *testing.T) {
+	repo := &mockLotsRepo{}
+	svc := NewLotsService(repo, nil)
+	_, errResp := svc.GetLotByID("nonexistent")
+	require.NotNil(t, errResp)
+	assert.Equal(t, responses.StatusNotFound, errResp.StatusCode)
+}
+
+// FEFO regression: lots MUST order by expiration_date, NOT best_before_date
+func TestLotsService_FEFO_UsesExpirationDate_NotBBD(t *testing.T) {
+	now := time.Now()
+	exp1 := now.Add(10 * 24 * time.Hour) // expires in 10 days
+	exp2 := now.Add(5 * 24 * time.Hour)  // expires in 5 days (should come first in FEFO)
+	bbd1 := now.Add(20 * 24 * time.Hour) // BBD doesn't matter for FEFO ordering
+	repo := &mockLotsRepo{lots: []database.Lot{
+		{ID: "l1", LotNumber: "L1", SKU: "SKU-FEFO", ExpirationDate: &exp1, BestBeforeDate: &bbd1, CreatedAt: now},
+		{ID: "l2", LotNumber: "L2", SKU: "SKU-FEFO", ExpirationDate: &exp2, CreatedAt: now},
+	}}
+	sku := "SKU-FEFO"
+	artRepo := &mockArticlesRepoForLots{rotationStrategy: "fefo"}
+	svc := NewLotsService(repo, artRepo)
+	list, _ := svc.GetLotsBySKU(&sku)
+	require.Len(t, list, 2)
+	// FEFO by expiration_date: L2 (5 days) before L1 (10 days)
 	assert.Equal(t, "L2", list[0].LotNumber)
 	assert.Equal(t, "L1", list[1].LotNumber)
 }

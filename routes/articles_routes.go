@@ -17,7 +17,7 @@ var _ ports.ArticlesRepository = (*repositories.ArticlesRepository)(nil)
 var _ ports.ArticlesRepository = (*repositories.ArticlesRepositorySQLC)(nil)
 
 func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, auditSvc *services.AuditService, rolesRepo ports.RolesRepository) {
-	_, articlesService := wire.NewArticles(db, pool)
+	_, articlesService := wire.NewArticlesWithDeps(db, pool)
 	userPrefsRepo := wire.NewUserPreferences(pool)
 	articlesController := controllers.NewArticlesController(*articlesService, auditSvc, userPrefsRepo)
 

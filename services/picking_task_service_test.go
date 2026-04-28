@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -13,19 +14,20 @@ import (
 
 // mockPickingTaskRepo is an in-memory fake for unit testing PickingTaskService.
 type mockPickingTaskRepo struct {
-	allTasks          []responses.PickingTaskView
-	allTasksErr       *responses.InternalResponse
-	byID              map[string]*database.PickingTask
-	byIDErr           *responses.InternalResponse
-	createErr         *responses.InternalResponse
-	updateErr         *responses.InternalResponse
-	importErr         *responses.InternalResponse
-	exportBytes       []byte
-	exportErr         *responses.InternalResponse
-	completeTaskErr   *responses.InternalResponse
-	completeLineErr   *responses.InternalResponse
-	templateBytes     []byte
-	templateErr       error
+	allTasks        []responses.PickingTaskView
+	allTasksErr     *responses.InternalResponse
+	byID            map[string]*database.PickingTask
+	byIDErr         *responses.InternalResponse
+	createErr       *responses.InternalResponse
+	startErr        *responses.InternalResponse
+	updateErr       *responses.InternalResponse
+	importErr       *responses.InternalResponse
+	exportBytes     []byte
+	exportErr       *responses.InternalResponse
+	completeTaskErr *responses.InternalResponse
+	completeLineErr *responses.InternalResponse
+	templateBytes   []byte
+	templateErr     error
 }
 
 func (m *mockPickingTaskRepo) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
@@ -52,7 +54,11 @@ func (m *mockPickingTaskRepo) CreatePickingTask(userId string, task *requests.Cr
 	return m.createErr
 }
 
-func (m *mockPickingTaskRepo) UpdatePickingTask(id string, data map[string]interface{}) *responses.InternalResponse {
+func (m *mockPickingTaskRepo) StartPickingTask(_ context.Context, id, userId string) *responses.InternalResponse {
+	return m.startErr
+}
+
+func (m *mockPickingTaskRepo) UpdatePickingTask(_ context.Context, id string, data map[string]interface{}, userId string) *responses.InternalResponse {
 	return m.updateErr
 }
 
@@ -64,16 +70,20 @@ func (m *mockPickingTaskRepo) ExportPickingTasksToExcel() ([]byte, *responses.In
 	return m.exportBytes, m.exportErr
 }
 
-func (m *mockPickingTaskRepo) CompletePickingTask(id string, location, userId string) *responses.InternalResponse {
+func (m *mockPickingTaskRepo) CompletePickingTask(_ context.Context, id, userId string) *responses.InternalResponse {
 	return m.completeTaskErr
 }
 
-func (m *mockPickingTaskRepo) CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+func (m *mockPickingTaskRepo) CompletePickingLine(_ context.Context, id, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
 	return m.completeLineErr
 }
 
 func (m *mockPickingTaskRepo) GenerateImportTemplate(language string) ([]byte, error) {
 	return m.templateBytes, m.templateErr
+}
+
+func (m *mockPickingTaskRepo) LinkCustomer(taskID string, customerID *string) *responses.InternalResponse {
+	return nil
 }
 
 // --- Tests ---
@@ -158,10 +168,31 @@ func TestPickingTaskService_CreatePickingTask_Error(t *testing.T) {
 	assert.Equal(t, responses.StatusConflict, errResp.StatusCode)
 }
 
+func TestPickingTaskService_StartPickingTask_Success(t *testing.T) {
+	repo := &mockPickingTaskRepo{}
+	svc := NewPickingTaskService(repo)
+	errResp := svc.StartPickingTask(context.Background(), "1", "user-1")
+	require.Nil(t, errResp)
+}
+
+func TestPickingTaskService_StartPickingTask_Error(t *testing.T) {
+	repo := &mockPickingTaskRepo{
+		startErr: &responses.InternalResponse{
+			Message:    "insufficient stock",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		},
+	}
+	svc := NewPickingTaskService(repo)
+	errResp := svc.StartPickingTask(context.Background(), "1", "user-1")
+	require.NotNil(t, errResp)
+	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
+}
+
 func TestPickingTaskService_UpdatePickingTask_Success(t *testing.T) {
 	repo := &mockPickingTaskRepo{}
 	svc := NewPickingTaskService(repo)
-	errResp := svc.UpdatePickingTask("1", map[string]interface{}{"status": "in_progress"})
+	errResp := svc.UpdatePickingTask(context.Background(), "1", map[string]interface{}{"status": "in_progress"}, "user-1")
 	require.Nil(t, errResp)
 }
 
@@ -174,7 +205,7 @@ func TestPickingTaskService_UpdatePickingTask_Error(t *testing.T) {
 		},
 	}
 	svc := NewPickingTaskService(repo)
-	errResp := svc.UpdatePickingTask("99", map[string]interface{}{"status": "in_progress"})
+	errResp := svc.UpdatePickingTask(context.Background(), "99", map[string]interface{}{"status": "in_progress"}, "user-1")
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusNotFound, errResp.StatusCode)
 }
@@ -201,9 +232,7 @@ func TestPickingTaskService_ImportPickingTaskFromExcel_Error(t *testing.T) {
 }
 
 func TestPickingTaskService_ExportPickingTasksToExcel_Success(t *testing.T) {
-	repo := &mockPickingTaskRepo{
-		exportBytes: []byte("excel-data"),
-	}
+	repo := &mockPickingTaskRepo{exportBytes: []byte("excel-data")}
 	svc := NewPickingTaskService(repo)
 	data, errResp := svc.ExportPickingTasksToExcel()
 	require.Nil(t, errResp)
@@ -227,7 +256,7 @@ func TestPickingTaskService_ExportPickingTasksToExcel_Error(t *testing.T) {
 func TestPickingTaskService_CompletePickingTask_Success(t *testing.T) {
 	repo := &mockPickingTaskRepo{}
 	svc := NewPickingTaskService(repo)
-	errResp := svc.CompletePickingTask("1", "LOC-A", "user-1")
+	errResp := svc.CompletePickingTask(context.Background(), "1", "user-1")
 	require.Nil(t, errResp)
 }
 
@@ -240,7 +269,7 @@ func TestPickingTaskService_CompletePickingTask_Error(t *testing.T) {
 		},
 	}
 	svc := NewPickingTaskService(repo)
-	errResp := svc.CompletePickingTask("1", "LOC-A", "user-1")
+	errResp := svc.CompletePickingTask(context.Background(), "1", "user-1")
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
 }
@@ -251,9 +280,11 @@ func TestPickingTaskService_CompletePickingLine_Success(t *testing.T) {
 	item := requests.PickingTaskItemRequest{
 		SKU:              "SKU-001",
 		ExpectedQuantity: 10,
-		Location:         "LOC-A",
+		Allocations: []database.LocationAllocation{
+			{Location: "LOC-A", Quantity: 10},
+		},
 	}
-	errResp := svc.CompletePickingLine("1", "LOC-A", "user-1", item)
+	errResp := svc.CompletePickingLine(context.Background(), "1", "user-1", item)
 	require.Nil(t, errResp)
 }
 
@@ -266,16 +297,19 @@ func TestPickingTaskService_CompletePickingLine_Error(t *testing.T) {
 		},
 	}
 	svc := NewPickingTaskService(repo)
-	item := requests.PickingTaskItemRequest{SKU: "SKU-001", Location: "LOC-A"}
-	errResp := svc.CompletePickingLine("99", "LOC-A", "user-1", item)
+	item := requests.PickingTaskItemRequest{
+		SKU: "SKU-001",
+		Allocations: []database.LocationAllocation{
+			{Location: "LOC-A", Quantity: 5},
+		},
+	}
+	errResp := svc.CompletePickingLine(context.Background(), "99", "user-1", item)
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusNotFound, errResp.StatusCode)
 }
 
 func TestPickingTaskService_GenerateImportTemplate_Success(t *testing.T) {
-	repo := &mockPickingTaskRepo{
-		templateBytes: []byte("template-data"),
-	}
+	repo := &mockPickingTaskRepo{templateBytes: []byte("template-data")}
 	svc := NewPickingTaskService(repo)
 	data, err := svc.GenerateImportTemplate("es")
 	require.NoError(t, err)
@@ -283,9 +317,7 @@ func TestPickingTaskService_GenerateImportTemplate_Success(t *testing.T) {
 }
 
 func TestPickingTaskService_GenerateImportTemplate_Error(t *testing.T) {
-	repo := &mockPickingTaskRepo{
-		templateErr: errors.New("unsupported language"),
-	}
+	repo := &mockPickingTaskRepo{templateErr: errors.New("unsupported language")}
 	svc := NewPickingTaskService(repo)
 	data, err := svc.GenerateImportTemplate("xx")
 	require.Error(t, err)

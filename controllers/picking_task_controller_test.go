@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -16,17 +17,18 @@ import (
 // ─── mock repo ───────────────────────────────────────────────────────────────
 
 type mockPickingTaskRepoCtrl struct {
-	tasks      []responses.PickingTaskView
-	byID       map[string]*database.PickingTask
-	createErr  *responses.InternalResponse
-	updateErr  *responses.InternalResponse
-	importErr  *responses.InternalResponse
-	exportData []byte
-	exportErr  *responses.InternalResponse
-	completeErr *responses.InternalResponse
+	tasks           []responses.PickingTaskView
+	byID            map[string]*database.PickingTask
+	createErr       *responses.InternalResponse
+	startErr        *responses.InternalResponse
+	updateErr       *responses.InternalResponse
+	importErr       *responses.InternalResponse
+	exportData      []byte
+	exportErr       *responses.InternalResponse
+	completeErr     *responses.InternalResponse
 	completeLineErr *responses.InternalResponse
-	templateData []byte
-	templateErr  error
+	templateData    []byte
+	templateErr     error
 }
 
 func (m *mockPickingTaskRepoCtrl) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
@@ -46,7 +48,11 @@ func (m *mockPickingTaskRepoCtrl) CreatePickingTask(userId string, task *request
 	return m.createErr
 }
 
-func (m *mockPickingTaskRepoCtrl) UpdatePickingTask(id string, data map[string]interface{}) *responses.InternalResponse {
+func (m *mockPickingTaskRepoCtrl) StartPickingTask(_ context.Context, id, userId string) *responses.InternalResponse {
+	return m.startErr
+}
+
+func (m *mockPickingTaskRepoCtrl) UpdatePickingTask(_ context.Context, id string, data map[string]interface{}, userId string) *responses.InternalResponse {
 	return m.updateErr
 }
 
@@ -58,16 +64,20 @@ func (m *mockPickingTaskRepoCtrl) ExportPickingTasksToExcel() ([]byte, *response
 	return m.exportData, m.exportErr
 }
 
-func (m *mockPickingTaskRepoCtrl) CompletePickingTask(id string, location, userId string) *responses.InternalResponse {
+func (m *mockPickingTaskRepoCtrl) CompletePickingTask(_ context.Context, id, userId string) *responses.InternalResponse {
 	return m.completeErr
 }
 
-func (m *mockPickingTaskRepoCtrl) CompletePickingLine(id string, location, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
+func (m *mockPickingTaskRepoCtrl) CompletePickingLine(_ context.Context, id, userId string, item requests.PickingTaskItemRequest) *responses.InternalResponse {
 	return m.completeLineErr
 }
 
 func (m *mockPickingTaskRepoCtrl) GenerateImportTemplate(language string) ([]byte, error) {
 	return m.templateData, m.templateErr
+}
+
+func (m *mockPickingTaskRepoCtrl) LinkCustomer(taskID string, customerID *string) *responses.InternalResponse {
+	return nil
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -173,7 +183,9 @@ func TestPickingTasksController_CreatePickingTask_ServiceError(t *testing.T) {
 func TestPickingTasksController_UpdatePickingTask_Success(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
 	body := map[string]interface{}{"priority": "high"}
-	w := performRequest(ctrl.UpdatePickingTask, "PUT", "/picking-tasks/pt-1", body, gin.Params{{Key: "id", Value: "pt-1"}})
+	w := performRequestWithHeader(ctrl.UpdatePickingTask, "PUT", "/picking-tasks/pt-1", body,
+		gin.Params{{Key: "id", Value: "pt-1"}},
+		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
@@ -190,52 +202,69 @@ func TestPickingTasksController_UpdatePickingTask_NotFound(t *testing.T) {
 	}
 	ctrl := newPickingTasksController(repo)
 	body := map[string]interface{}{"priority": "high"}
-	w := performRequest(ctrl.UpdatePickingTask, "PUT", "/picking-tasks/99", body, gin.Params{{Key: "id", Value: "99"}})
+	w := performRequestWithHeader(ctrl.UpdatePickingTask, "PUT", "/picking-tasks/99", body,
+		gin.Params{{Key: "id", Value: "99"}},
+		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestPickingTasksController_StartPickingTask_Success(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequest(ctrl.StartPickingTask, "POST", "/picking-tasks/pt-1/start", nil, gin.Params{{Key: "id", Value: "pt-1"}})
+	w := performRequestWithHeader(ctrl.StartPickingTask, "PATCH", "/picking-tasks/pt-1/start", nil,
+		gin.Params{{Key: "id", Value: "pt-1"}},
+		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestPickingTasksController_StartPickingTask_Unauthorized(t *testing.T) {
+	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
+	w := performRequest(ctrl.StartPickingTask, "PATCH", "/picking-tasks/pt-1/start", nil,
+		gin.Params{{Key: "id", Value: "pt-1"}})
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestPickingTasksController_StartPickingTask_MissingParam(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequest(ctrl.StartPickingTask, "POST", "/picking-tasks//start", nil, gin.Params{{Key: "id", Value: ""}})
+	w := performRequestWithHeader(ctrl.StartPickingTask, "PATCH", "/picking-tasks//start", nil,
+		gin.Params{{Key: "id", Value: ""}},
+		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestPickingTasksController_CancelPickingTask_Success(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequest(ctrl.CancelPickingTask, "POST", "/picking-tasks/pt-1/cancel", nil, gin.Params{{Key: "id", Value: "pt-1"}})
+	w := performRequestWithHeader(ctrl.CancelPickingTask, "PATCH", "/picking-tasks/pt-1/cancel", nil,
+		gin.Params{{Key: "id", Value: "pt-1"}},
+		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestPickingTasksController_CancelPickingTask_MissingParam(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequest(ctrl.CancelPickingTask, "POST", "/picking-tasks//cancel", nil, gin.Params{{Key: "id", Value: ""}})
+	w := performRequestWithHeader(ctrl.CancelPickingTask, "PATCH", "/picking-tasks//cancel", nil,
+		gin.Params{{Key: "id", Value: ""}},
+		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestPickingTasksController_CompletePickingTask_Success(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequestWithHeader(ctrl.CompletePickingTask, "POST", "/picking-tasks/pt-1/complete", nil,
-		gin.Params{{Key: "id", Value: "pt-1"}, {Key: "location", Value: "A01"}},
+	w := performRequestWithHeader(ctrl.CompletePickingTask, "PATCH", "/picking-tasks/pt-1/complete", nil,
+		gin.Params{{Key: "id", Value: "pt-1"}},
 		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestPickingTasksController_CompletePickingTask_Unauthorized(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequest(ctrl.CompletePickingTask, "POST", "/picking-tasks/pt-1/complete", nil,
+	w := performRequest(ctrl.CompletePickingTask, "PATCH", "/picking-tasks/pt-1/complete", nil,
 		gin.Params{{Key: "id", Value: "pt-1"}})
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestPickingTasksController_CompletePickingTask_MissingParam(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequestWithHeader(ctrl.CompletePickingTask, "POST", "/picking-tasks//complete", nil,
+	w := performRequestWithHeader(ctrl.CompletePickingTask, "PATCH", "/picking-tasks//complete", nil,
 		gin.Params{{Key: "id", Value: ""}},
 		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -243,8 +272,14 @@ func TestPickingTasksController_CompletePickingTask_MissingParam(t *testing.T) {
 
 func TestPickingTasksController_CompletePickingLine_Success(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	body := requests.PickingTaskItemRequest{SKU: "SKU-001", Location: "A01", ExpectedQuantity: 5}
-	w := performRequestWithHeader(ctrl.CompletePickingLine, "POST", "/picking-tasks/pt-1/lines", body,
+	body := requests.PickingTaskItemRequest{
+		SKU:              "SKU-001",
+		ExpectedQuantity: 5,
+		Allocations: []database.LocationAllocation{
+			{Location: "LOC-A", Quantity: 5},
+		},
+	}
+	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/picking-tasks/pt-1/complete-line", body,
 		gin.Params{{Key: "id", Value: "pt-1"}},
 		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -252,15 +287,22 @@ func TestPickingTasksController_CompletePickingLine_Success(t *testing.T) {
 
 func TestPickingTasksController_CompletePickingLine_Unauthorized(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	body := requests.PickingTaskItemRequest{SKU: "SKU-001", Location: "A01", ExpectedQuantity: 5}
-	w := performRequest(ctrl.CompletePickingLine, "POST", "/picking-tasks/pt-1/lines", body,
+	// Body must pass struct validation so the controller reaches the auth check.
+	body := requests.PickingTaskItemRequest{
+		SKU:              "SKU-001",
+		ExpectedQuantity: 5,
+		Allocations: []database.LocationAllocation{
+			{Location: "LOC-A", Quantity: 5},
+		},
+	}
+	w := performRequest(ctrl.CompletePickingLine, "PATCH", "/picking-tasks/pt-1/complete-line", body,
 		gin.Params{{Key: "id", Value: "pt-1"}})
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestPickingTasksController_CompletePickingLine_InvalidJSON(t *testing.T) {
 	ctrl := newPickingTasksController(&mockPickingTaskRepoCtrl{})
-	w := performRequestWithHeader(ctrl.CompletePickingLine, "POST", "/picking-tasks/pt-1/lines", nil,
+	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/picking-tasks/pt-1/complete-line", nil,
 		gin.Params{{Key: "id", Value: "pt-1"}},
 		map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusBadRequest, w.Code)

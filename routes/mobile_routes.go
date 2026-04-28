@@ -30,10 +30,13 @@ func RegisterMobileRoutes(
 	config configuration.Config,
 	rolesRepo ports.RolesRepository,
 	redisClient *goredis.Client,
+	auditSvc *services.AuditService,
+	notifSvc *services.NotificationsService,
 ) {
 	// Build services (reuse existing wire helpers; one allocation per request lifecycle is fine).
-	_, pickingSvc := wire.NewPickingTask(db)
-	_, receivingSvc := wire.NewReceivingTasks(db)
+	// W0.6: dev sprint-s2 made auditSvc/notifSvc required deps for picking + receiving.
+	_, pickingSvc := wire.NewPickingTask(db, auditSvc, notifSvc)
+	_, receivingSvc := wire.NewReceivingTasks(db, notifSvc)
 	_, inventorySvc := wire.NewInventory(db, pool)
 	_, movementsSvc := wire.NewInventoryMovements(db)
 	_, alertsSvc := wire.NewStockAlerts(db, redisClient)

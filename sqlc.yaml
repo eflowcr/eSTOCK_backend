@@ -19,6 +19,9 @@ sql:
       - "db/query/presentation_conversions"
       - "db/query/stock_transfers"
       - "db/query/adjustment_reason_codes"
+      - "db/query/clients"
+      - "db/query/categories"
+      - "db/query/stock_settings"
     engine: "postgresql"
     gen:
       go:

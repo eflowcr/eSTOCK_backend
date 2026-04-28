@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,14 +10,16 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
 type UsersRepository struct {
-	DB        *gorm.DB
-	JWTSecret string
+	DB               *gorm.DB
+	JWTSecret        string
+	NotificationsSvc *services.NotificationsService // optional: emit user_welcome on create
 }
 
 func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalResponse) {
@@ -118,6 +121,15 @@ func (u *UsersRepository) CreateUser(user *requests.User) *responses.InternalRes
 			Message: "Error al crear usuario",
 			Handled: false,
 		}
+	}
+
+	// Emit user_welcome notification (fire-and-forget via NotificationsService).
+	// newUser.ID is populated by GORM after CREATE ... RETURNING id.
+	if u.NotificationsSvc != nil && newUser.ID != "" {
+		welcomeTitle := "¡Bienvenido a eSTOCK!"
+		welcomeBody := fmt.Sprintf("Hola %s, tu cuenta ha sido creada.\nEmail: %s\n\nPor seguridad, solicita un restablecimiento de contraseña para establecer tu acceso.", newUser.Name, newUser.Email)
+		_ = u.NotificationsSvc.Send(context.Background(), newUser.ID, "user_welcome",
+			welcomeTitle, welcomeBody, "user", newUser.ID)
 	}
 
 	return nil

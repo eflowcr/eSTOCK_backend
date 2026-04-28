@@ -3,6 +3,7 @@ package repositories
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -207,6 +208,13 @@ func (r *AdjustmentsRepository) CreateAdjustmentTx(tx *gorm.DB, userId string, a
 // createAdjustmentInTx is the core mutation flow shared by CreateAdjustment and
 // CreateAdjustmentTx. It returns a domain error that the caller must translate via
 // mapAdjustmentCreateError.
+//
+// W0.6 merge note: integrates dev's sprint-s2 enhancements on top of W0.5 refactor:
+//   - count_reconcile bypasses negative + reserved_qty guards (physical reality).
+//   - B3e (A6): block adjustment if newQuantity < inventory.ReservedQty.
+//   - Explicit Nanoid generation for adjustment / lot / inventory_lot / movement IDs.
+//   - AdjustmentType propagated to the row (default "increase").
+//   - M3 retrofit on inventory_movements (reference_type/id, before/after, user_id).
 func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, error) {
 	// Get inventory
 	var inventory database.Inventory
@@ -228,12 +236,34 @@ func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string,
 	currentQuantity := inventory.Quantity
 	newQuantity := currentQuantity + adjustmentQuantity
 
-	if newQuantity < 0 {
-		return nil, errors.New("la cantidad de ajuste resulta en un inventario negativo")
+	// count_reconcile is allowed to set any qty (including below reserved or below 0 — physical reality).
+	// decrease/increase checks are enforced by the service before this point.
+	isCountReconcile := adjustment.AdjustmentType == "count_reconcile"
+	if !isCountReconcile {
+		if newQuantity < 0 {
+			return nil, errors.New("la cantidad de ajuste resulta en un inventario negativo")
+		}
+		// B3e (A6): block adjustment if new qty would fall below reserved_qty.
+		if newQuantity < inventory.ReservedQty {
+			return nil, fmt.Errorf(
+				"no puede ajustar a %.2f — hay %.2f uds reservadas en pickings activos. Cancele los pickings antes de ajustar",
+				newQuantity, inventory.ReservedQty,
+			)
+		}
+	}
+
+	adjType := adjustment.AdjustmentType
+	if adjType == "" {
+		adjType = "increase"
 	}
 
 	// Create the adjustment record
+	adjID, err := tools.GenerateNanoid(tx)
+	if err != nil {
+		return nil, fmt.Errorf("generate adjustment id: %w", err)
+	}
 	newAdjustment := database.Adjustment{
+		ID:               adjID,
 		SKU:              adjustment.SKU,
 		Location:         adjustment.Location,
 		PreviousQuantity: int(math.Round(float64(currentQuantity))),
@@ -242,6 +272,7 @@ func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string,
 		Reason:           adjustment.Reason,
 		Notes:            &adjustment.Notes,
 		UserID:           userId,
+		AdjustmentType:   adjType,
 	}
 
 	err = tx.
@@ -297,7 +328,12 @@ func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string,
 
 				// If lot does not exist, create it
 				if err == gorm.ErrRecordNotFound {
+					adjLotID, lotIDErr := tools.GenerateNanoid(tx)
+					if lotIDErr != nil {
+						return nil, fmt.Errorf("generate lot id: %w", lotIDErr)
+					}
 					lot = database.Lot{
+						ID:             adjLotID,
 						LotNumber:      adjustment.Lots[i].LotNumber,
 						SKU:            adjustment.SKU,
 						Quantity:       lotQuantity,
@@ -310,7 +346,12 @@ func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string,
 					}
 
 					// Create associate the lot with the adjustment
+					adjInvLotID, adjILErr := tools.GenerateNanoid(tx)
+					if adjILErr != nil {
+						return nil, fmt.Errorf("generate inventory_lot id: %w", adjILErr)
+					}
 					inventoryLot := database.InventoryLot{
+						ID:          adjInvLotID,
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    lotQuantity,
@@ -360,8 +401,17 @@ func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string,
 		}
 	}
 
-	// Create inventory movement
+	// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
+	adjMovID, err := tools.GenerateNanoid(tx)
+	if err != nil {
+		return nil, fmt.Errorf("generate adjustment movement id: %w", err)
+	}
+	refType := "adjustment"
+	refID := created.ID
+	beforeQtyAdj := currentQuantity
+	afterQtyAdj := newQuantity
 	movements := database.InventoryMovement{
+		ID:             adjMovID,
 		SKU:            adjustment.SKU,
 		Location:       adjustment.Location,
 		MovementType:   "adjustment",
@@ -370,6 +420,11 @@ func (r *AdjustmentsRepository) createAdjustmentInTx(tx *gorm.DB, userId string,
 		Reason:         &adjustment.Reason,
 		CreatedBy:      userId,
 		CreatedAt:      tools.GetCurrentTime(),
+		ReferenceType:  &refType,
+		ReferenceID:    &refID,
+		BeforeQty:      &beforeQtyAdj,
+		AfterQty:       &afterQtyAdj,
+		UserID:         &userId,
 	}
 
 	err = tx.Table(database.InventoryMovement{}.TableName()).Create(&movements).Error
@@ -483,4 +538,13 @@ func (r *AdjustmentsRepository) ExportAdjustmentsToExcel() ([]byte, *responses.I
 	}
 
 	return buf.Bytes(), nil
+}
+
+// GetInventoryForAdjustment returns the inventory record for a SKU+location pair (Track A stub).
+func (r *AdjustmentsRepository) GetInventoryForAdjustment(sku, location string) (*database.Inventory, *responses.InternalResponse) {
+	var inv database.Inventory
+	if err := r.DB.Where("sku = ? AND location = ?", sku, location).First(&inv).Error; err != nil {
+		return nil, &responses.InternalResponse{Error: err, Message: "Inventario no encontrado", Handled: true, StatusCode: responses.StatusNotFound}
+	}
+	return &inv, nil
 }

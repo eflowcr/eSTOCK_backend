@@ -10,8 +10,9 @@ on:
         required: true
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: eflowcr/estock-backend
+  REGISTRY: registry.eflowsuite.com
+  IMAGE_PATH: prod/estock-backend
+  VPSM_PROJECT_ID: 3z011zx2w122wz2w112ww
 
 jobs:
   test:
@@ -29,9 +30,8 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    outputs:
+      version: ${{ steps.ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,28 +39,23 @@ jobs:
 
       - name: Resolve version tag
         id: ver
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Login to GHCR
+      - name: Login to eflowsuite registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          labels: |
-            org.opencontainers.image.title=estock-backend
-            org.opencontainers.image.vendor=eflowcr
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build and Push
         uses: docker/build-push-action@v5
@@ -69,23 +64,31 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.tag }}
-          labels: ${{ steps.meta.outputs.labels }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PATH }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PATH }}:${{ steps.ver.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=estock-backend
+            org.opencontainers.image.vendor=eflowcr
+            org.opencontainers.image.version=${{ steps.ver.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Notify VPS Manager — update all client stacks
+  notify-vps-manager:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger redeploy via VPS Manager webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.VPSM_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.VPSM_WEBHOOK_SECRET }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_PATH }}
+          TAG: ${{ needs.build-and-push.outputs.version }}
+          PROJECT_ID: ${{ env.VPSM_PROJECT_ID }}
         run: |
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.VPS_SECRET_TOKEN }}" \
+          RESPONSE=$(curl -sf -w "\nHTTP:%{http_code}" -X POST \
+            -H "Authorization: Bearer ${WEBHOOK_SECRET}" \
             -H "Content-Type: application/json" \
-            -d "{\"image_tag\":\"${{ steps.ver.outputs.tag }}\",\"environment\":\"production\"}" \
-            "https://vps-manager-api.31.97.145.251.nip.io/api/v1/stacks/update" \
-            && echo "✅ Production deploy triggered: ${{ steps.ver.outputs.tag }}" \
-            || echo "⚠️  Deploy trigger failed or no active stacks"
-
-      - name: Verify
-        run: |
-          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.tag }} pushed"
-          echo "✅ ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest updated"
+            -d "{\"image\":\"${IMAGE}\",\"tag\":\"${TAG}\",\"project_id\":\"${PROJECT_ID}\"}" \
+            "${WEBHOOK_URL}")
+          echo "${RESPONSE}"
+          echo "${RESPONSE}" | grep -q "HTTP:200" || exit 1

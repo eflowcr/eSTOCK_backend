@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
@@ -19,7 +21,29 @@ import (
 )
 
 type ReceivingTasksRepository struct {
-	DB *gorm.DB
+	DB               *gorm.DB
+	NotificationsSvc *services.NotificationsService // optional: emit task events
+}
+
+// validReceivingTransitions declara las transiciones permitidas de status.
+// Receiving no tiene 'abandoned' (el cron no limpia recepciones — la mercancía física manda).
+// Los estados finales (completed, completed_with_differences, cancelled) no tienen transición saliente.
+var validReceivingTransitions = map[string]map[string]bool{
+	"open":        {"in_progress": true, "cancelled": true},
+	"in_progress": {"completed": true, "completed_with_differences": true, "cancelled": true},
+}
+
+// isValidReceivingTransition retorna true si el cambio de status es permitido.
+// No-op (mismo → mismo) siempre es true.
+// Desde estados finales no hay transición saliente → false.
+func isValidReceivingTransition(current, next string) bool {
+	if current == next {
+		return true
+	}
+	if allowed, ok := validReceivingTransitions[current]; ok {
+		return allowed[next]
+	}
+	return false
 }
 
 func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
@@ -40,6 +64,13 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 			rt.created_at,
 			rt.updated_at,
 			rt.completed_at,
+			rt.supplier_id,
+			rt.vendor_ref,
+			rt.tracking_number,
+			rt.reception_method,
+			rt.incoterms,
+			c.code AS supplier_code,
+			c.name AS supplier_name,
 			jsonb_agg(
 				jsonb_build_object(
 					'sku', item->>'sku',
@@ -48,6 +79,8 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 					'location', item->>'location',
 					'expected_qty', item->>'expected_qty',
 					'received_qty', item->>'received_qty',
+					'accepted_qty', item->>'accepted_qty',
+					'rejected_qty', item->>'rejected_qty',
 					'lots', (
 						SELECT jsonb_agg(l)
 						FROM jsonb_array_elements(item->'lots') AS l
@@ -63,6 +96,7 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 		LEFT JOIN users usr_assignee ON rt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(rt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
+		LEFT JOIN clients c ON rt.supplier_id = c.id
 		GROUP BY
 			rt.id,
 			rt.task_id,
@@ -78,7 +112,14 @@ func (r *ReceivingTasksRepository) GetAllReceivingTasks() ([]responses.Receiving
 			rt.notes,
 			rt.created_at,
 			rt.updated_at,
-			rt.completed_at;
+			rt.completed_at,
+			rt.supplier_id,
+			rt.vendor_ref,
+			rt.tracking_number,
+			rt.reception_method,
+			rt.incoterms,
+			c.code,
+			c.name;
 
 	`
 
@@ -201,15 +242,20 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 		}
 
 		receivingTask := database.ReceivingTask{
-			ID:            id,
-			TaskID:        taskID,
-			InboundNumber: task.InboundNumber,
-			CreatedBy:     userId,
-			AssignedTo:    task.AssignedTo,
-			Status:        "open",
-			Priority:      priority,
-			Notes:         task.Notes,
-			Items:         itemsJSON,
+			ID:              id,
+			TaskID:          taskID,
+			InboundNumber:   task.InboundNumber,
+			CreatedBy:       userId,
+			AssignedTo:      task.AssignedTo,
+			Status:          "open",
+			Priority:        priority,
+			Notes:           task.Notes,
+			Items:           itemsJSON,
+			SupplierID:      task.SupplierID,
+			VendorRef:       task.VendorRef,
+			TrackingNumber:  task.TrackingNumber,
+			ReceptionMethod: task.ReceptionMethod,
+			Incoterms:       task.Incoterms,
 		}
 
 		if err := tx.Create(&receivingTask).Error; err != nil {
@@ -229,7 +275,12 @@ func (r *ReceivingTasksRepository) CreateReceivingTask(userId string, task *requ
 						parsedDate = tools.ParseDate(*items[i].LotNumbers[j].ExpirationDate)
 					}
 
+					lotID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generate lot id for %s/%s: %w", sku, items[i].LotNumbers[j].LotNumber, err)
+					}
 					lot := database.Lot{
+						ID:             lotID,
 						LotNumber:      items[i].LotNumbers[j].LotNumber,
 						SKU:            sku,
 						Quantity:       items[i].LotNumbers[j].Quantity,
@@ -297,14 +348,19 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[strin
 		}
 
 		whitelist := map[string]bool{
-			"assigned_to":    true,
-			"priority":       true,
-			"status":         true,
-			"notes":          true,
-			"items":          true,
-			"inbound_number": true,
-			"updated_at":     true,
-			"completed_at":   true,
+			"assigned_to":      true,
+			"priority":         true,
+			"status":           true,
+			"notes":            true,
+			"items":            true,
+			"inbound_number":   true,
+			"updated_at":       true,
+			"completed_at":     true,
+			"supplier_id":      true,
+			"vendor_ref":       true,
+			"tracking_number":  true,
+			"reception_method": true,
+			"incoterms":        true,
 		}
 
 		clean := make(map[string]interface{}, len(data)+2)
@@ -361,6 +417,15 @@ func (r *ReceivingTasksRepository) UpdateReceivingTask(id string, data map[strin
 
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error en la transacción"}
+	}
+
+	// Emit task_assigned notification if assigned_to changed.
+	if r.NotificationsSvc != nil {
+		if newAssignee, ok := data["assigned_to"].(string); ok && newAssignee != "" {
+			_ = r.NotificationsSvc.Send(context.Background(), newAssignee, "task_assigned",
+				"Nueva tarea de recepción asignada", fmt.Sprintf("Se te ha asignado la tarea de recepción %s.", id),
+				"receiving_task", id)
+		}
 	}
 
 	return nil
@@ -473,7 +538,7 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 		}
 	}
 
-	var items []database.ReceivingTaskItem
+	var items []requests.ReceivingTaskItemRequest
 
 	for i := headerRowIdx + 1; i < len(rows); i++ {
 		row := rows[i]
@@ -492,16 +557,36 @@ func (r *ReceivingTasksRepository) ImportReceivingTaskFromExcel(userID string, f
 			expQty = n
 		}
 
-		lots := splitCSV(lotsStr)
-		serials := splitCSV(serialsStr)
-
-		items = append(items, database.ReceivingTaskItem{
+		item := requests.ReceivingTaskItemRequest{
 			SKU:              strings.TrimSpace(sku),
 			ExpectedQuantity: expQty,
 			Location:         strings.TrimSpace(location),
-			LotNumbers:       lots,
-			SerialNumbers:    serials,
-		})
+		}
+
+		// Parse lot numbers from comma-separated string.
+		// Each lot receives the full item quantity; for multi-lot lines operators
+		// should adjust quantities after import via UpdateReceivingTask.
+		for _, ln := range splitCSV(lotsStr) {
+			if ln != "" {
+				item.LotNumbers = append(item.LotNumbers, requests.CreateLotRequest{
+					LotNumber: strings.TrimSpace(ln),
+					SKU:       strings.TrimSpace(sku),
+					Quantity:  float64(expQty),
+				})
+			}
+		}
+
+		// Parse serial numbers from comma-separated string.
+		for _, sn := range splitCSV(serialsStr) {
+			if sn != "" {
+				item.SerialNumbers = append(item.SerialNumbers, database.Serial{
+					SerialNumber: strings.TrimSpace(sn),
+					SKU:          strings.TrimSpace(sku),
+				})
+			}
+		}
+
+		items = append(items, item)
 	}
 	if len(items) == 0 {
 		return &responses.InternalResponse{Error: fmt.Errorf("no items"), Message: "No se encontraron items para importar", Handled: true}
@@ -598,8 +683,18 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 			return nil
 		}
 
-		if task.Status == "closed" {
-			*handledResp = responses.InternalResponse{Message: "La tarea de recepción ya está cerrada", Handled: true}
+		// Bloquear si ya está en un estado terminal
+		terminalStates := map[string]bool{
+			"completed":                  true,
+			"completed_with_differences": true,
+			"cancelled":                  true,
+		}
+		if terminalStates[task.Status] {
+			*handledResp = responses.InternalResponse{
+				Message:    "La tarea de recepción ya está completada o cancelada",
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
 			return nil
 		}
 
@@ -640,12 +735,21 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 				return fmt.Errorf("check inventory for SKU %s and location %s: %w", sku, location, err)
 			}
 
+			itemQty := tools.IntToFloat64(items[i].ExpectedQuantity)
+			var beforeQty float64
+
 			if inventoryCount == 0 {
+				invID, err := tools.GenerateNanoid(tx)
+				if err != nil {
+					return fmt.Errorf("generate inventory id for SKU %s: %w", sku, err)
+				}
+				beforeQty = 0
+				inventory.ID = invID
 				inventory.SKU = sku
 				inventory.Name = article.Name
 				inventory.Description = article.Description
 				inventory.Location = location
-				inventory.Quantity = tools.IntToFloat64(items[i].ExpectedQuantity)
+				inventory.Quantity = itemQty
 				inventory.Status = "available"
 				inventory.Presentation = article.Presentation
 				inventory.UnitPrice = article.UnitPrice
@@ -660,8 +764,9 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 					return fmt.Errorf("find inventory for SKU %s and location %s: %w", sku, location, err)
 				}
 
+				beforeQty = inventory.Quantity
 				// Update existing inventory
-				inventory.Quantity += tools.IntToFloat64(items[i].ExpectedQuantity)
+				inventory.Quantity += itemQty
 				inventory.UpdatedAt = time.Now()
 
 				if err := tx.Save(&inventory).Error; err != nil {
@@ -669,16 +774,39 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 				}
 			}
 
-			// Create inventory movement
+			// Resolve lot_id: use if exactly one lot in the item (M3 retrofit).
+			var movLotID *string
+			if len(items[i].LotNumbers) == 1 {
+				var lot database.Lot
+				if err := tx.Where("sku = ? AND lot_number = ?", sku, items[i].LotNumbers[0].LotNumber).First(&lot).Error; err == nil {
+					movLotID = &lot.ID
+				}
+			}
+
+			// Create inventory movement (M3 retrofit: reference_type/id, before/after, user_id)
+			movID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate movement id: %w", err)
+			}
+			afterQty := inventory.Quantity
+			refType := "receiving_task"
 			mov := &database.InventoryMovement{
+				ID:             movID,
 				SKU:            sku,
 				Location:       location,
 				MovementType:   "inbound",
-				Quantity:       tools.IntToFloat64(items[i].ExpectedQuantity),
-				RemainingStock: inventory.Quantity,
+				Quantity:       itemQty,
+				RemainingStock: afterQty,
 				Reason:         tools.StrPtr("receiving task completion"),
 				CreatedBy:      userId,
 				CreatedAt:      tools.GetCurrentTime(),
+				ReferenceType:  &refType,
+				ReferenceID:    &id,
+				LotID:          movLotID,
+				UnitCost:       inventory.UnitPrice,
+				BeforeQty:      &beforeQty,
+				AfterQty:       &afterQty,
+				UserID:         &userId,
 			}
 
 			if err := tx.Create(mov).Error; err != nil {
@@ -757,7 +885,16 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 						return errors.New("failed to retrieve existing lot")
 					}
 
-					// Update lot status to available
+					// Upsert lot quantity:
+					// - pending = created for this task → quantity already set, just activate
+					// - available = existing lot → accumulate
+					currentStatus := ""
+					if lot.Status != nil {
+						currentStatus = *lot.Status
+					}
+					if currentStatus == "available" {
+						lot.Quantity += lotNum.Quantity
+					}
 					lot.Status = tools.StrPtr("available")
 					lot.UpdatedAt = tools.GetCurrentTime()
 
@@ -765,7 +902,12 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 						return errors.New("failed to update lot status")
 					}
 
+					invLotID, err := tools.GenerateNanoid(tx)
+					if err != nil {
+						return fmt.Errorf("generate inventory_lot id: %w", err)
+					}
 					inventoryLot := &database.InventoryLot{
+						ID:          invLotID,
 						InventoryID: inventory.ID,
 						LotID:       lot.ID,
 						Quantity:    lotNum.Quantity,
@@ -783,6 +925,30 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 			}
 		}
 
+		// Detectar si hubo diferencias entre received_qty y expected_qty
+		hasDifferences := false
+		for _, it := range items {
+			if it.ReceivedQuantity != nil && *it.ReceivedQuantity != it.ExpectedQuantity {
+				hasDifferences = true
+				break
+			}
+		}
+
+		finalStatus := "completed"
+		if hasDifferences {
+			finalStatus = "completed_with_differences"
+		}
+
+		// Validar transición (defensivo)
+		if !isValidReceivingTransition(task.Status, finalStatus) {
+			*handledResp = responses.InternalResponse{
+				Message:    fmt.Sprintf("Transición inválida: %s → %s", task.Status, finalStatus),
+				Handled:    true,
+				StatusCode: responses.StatusBadRequest,
+			}
+			return nil
+		}
+
 		// Update items
 		updatedItems, err := json.Marshal(items)
 		if err != nil {
@@ -794,7 +960,7 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 		// Update task fields
 		clean := map[string]interface{}{
 			"items":        updatedItems,
-			"status":       "closed",
+			"status":       finalStatus,
 			"completed_at": tools.GetCurrentTime(),
 			"updated_at":   tools.GetCurrentTime(),
 		}
@@ -813,6 +979,16 @@ func (r *ReceivingTasksRepository) CompleteFullTask(id string, location, userId 
 
 	if handledResp.Error != nil || handledResp.Handled {
 		return handledResp
+	}
+
+	// Emit task_completed notification to the assigned user (fire-and-forget).
+	if r.NotificationsSvc != nil {
+		var task database.ReceivingTask
+		if err2 := r.DB.Select("assigned_to").First(&task, "id = ?", id).Error; err2 == nil && task.AssignedTo != nil && *task.AssignedTo != "" {
+			_ = r.NotificationsSvc.Send(context.Background(), *task.AssignedTo, "task_completed",
+				"Tarea de recepción completada", fmt.Sprintf("La tarea de recepción %s ha sido completada.", id),
+				"receiving_task", id)
+		}
 	}
 
 	return nil
@@ -881,13 +1057,25 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			qty = tools.IntToFloat64(item.ExpectedQuantity)
 		}
 
-		// Compare with database expected quantity
-		if qty <= 0 || qty < float64(foundItem.ExpectedQuantity) {
-			// Update items status to partial for this SKU
+		// R1: extract accepted/rejected quantities. Default: accepted = full qty (backward compat).
+		acceptedQty := qty
+		if item.AcceptedQty != nil {
+			acceptedQty = *item.AcceptedQty
+		}
+		rejectedQty := 0.0
+		if item.RejectedQty != nil {
+			rejectedQty = *item.RejectedQty
+		}
+
+		// Determine item line status: partial if (accepted+rejected) < expected, else completed.
+		totalProcessed := acceptedQty + rejectedQty
+		if totalProcessed <= 0 || totalProcessed < float64(foundItem.ExpectedQuantity) {
 			for i := 0; i < len(items); i++ {
 				if items[i].SKU == item.SKU {
 					items[i].Status = tools.StrPtr("partial")
-					items[i].ReceivedQuantity = tools.IntToPtr(int(qty))
+					items[i].ReceivedQuantity = tools.IntToPtr(int(totalProcessed))
+					items[i].AcceptedQty = &acceptedQty
+					items[i].RejectedQty = &rejectedQty
 					break
 				}
 			}
@@ -909,11 +1097,13 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 				return nil
 			}
 		} else {
-			// If given quantity meets or exceeds expected, mark item as completed
+			// Line done: mark as completed; record accepted/rejected in JSONB.
 			for i := 0; i < len(items); i++ {
 				if items[i].SKU == item.SKU {
 					items[i].Status = tools.StrPtr("completed")
-					items[i].ReceivedQuantity = tools.IntToPtr(int(qty))
+					items[i].ReceivedQuantity = tools.IntToPtr(int(totalProcessed))
+					items[i].AcceptedQty = &acceptedQty
+					items[i].RejectedQty = &rejectedQty
 					break
 				}
 			}
@@ -929,12 +1119,20 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			return fmt.Errorf("check inventory for SKU %s and location %s: %w", item.SKU, location, err)
 		}
 
+		var lineBeforeQty float64
+
 		if inventoryCount == 0 {
+			lineInvID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate inventory id for SKU %s: %w", item.SKU, err)
+			}
+			lineBeforeQty = 0
+			inventory.ID = lineInvID
 			inventory.SKU = item.SKU
 			inventory.Name = article.Name
 			inventory.Description = article.Description
 			inventory.Location = location
-			inventory.Quantity = qty
+			inventory.Quantity = acceptedQty // R1: only accepted units enter stock
 			inventory.Status = "available"
 			inventory.Presentation = article.Presentation
 			inventory.UnitPrice = article.UnitPrice
@@ -949,8 +1147,9 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 				return fmt.Errorf("find inventory for SKU %s and location %s: %w", item.SKU, location, err)
 			}
 
-			// Update existing inventory
-			inventory.Quantity += qty
+			lineBeforeQty = inventory.Quantity
+			// R1: only accepted units enter stock
+			inventory.Quantity += acceptedQty
 			inventory.UpdatedAt = time.Now()
 
 			if err := tx.Save(&inventory).Error; err != nil {
@@ -958,20 +1157,71 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 			}
 		}
 
-		// Create inventory movement
+		// Resolve lot_id: use if exactly one lot in the item (M3 retrofit).
+		var lineLotID *string
+		if len(item.LotNumbers) == 1 {
+			var lot database.Lot
+			if err := tx.Where("sku = ? AND lot_number = ?", item.SKU, item.LotNumbers[0].LotNumber).First(&lot).Error; err == nil {
+				lineLotID = &lot.ID
+			}
+		}
+
+		// Create INBOUND movement for accepted units (R1).
+		movLineID, err := tools.GenerateNanoid(tx)
+		if err != nil {
+			return fmt.Errorf("generate movement id: %w", err)
+		}
+		lineAfterQty := inventory.Quantity
+		lineRefType := "receiving_task"
 		mov := &database.InventoryMovement{
+			ID:             movLineID,
 			SKU:            item.SKU,
 			Location:       location,
 			MovementType:   "inbound",
-			Quantity:       qty,
-			RemainingStock: inventory.Quantity,
+			Quantity:       acceptedQty,
+			RemainingStock: lineAfterQty,
 			Reason:         tools.StrPtr("receiving task line completion"),
 			CreatedBy:      userId,
 			CreatedAt:      tools.GetCurrentTime(),
+			ReferenceType:  &lineRefType,
+			ReferenceID:    &id,
+			LotID:          lineLotID,
+			UnitCost:       inventory.UnitPrice,
+			BeforeQty:      &lineBeforeQty,
+			AfterQty:       &lineAfterQty,
+			UserID:         &userId,
 		}
 
 		if err := tx.Create(mov).Error; err != nil {
 			return fmt.Errorf("create inventory movement: %w", err)
+		}
+
+		// R1: create REJECTED movement if any units were rejected.
+		if rejectedQty > 0 {
+			rejMovID, err := tools.GenerateNanoid(tx)
+			if err != nil {
+				return fmt.Errorf("generate rejected movement id: %w", err)
+			}
+			rejRefType := "receiving_task"
+			rejMovType := "REJECTED"
+			rejMov := &database.InventoryMovement{
+				ID:             rejMovID,
+				SKU:            item.SKU,
+				Location:       location,
+				MovementType:   rejMovType,
+				Quantity:       rejectedQty,
+				RemainingStock: lineAfterQty,
+				Reason:         tools.StrPtr("receiving rejection"),
+				CreatedBy:      userId,
+				CreatedAt:      tools.GetCurrentTime(),
+				ReferenceType:  &rejRefType,
+				ReferenceID:    &id,
+				LotID:          lineLotID,
+				UserID:         &userId,
+			}
+			if err := tx.Create(rejMov).Error; err != nil {
+				return fmt.Errorf("create rejected movement: %w", err)
+			}
 		}
 
 		if article.TrackBySerial && item.SerialNumbers != nil {
@@ -1045,143 +1295,73 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 		}
 
 		if article.TrackByLot && item.LotNumbers != nil {
-			for j := 0; j < len(item.LotNumbers); j++ {
-				lotNum := item.LotNumbers[j]
+			// B2a: upsert each lot with ON CONFLICT — consolidates quantity when the same
+			// SKU+lot_number arrives in multiple receiving lines (UNIQUE INDEX covers non-archived).
+			for _, lotNum := range item.LotNumbers {
+				var expirationDate *time.Time
+				if lotNum.ExpirationDate != nil && *lotNum.ExpirationDate != "" {
+					exp, err := time.Parse("2006-01-02", *lotNum.ExpirationDate)
+					if err == nil {
+						expirationDate = &exp
+					}
+				}
+				// A1.5b: shelf_life auto-expiry — only when lot has no explicit expiration date
+				if expirationDate == nil && article.ShelfLifeInDays != nil && *article.ShelfLifeInDays > 0 {
+					exp := time.Now().AddDate(0, 0, *article.ShelfLifeInDays)
+					expirationDate = &exp
+				}
 
-				var lotCount int64
-				err := tx.Model(&database.Lot{}).
-					Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).
-					Count(&lotCount).Error
+				lotID, err := tools.GenerateNanoid(tx)
 				if err != nil {
-					return errors.New("failed to check existing lot")
+					return fmt.Errorf("generate nanoid for lot: %w", err)
 				}
 
-				lotId := ""
-
-				if lotCount == 0 {
-					var expirationDate *time.Time
-					if lotNum.ExpirationDate != nil {
-						parsed, _ := time.Parse("2006-01-02", *lotNum.ExpirationDate)
-						expirationDate = &parsed
+				lotNotes := (*string)(nil)
+				if lotNum.LotNotes != nil {
+					lotNotes = lotNum.LotNotes
+				}
+				manufacturedAt := (*time.Time)(nil)
+				if lotNum.ManufacturedAt != nil && *lotNum.ManufacturedAt != "" {
+					if t, err2 := time.Parse("2006-01-02", *lotNum.ManufacturedAt); err2 == nil {
+						manufacturedAt = &t
 					}
-
-					lot := &database.Lot{
-						LotNumber:      lotNum.LotNumber,
-						SKU:            item.SKU,
-						Quantity:       lotNum.Quantity,
-						ExpirationDate: expirationDate,
-						Status:         tools.StrPtr("available"),
-						CreatedAt:      tools.GetCurrentTime(),
-						UpdatedAt:      tools.GetCurrentTime(),
+				}
+				bestBeforeDate := (*time.Time)(nil)
+				if lotNum.BestBeforeDate != nil && *lotNum.BestBeforeDate != "" {
+					if t, err2 := time.Parse("2006-01-02", *lotNum.BestBeforeDate); err2 == nil {
+						bestBeforeDate = &t
 					}
-
-					if err := tx.Create(lot).Error; err != nil {
-						return errors.New("failed to create lot")
-					}
-
-					lotId = lot.ID
-
-					// Add the new lot to items
-					for i := 0; i < len(items); i++ {
-						if items[i].SKU == item.SKU {
-							items[i].LotNumbers = append(items[i].LotNumbers, requests.CreateLotRequest{
-								LotNumber:        lot.LotNumber,
-								Quantity:         lot.Quantity,
-								ExpirationDate:   lotNum.ExpirationDate,
-								Status:           tools.StrPtr("completed"),
-								ReceivedQuantity: &lot.Quantity,
-							})
-							break
-						}
-					}
-
-				} else {
-					var lot database.Lot
-					if err := tx.Where("lot_number = ? AND sku = ?", lotNum.LotNumber, item.SKU).First(&lot).Error; err != nil {
-						return errors.New("failed to retrieve existing lot")
-					}
-
-					if lot.Quantity != item.LotNumbers[j].Quantity {
-						// Update items lot number position status to partial for this SKU
-						for i := 0; i < len(items); i++ {
-							if items[i].SKU == item.SKU {
-								for k := 0; k < len(items[i].LotNumbers); k++ {
-									if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
-										items[i].LotNumbers[k].Status = tools.StrPtr("partial")
-										items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
-										break
-									}
-								}
-								items[i].Status = tools.StrPtr("partial")
-								break
-							}
-						}
-
-						updatedItems, err := json.Marshal(items)
-
-						if err != nil {
-							return fmt.Errorf("marshal updated items: %w", err)
-						}
-
-						task.Items = updatedItems
-
-						clean := map[string]interface{}{
-							"items":      updatedItems,
-							"updated_at": tools.GetCurrentTime(),
-						}
-
-						if err := tx.Model(&task).Updates(clean).Error; err != nil {
-							*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
-							return nil
-						}
-					} else {
-						for i := 0; i < len(items); i++ {
-							if items[i].SKU == item.SKU {
-								for k := 0; k < len(items[i].LotNumbers); k++ {
-									if items[i].LotNumbers[k].LotNumber == lot.LotNumber {
-										items[i].LotNumbers[k].Status = tools.StrPtr("completed")
-										items[i].LotNumbers[k].ReceivedQuantity = &lotNum.Quantity
-										break
-									}
-								}
-								items[i].Status = tools.StrPtr("completed")
-								break
-							}
-						}
-
-						updatedItems, err := json.Marshal(items)
-
-						if err != nil {
-							return fmt.Errorf("marshal updated items: %w", err)
-						}
-
-						task.Items = updatedItems
-
-						clean := map[string]interface{}{
-							"items":      updatedItems,
-							"updated_at": tools.GetCurrentTime(),
-						}
-
-						if err := tx.Model(&task).Updates(clean).Error; err != nil {
-							*handledResp = responses.InternalResponse{Error: err, Message: "Error al actualizar la tarea de recepción"}
-							return nil
-						}
-
-						// Update lot status to available
-						lot.Status = tools.StrPtr("available")
-						lot.UpdatedAt = tools.GetCurrentTime()
-
-						if err := tx.Save(&lot).Error; err != nil {
-							return errors.New("failed to update lot status")
-						}
-					}
-
-					lotId = lot.ID
+				}
+				if err := tx.Exec(`
+					INSERT INTO lots (id, sku, lot_number, quantity, expiration_date, status,
+					                 lot_notes, manufactured_at, best_before_date, created_at, updated_at)
+					VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, NOW(), NOW())
+					ON CONFLICT (sku, lot_number) WHERE (status IS NULL OR status != 'archived')
+					DO UPDATE SET
+						quantity   = lots.quantity + EXCLUDED.quantity,
+						updated_at = NOW()
+				`, lotID, item.SKU, lotNum.LotNumber, lotNum.Quantity, expirationDate,
+					lotNotes, manufacturedAt, bestBeforeDate).Error; err != nil {
+					return fmt.Errorf("upsert lote %s: %w", lotNum.LotNumber, err)
 				}
 
+				// Retrieve actual lot ID — may be a pre-existing row if conflict occurred.
+				var upsertedLot database.Lot
+				if err := tx.Where(
+					"lot_number = ? AND sku = ? AND (status IS NULL OR status != 'archived')",
+					lotNum.LotNumber, item.SKU,
+				).First(&upsertedLot).Error; err != nil {
+					return fmt.Errorf("retrieve lot after upsert %s: %w", lotNum.LotNumber, err)
+				}
+
+				lineInvLotID, err := tools.GenerateNanoid(tx)
+				if err != nil {
+					return fmt.Errorf("generate inventory_lot id: %w", err)
+				}
 				inventoryLot := &database.InventoryLot{
+					ID:          lineInvLotID,
 					InventoryID: inventory.ID,
-					LotID:       lotId,
+					LotID:       upsertedLot.ID,
 					Quantity:    lotNum.Quantity,
 					Location:    item.Location,
 				}
@@ -1215,6 +1395,45 @@ func (r *ReceivingTasksRepository) CompleteReceivingLine(id string, location, us
 		clean := map[string]interface{}{
 			"items":      updatedItems,
 			"updated_at": tools.GetCurrentTime(),
+		}
+
+		// Auto-cierre: si todos los ítems fueron procesados (completed|partial), cerrar la tarea
+		allProcessed := true
+		for _, it := range items {
+			s := ""
+			if it.Status != nil {
+				s = *it.Status
+			}
+			if s != "completed" && s != "partial" {
+				allProcessed = false
+				break
+			}
+		}
+		if allProcessed {
+			// R1 status: completed_with_differences if any item has rejections OR accepted < expected.
+			lineDiff := false
+			for _, it := range items {
+				itAccepted := float64(it.ExpectedQuantity)
+				if it.AcceptedQty != nil {
+					itAccepted = *it.AcceptedQty
+				}
+				itRejected := 0.0
+				if it.RejectedQty != nil {
+					itRejected = *it.RejectedQty
+				}
+				if itRejected > 0 || itAccepted < float64(it.ExpectedQuantity) {
+					lineDiff = true
+					break
+				}
+			}
+			lineStatus := "completed"
+			if lineDiff {
+				lineStatus = "completed_with_differences"
+			}
+			if isValidReceivingTransition(task.Status, lineStatus) {
+				clean["status"] = lineStatus
+				clean["completed_at"] = tools.GetCurrentTime()
+			}
 		}
 
 		if err := tx.Model(&task).Updates(clean).Error; err != nil {
@@ -1290,4 +1509,13 @@ func (r *ReceivingTasksRepository) GenerateImportTemplate(language string) ([]by
 		},
 	}
 	return BuildModuleImportTemplate(cfg)
+}
+
+// LinkSupplier links or unlinks a supplier on a receiving task (S2 R2 E1.7 — Track A).
+func (r *ReceivingTasksRepository) LinkSupplier(taskID string, supplierID *string) *responses.InternalResponse {
+	update := map[string]interface{}{"supplier_id": supplierID, "updated_at": tools.GetCurrentTime()}
+	if err := r.DB.Table("receiving_tasks").Where("id = ?", taskID).Updates(update).Error; err != nil {
+		return &responses.InternalResponse{Error: err, Message: "Error al vincular proveedor"}
+	}
+	return nil
 }

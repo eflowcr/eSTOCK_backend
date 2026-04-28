@@ -44,6 +44,22 @@ type Config struct {
 	// In development mode, falls back to dev@local.test / 12345678 when unset.
 	DefaultAdminEmail    string
 	DefaultAdminPassword string
+
+	// AppURL is the public frontend URL used to build password reset links (env: APP_URL).
+	// Example: "https://estock.eprac.com" or "http://localhost:4200" for dev.
+	AppURL string
+
+	// ResendAPIKey is the API key for the Resend email service (env: RESEND_API_KEY).
+	// Optional: if unset, LoggerEmailSender is used instead (logs to stdout).
+	ResendAPIKey string
+
+	// ResendFromAddress is the "from" address for transactional emails (env: RESEND_FROM_ADDRESS).
+	// Example: "noreply@estock.app". Defaults to "noreply@estock.app" if unset.
+	ResendFromAddress string
+
+	// TenantID is the UUID of the current tenant (env: TENANT_ID).
+	// Single-tenant mode: defaults to a fixed UUID if unset.
+	TenantID string
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -68,11 +84,18 @@ func LoadConfig() (Config, error) {
 		DBType:        os.Getenv("DB_TYPE"),
 		ServerAddress: os.Getenv("SERVER_ADDRESS"),
 		MigrationURL:  os.Getenv("MIGRATION_URL"),
-		RedisURL:      os.Getenv("REDIS_URL"),
+		RedisURL:             os.Getenv("REDIS_URL"),
 		Environment:          os.Getenv("ENVIRONMENT"),
 		Version:              os.Getenv("Version"),
 		DefaultAdminEmail:    os.Getenv("DEFAULT_ADMIN_EMAIL"),
 		DefaultAdminPassword: os.Getenv("DEFAULT_ADMIN_PASSWORD"),
+		AppURL:               os.Getenv("APP_URL"),
+		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
+		ResendFromAddress:    os.Getenv("RESEND_FROM_ADDRESS"),
+		TenantID:             os.Getenv("TENANT_ID"),
+	}
+	if cfg.TenantID == "" {
+		cfg.TenantID = "00000000-0000-0000-0000-000000000001"
 	}
 	if cfg.DBSource == "" {
 		cfg.DBSource = os.Getenv("DATABASE_URL")
