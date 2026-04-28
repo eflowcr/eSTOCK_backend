@@ -24,6 +24,7 @@ type Adjustment struct {
 	UserID             string           `json:"user_id"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	AdjustmentType     string           `json:"adjustment_type"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 }
 
 // Reason codes for stock adjustments; direction determines add (inbound) or subtract (outbound).
@@ -66,6 +67,22 @@ type Article struct {
 	DefaultLocationID  pgtype.Text    `json:"default_location_id"`
 	ReceivingNotes     pgtype.Text    `json:"receiving_notes"`
 	ShippingNotes      pgtype.Text    `json:"shipping_notes"`
+	TenantID           pgtype.UUID    `json:"tenant_id"`
+}
+
+type ArticleSupplier struct {
+	ID           string             `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ArticleSku   string             `json:"article_sku"`
+	SupplierID   string             `json:"supplier_id"`
+	IsPreferred  bool               `json:"is_preferred"`
+	LeadTimeDays pgtype.Int4        `json:"lead_time_days"`
+	UnitCost     pgtype.Numeric     `json:"unit_cost"`
+	SupplierSku  pgtype.Text        `json:"supplier_sku"`
+	Notes        pgtype.Text        `json:"notes"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type AuditLog struct {
@@ -80,6 +97,19 @@ type AuditLog struct {
 	UserAgent    pgtype.Text `json:"user_agent"`
 	Metadata     []byte      `json:"metadata"`
 	CreatedAt    time.Time   `json:"created_at"`
+}
+
+type Backorder struct {
+	ID                     string             `json:"id"`
+	TenantID               pgtype.UUID        `json:"tenant_id"`
+	OriginalSalesOrderID   string             `json:"original_sales_order_id"`
+	ArticleSku             string             `json:"article_sku"`
+	RemainingQty           pgtype.Numeric     `json:"remaining_qty"`
+	Status                 string             `json:"status"`
+	GeneratedPickingTaskID pgtype.Text        `json:"generated_picking_task_id"`
+	FulfilledAt            pgtype.Timestamptz `json:"fulfilled_at"`
+	CreatedAt              time.Time          `json:"created_at"`
+	UpdatedAt              time.Time          `json:"updated_at"`
 }
 
 type Badge struct {
@@ -117,6 +147,40 @@ type Client struct {
 	CreatedBy pgtype.Text `json:"created_by"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+type DeliveryNote struct {
+	ID             string             `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	DnNumber       string             `json:"dn_number"`
+	SalesOrderID   string             `json:"sales_order_id"`
+	PickingTaskID  pgtype.Text        `json:"picking_task_id"`
+	CustomerID     string             `json:"customer_id"`
+	TotalItems     int32              `json:"total_items"`
+	PdfUrl         pgtype.Text        `json:"pdf_url"`
+	PdfGeneratedAt pgtype.Timestamptz `json:"pdf_generated_at"`
+	DeliveredAt    pgtype.Timestamptz `json:"delivered_at"`
+	SignedBy       pgtype.Text        `json:"signed_by"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+}
+
+type DeliveryNoteItem struct {
+	ID             string         `json:"id"`
+	DeliveryNoteID string         `json:"delivery_note_id"`
+	ArticleSku     string         `json:"article_sku"`
+	Qty            pgtype.Numeric `json:"qty"`
+	LotNumbers     []string       `json:"lot_numbers"`
+	Notes          pgtype.Text    `json:"notes"`
+	CreatedAt      time.Time      `json:"created_at"`
+}
+
+type DemoDataSeed struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SeedName string      `json:"seed_name"`
+	SeededAt time.Time   `json:"seeded_at"`
+	Metadata []byte      `json:"metadata"`
 }
 
 type Inventory struct {
@@ -183,6 +247,7 @@ type InventoryLot struct {
 	Quantity    pgtype.Numeric   `json:"quantity"`
 	Location    string           `json:"location"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	TenantID    pgtype.UUID      `json:"tenant_id"`
 }
 
 type InventoryMovement struct {
@@ -223,7 +288,8 @@ type Location struct {
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	// When true, location is used as dock, loading bay, or exit point in WMS.
-	IsWayOut bool `json:"is_way_out"`
+	IsWayOut bool        `json:"is_way_out"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 // Location type catalog (Pallet, Shelf, Bin, etc.); used by locations.type as code reference
@@ -249,6 +315,7 @@ type Lot struct {
 	LotNotes       pgtype.Text      `json:"lot_notes"`
 	ManufacturedAt pgtype.Date      `json:"manufactured_at"`
 	BestBeforeDate pgtype.Date      `json:"best_before_date"`
+	TenantID       pgtype.UUID      `json:"tenant_id"`
 }
 
 type Notification struct {
@@ -287,19 +354,22 @@ type PasswordResetToken struct {
 }
 
 type PickingTask struct {
-	ID          string           `json:"id"`
-	TaskID      string           `json:"task_id"`
-	OrderNumber string           `json:"order_number"`
-	CreatedBy   string           `json:"created_by"`
-	AssignedTo  pgtype.Text      `json:"assigned_to"`
-	Status      string           `json:"status"`
-	Priority    string           `json:"priority"`
-	Notes       pgtype.Text      `json:"notes"`
-	Items       json.RawMessage  `json:"items"`
-	CreatedAt   pgtype.Timestamp `json:"created_at"`
-	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
-	CompletedAt pgtype.Timestamp `json:"completed_at"`
-	CustomerID  pgtype.Text      `json:"customer_id"`
+	ID                string           `json:"id"`
+	TaskID            string           `json:"task_id"`
+	OrderNumber       string           `json:"order_number"`
+	CreatedBy         string           `json:"created_by"`
+	AssignedTo        pgtype.Text      `json:"assigned_to"`
+	Status            string           `json:"status"`
+	Priority          string           `json:"priority"`
+	Notes             pgtype.Text      `json:"notes"`
+	Items             json.RawMessage  `json:"items"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+	CompletedAt       pgtype.Timestamp `json:"completed_at"`
+	CustomerID        pgtype.Text      `json:"customer_id"`
+	TenantID          pgtype.UUID      `json:"tenant_id"`
+	SalesOrderID      pgtype.Text      `json:"sales_order_id"`
+	SourceBackorderID pgtype.Text      `json:"source_backorder_id"`
 }
 
 type Presentation struct {
@@ -329,6 +399,37 @@ type PresentationType struct {
 	UpdatedAt pgtype.Timestamp `json:"updated_at"`
 }
 
+type PurchaseOrder struct {
+	ID              string             `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	PoNumber        string             `json:"po_number"`
+	SupplierID      string             `json:"supplier_id"`
+	Status          string             `json:"status"`
+	ExpectedDate    pgtype.Date        `json:"expected_date"`
+	Notes           pgtype.Text        `json:"notes"`
+	CreatedBy       pgtype.Text        `json:"created_by"`
+	SubmittedAt     pgtype.Timestamptz `json:"submitted_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	CancelledAt     pgtype.Timestamptz `json:"cancelled_at"`
+	ReceivingTaskID pgtype.Text        `json:"receiving_task_id"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type PurchaseOrderItem struct {
+	ID              string         `json:"id"`
+	PurchaseOrderID string         `json:"purchase_order_id"`
+	ArticleSku      string         `json:"article_sku"`
+	ExpectedQty     pgtype.Numeric `json:"expected_qty"`
+	ReceivedQty     pgtype.Numeric `json:"received_qty"`
+	RejectedQty     pgtype.Numeric `json:"rejected_qty"`
+	UnitCost        pgtype.Numeric `json:"unit_cost"`
+	Discrepancy     pgtype.Numeric `json:"discrepancy"`
+	Notes           pgtype.Text    `json:"notes"`
+	CreatedAt       time.Time      `json:"created_at"`
+}
+
 type ReceivingTask struct {
 	ID              string           `json:"id"`
 	TaskID          string           `json:"task_id"`
@@ -347,6 +448,8 @@ type ReceivingTask struct {
 	TrackingNumber  pgtype.Text      `json:"tracking_number"`
 	ReceptionMethod pgtype.Text      `json:"reception_method"`
 	Incoterms       pgtype.Text      `json:"incoterms"`
+	TenantID        pgtype.UUID      `json:"tenant_id"`
+	PurchaseOrderID pgtype.Text      `json:"purchase_order_id"`
 }
 
 // RBAC roles; name is the stable identifier (Admin, Operator, Viewer).
@@ -360,6 +463,35 @@ type Role struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
+type SalesOrder struct {
+	ID            string             `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	SoNumber      string             `json:"so_number"`
+	CustomerID    string             `json:"customer_id"`
+	Status        string             `json:"status"`
+	ExpectedDate  pgtype.Date        `json:"expected_date"`
+	Notes         pgtype.Text        `json:"notes"`
+	CreatedBy     pgtype.Text        `json:"created_by"`
+	SubmittedAt   pgtype.Timestamptz `json:"submitted_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+	CancelledAt   pgtype.Timestamptz `json:"cancelled_at"`
+	PickingTaskID pgtype.Text        `json:"picking_task_id"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type SalesOrderItem struct {
+	ID           string         `json:"id"`
+	SalesOrderID string         `json:"sales_order_id"`
+	ArticleSku   string         `json:"article_sku"`
+	ExpectedQty  pgtype.Numeric `json:"expected_qty"`
+	PickedQty    pgtype.Numeric `json:"picked_qty"`
+	UnitPrice    pgtype.Numeric `json:"unit_price"`
+	Notes        pgtype.Text    `json:"notes"`
+	CreatedAt    time.Time      `json:"created_at"`
+}
+
 type Serial struct {
 	ID           string           `json:"id"`
 	SerialNumber string           `json:"serial_number"`
@@ -367,6 +499,7 @@ type Serial struct {
 	Status       string           `json:"status"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	TenantID     pgtype.UUID      `json:"tenant_id"`
 }
 
 // Sessions table for managing user authentication sessions
@@ -409,6 +542,20 @@ type SessionType struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type SignupToken struct {
+	ID               string             `json:"id"`
+	Email            string             `json:"email"`
+	TenantName       string             `json:"tenant_name"`
+	TenantSlug       string             `json:"tenant_slug"`
+	Token            string             `json:"token"`
+	ExpiresAt        time.Time          `json:"expires_at"`
+	UsedAt           pgtype.Timestamptz `json:"used_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	AdminName        string             `json:"admin_name"`
+	AdminPasswordEnc string             `json:"admin_password_enc"`
+	SeedDemoData     bool               `json:"seed_demo_data"`
+}
+
 type StockAlert struct {
 	ID                    string           `json:"id"`
 	Sku                   string           `json:"sku"`
@@ -424,6 +571,7 @@ type StockAlert struct {
 	DaysToExpiration      pgtype.Int4      `json:"days_to_expiration"`
 	CreatedAt             pgtype.Timestamp `json:"created_at"`
 	ResolvedAt            pgtype.Timestamp `json:"resolved_at"`
+	TenantID              pgtype.UUID      `json:"tenant_id"`
 }
 
 type StockSetting struct {
@@ -467,6 +615,45 @@ type StockTransferLine struct {
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 }
 
+type StripeWebhookEvent struct {
+	EventID     string    `json:"event_id"`
+	EventType   string    `json:"event_type"`
+	ProcessedAt time.Time `json:"processed_at"`
+	RawEvent    []byte    `json:"raw_event"`
+}
+
+type Subscription struct {
+	ID                   string             `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	StripeSubscriptionID pgtype.Text        `json:"stripe_subscription_id"`
+	StripeCustomerID     pgtype.Text        `json:"stripe_customer_id"`
+	Plan                 string             `json:"plan"`
+	Status               string             `json:"status"`
+	CurrentPeriodStart   pgtype.Timestamptz `json:"current_period_start"`
+	CurrentPeriodEnd     pgtype.Timestamptz `json:"current_period_end"`
+	CancelAtPeriodEnd    bool               `json:"cancel_at_period_end"`
+	TrialEnd             pgtype.Timestamptz `json:"trial_end"`
+	Metadata             []byte             `json:"metadata"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+type Tenant struct {
+	ID             pgtype.UUID        `json:"id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Email          string             `json:"email"`
+	Status         string             `json:"status"`
+	SignupAt       time.Time          `json:"signup_at"`
+	TrialStartedAt time.Time          `json:"trial_started_at"`
+	TrialEndsAt    time.Time          `json:"trial_ends_at"`
+	IsActive       bool               `json:"is_active"`
+	Metadata       []byte             `json:"metadata"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // User identity and account; session and token data are in sessions table.
 type User struct {
 	ID string `json:"id"`
@@ -489,6 +676,7 @@ type User struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserBadge struct {

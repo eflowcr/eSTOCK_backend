@@ -16,6 +16,9 @@ type ClientsRepository interface {
 	GetByIDForTenant(id, tenantID string) (*database.Client, *responses.InternalResponse)
 	GetByTenantAndCode(tenantID, code string) (*database.Client, *responses.InternalResponse)
 	ListByTenant(tenantID string) ([]database.Client, *responses.InternalResponse)
+	// ListByTenantFiltered pushes optional type/isActive/search filters and pagination to SQL (M8).
+	// Pass nil for any param to skip that filter.
+	ListByTenantFiltered(tenantID string, clientType *string, isActive *bool, search *string, limit *int32, offset *int32) ([]database.Client, *responses.InternalResponse)
 	// Update requires tenantID to prevent cross-tenant update (HR1-M3).
 	Update(id string, data *requests.UpdateClientRequest, tenantID string) (*database.Client, *responses.InternalResponse)
 	// SoftDelete requires tenantID to prevent cross-tenant soft-delete (HR1-M3).

@@ -12,9 +12,12 @@ import (
 )
 
 type Querier interface {
+	// INTERNAL USE ONLY. Tenant-scoped variant below.
 	ArticleExistsBySku(ctx context.Context, sku string) (bool, error)
+	ArticleExistsBySkuForTenant(ctx context.Context, arg ArticleExistsBySkuForTenantParams) (bool, error)
 	CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error)
 	CreateAdjustmentReasonCode(ctx context.Context, arg CreateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
+	// All inserts now require tenant_id ($1).
 	CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error)
 	// Audit logs: who did what, when, how
 	// Schema: db/migrations (000003_audit_logs_schema)
@@ -25,42 +28,59 @@ type Querier interface {
 	// Clients CRUD for sqlc
 	// Schema: db/migrations/000018_sprint_s2.up.sql (clients table)
 	CreateClient(ctx context.Context, arg CreateClientParams) (Client, error)
+	// S3.5 W2-A: tenant_id is required and provided by the controller layer.
 	CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error)
 	CreateLocationType(ctx context.Context, arg CreateLocationTypeParams) (LocationType, error)
 	CreateLot(ctx context.Context, arg CreateLotParams) (Lot, error)
 	CreatePresentation(ctx context.Context, arg CreatePresentationParams) (Presentation, error)
 	CreatePresentationConversion(ctx context.Context, arg CreatePresentationConversionParams) (PresentationConversion, error)
 	CreatePresentationType(ctx context.Context, arg CreatePresentationTypeParams) (PresentationType, error)
+	// S3.5 W2-A: tenant_id is required and provided by the controller layer.
 	CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error)
 	CreateStockTransfer(ctx context.Context, arg CreateStockTransferParams) (CreateStockTransferRow, error)
 	CreateStockTransferLine(ctx context.Context, arg CreateStockTransferLineParams) (StockTransferLine, error)
 	DeleteAdjustmentReasonCode(ctx context.Context, id string) error
-	DeleteArticle(ctx context.Context, id string) error
-	DeleteLocation(ctx context.Context, id string) error
+	// Tenant guard prevents cross-tenant delete.
+	DeleteArticle(ctx context.Context, arg DeleteArticleParams) error
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+	DeleteLocationForTenant(ctx context.Context, arg DeleteLocationForTenantParams) error
 	DeleteLocationType(ctx context.Context, id string) error
-	DeleteLot(ctx context.Context, id string) error
+	// Tenant guard prevents cross-tenant deletes (S3.5 W2-B).
+	DeleteLot(ctx context.Context, arg DeleteLotParams) error
 	DeletePresentation(ctx context.Context, presentationID string) error
 	DeletePresentationConversion(ctx context.Context, id string) error
 	DeletePresentationType(ctx context.Context, id string) error
-	DeleteSerial(ctx context.Context, id string) error
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+	DeleteSerialForTenant(ctx context.Context, arg DeleteSerialForTenantParams) error
 	DeleteStockTransfer(ctx context.Context, id string) error
 	DeleteStockTransferLine(ctx context.Context, id string) error
 	DeleteStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) error
 	GetAdjustmentReasonCodeByCode(ctx context.Context, code string) (AdjustmentReasonCode, error)
 	GetAdjustmentReasonCodeByID(ctx context.Context, id string) (AdjustmentReasonCode, error)
+	// INTERNAL USE ONLY. HTTP handlers must call GetArticleByIDForTenant.
 	GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error)
+	// HR-style tenant guard. Use for HTTP responses to prevent cross-tenant enumeration.
+	GetArticleByIDForTenant(ctx context.Context, arg GetArticleByIDForTenantParams) (GetArticleByIDForTenantRow, error)
+	// INTERNAL USE ONLY (FK lookups, dashboards). HTTP handlers must call GetArticleBySkuForTenant.
 	GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error)
+	// Per-tenant SKU lookup. Hits articles_tenant_sku_key index.
+	GetArticleBySkuForTenant(ctx context.Context, arg GetArticleBySkuForTenantParams) (GetArticleBySkuForTenantRow, error)
 	GetCategoryByID(ctx context.Context, id string) (Category, error)
 	// Internal use only: no tenant filter. Use GetClientByIDForTenant for HTTP responses (HR1-M3).
 	GetClientByID(ctx context.Context, id string) (Client, error)
 	// HR1-M3: tenant_id guard prevents cross-tenant client enumeration via HTTP.
 	GetClientByIDForTenant(ctx context.Context, arg GetClientByIDForTenantParams) (Client, error)
 	GetClientByTenantAndCode(ctx context.Context, arg GetClientByTenantAndCodeParams) (Client, error)
-	GetLocationByID(ctx context.Context, id string) (GetLocationByIDRow, error)
-	GetLocationByLocationCode(ctx context.Context, locationCode string) (GetLocationByLocationCodeRow, error)
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+	GetLocationByIDForTenant(ctx context.Context, arg GetLocationByIDForTenantParams) (GetLocationByIDForTenantRow, error)
+	// S3.5 W2-A: tenant_id guard. Used as fallback by ID lookup when caller passed a code.
+	GetLocationByLocationCodeForTenant(ctx context.Context, arg GetLocationByLocationCodeForTenantParams) (GetLocationByLocationCodeForTenantRow, error)
 	GetLocationTypeByCode(ctx context.Context, code string) (LocationType, error)
 	GetLocationTypeByID(ctx context.Context, id string) (LocationType, error)
+	// Internal use only: no tenant filter. Use GetLotByIDForTenant for HTTP callers.
 	GetLotByID(ctx context.Context, id string) (Lot, error)
+	// Tenant guard prevents cross-tenant lot enumeration via HTTP (S3.5 W2-B).
+	GetLotByIDForTenant(ctx context.Context, arg GetLotByIDForTenantParams) (Lot, error)
 	GetOrCreateUserPreferences(ctx context.Context, userID string) (UserPreference, error)
 	GetPresentationByID(ctx context.Context, presentationID string) (Presentation, error)
 	GetPresentationConversionByFromAndTo(ctx context.Context, arg GetPresentationConversionByFromAndToParams) (PresentationConversion, error)
@@ -71,8 +91,14 @@ type Querier interface {
 	GetRoleByID(ctx context.Context, id string) (Role, error)
 	GetRolePermissions(ctx context.Context, id string) (json.RawMessage, error)
 	// Serials CRUD for sqlc
-	// Schema: db/migrations (serials table)
-	GetSerialByID(ctx context.Context, id string) (Serial, error)
+	// Schema: db/migrations (serials table; tenant_id added in 000033).
+	// All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
+	//
+	// NOTE: ListSerialsBySku (no tenant filter) is defined in db/query/articles/articles.sql
+	// and used internally by article-update warning logic. That query is NOT for HTTP responses.
+	// Use ListSerialsBySkuForTenant for tenant-scoped HTTP endpoints.
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+	GetSerialByIDForTenant(ctx context.Context, arg GetSerialByIDForTenantParams) (Serial, error)
 	// StockSettings CRUD for sqlc
 	// Schema: db/migrations/000018_sprint_s2.up.sql (stock_settings table)
 	GetStockSettings(ctx context.Context, tenantID pgtype.UUID) (StockSetting, error)
@@ -84,23 +110,58 @@ type Querier interface {
 	// Adjustment reason codes CRUD for sqlc. Schema: db/migrations (adjustment_reason_codes table)
 	ListAdjustmentReasonCodes(ctx context.Context) ([]AdjustmentReasonCode, error)
 	ListAdjustmentReasonCodesAdmin(ctx context.Context) ([]AdjustmentReasonCode, error)
-	// Articles CRUD and related queries for sqlc
-	// Schema: db/migrations (articles, lots, serials tables)
+	// Articles CRUD and related queries for sqlc.
+	// Schema: db/migrations (articles, lots, serials tables).
+	// S3.5 W1 — every read/write is now tenant-scoped via tenant_id (HR-S3-W5 C2).
+	// The legacy global queries (ListArticles, GetArticleBySku, ArticleExistsBySku) remain
+	// ONLY for internal lookups (FK validation, stock alerts cron, dashboards) where the
+	// caller has no JWT/Config tenant context. HTTP endpoints MUST use the *ForTenant variants.
+	// INTERNAL USE ONLY (cron, FK lookups). HTTP handlers must call ListArticlesForTenant.
 	ListArticles(ctx context.Context) ([]ListArticlesRow, error)
+	// HTTP-facing list. Uses idx_articles_tenant_created (composite covering index).
+	ListArticlesForTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListArticlesForTenantRow, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
-	ListCategoriesByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Category, error)
-	ListClientsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Client, error)
+	// M8: Push search/is_active filters and pagination to SQL (HR1 deferred).
+	// Pass NULL for any optional param to skip that filter.
+	// sqlc.narg() used so generated struct has named fields (IsActive, Search, Limit, Offset)
+	// instead of positional Column2…Column5 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
+	ListCategoriesByTenant(ctx context.Context, arg ListCategoriesByTenantParams) ([]Category, error)
+	// M8: Push type/is_active/search filters and pagination to SQL (HR1 deferred).
+	// Pass NULL for any optional param to skip that filter.
+	// sqlc.narg() used so generated struct has named fields (Type, IsActive, Search, Limit, Offset)
+	// instead of positional Column2…Column6 names that sqlc v1.29.0 infers for $N::type IS NULL patterns.
+	ListClientsByTenant(ctx context.Context, arg ListClientsByTenantParams) ([]Client, error)
 	// Location types CRUD for sqlc. Schema: db/migrations (location_types table)
 	ListLocationTypes(ctx context.Context) ([]LocationType, error)
 	ListLocationTypesAdmin(ctx context.Context) ([]LocationType, error)
 	// Locations CRUD for sqlc
-	// Schema: db/migrations (locations table)
-	ListLocations(ctx context.Context) ([]ListLocationsRow, error)
+	// Schema: db/migrations (locations table; tenant_id added in 000032).
+	// All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant location enumeration.
+	ListLocationsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListLocationsByTenantRow, error)
 	// Lots CRUD for sqlc
-	// Schema: db/migrations (lots table)
-	ListLots(ctx context.Context) ([]Lot, error)
-	// Lots by SKU (for UpdateArticle warnings)
+	// Schema: db/migrations (lots table; tenant_id added in 000030)
+	// S3.5 W2-B: every public query is tenant-scoped. Internal helpers (GetLotByID) keep
+	// the un-scoped variant for cross-domain joins (lot trace, picking task validation)
+	// where the caller already proved tenancy via the parent record.
+	//
+	// Column order in SELECT/RETURNING must match db/sqlc/models.go::Lot (Postgres appends
+	// tenant_id at the end after the 000030 migration), otherwise sqlc generates per-query
+	// Row structs instead of returning the shared Lot model.
+	// Returns all lots for a tenant, sorted by created_at DESC.
+	ListLots(ctx context.Context, tenantID pgtype.UUID) ([]Lot, error)
+	// Lots by SKU (for UpdateArticle warnings) — internal, no tenant filter (lots table
+	// not yet tenant-scoped; tracked in S3.5 W2).
+	// NOTE (S3.5 W2-B): SELECT column list mirrors db/sqlc/models.go::Lot (tenant_id was
+	// added at the end by migration 000030); without it sqlc would emit a per-query Row
+	// struct and break sqlcLotToDatabase consumers. This query is intentionally global
+	// (no tenant filter) because it powers the article-update warning that surfaces
+	// "lot rows still exist" feedback when an admin disables track_by_lot. ArticlesService
+	// runs in a tenant-scoped controller already; revisiting this for strict tenant scoping
+	// is tracked as an articles-domain follow-up (W1 owns articles.sql).
 	ListLotsBySku(ctx context.Context, sku string) ([]Lot, error)
+	// Tenant-scoped lookup by SKU; replaces the un-scoped ListLotsBySku for HTTP callers.
+	ListLotsBySkuForTenant(ctx context.Context, arg ListLotsBySkuForTenantParams) ([]Lot, error)
 	// Presentation conversions CRUD. Schema: db/migrations (presentation_conversions table)
 	ListPresentationConversions(ctx context.Context) ([]PresentationConversion, error)
 	ListPresentationConversionsAdmin(ctx context.Context) ([]PresentationConversion, error)
@@ -111,13 +172,20 @@ type Querier interface {
 	// Schema: db/migrations (presentations table)
 	ListPresentations(ctx context.Context) ([]Presentation, error)
 	ListRoles(ctx context.Context) ([]Role, error)
-	// Serials by SKU (for UpdateArticle warnings)
+	// Serials by SKU (for UpdateArticle warnings) — internal helper, intentionally
+	// not tenant-filtered (called from already tenant-scoped article controllers).
+	// S3.5 W2-A: tenant_id added to SELECT so the row type matches sqlc.Serial after
+	// migration 000033 added the column. Without it sqlc emits a per-query Row struct
+	// and the sqlcSerialToDatabase helper stops compiling.
 	ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error)
+	// S3.5 W2-A: tenant_id guard. Replaces global ListSerialsBySku for HTTP responses.
+	ListSerialsBySkuForTenant(ctx context.Context, arg ListSerialsBySkuForTenantParams) ([]Serial, error)
 	ListStockTransferLinesByTransferID(ctx context.Context, stockTransferID string) ([]StockTransferLine, error)
 	// Stock transfers and lines. Schema: db/migrations (stock_transfers, stock_transfer_lines).
 	ListStockTransfers(ctx context.Context) ([]ListStockTransfersRow, error)
 	ListStockTransfersByStatus(ctx context.Context, status string) ([]ListStockTransfersByStatusRow, error)
-	LocationExistsByLocationCode(ctx context.Context, locationCode string) (bool, error)
+	// S3.5 W2-A: tenant_id guard. Used by Create to enforce per-tenant unique location_code.
+	LocationExistsByLocationCodeForTenant(ctx context.Context, arg LocationExistsByLocationCodeForTenantParams) (bool, error)
 	LocationTypeExistsByCode(ctx context.Context, code string) (bool, error)
 	PresentationExistsByID(ctx context.Context, presentationID string) (bool, error)
 	PresentationTypeExistsByCode(ctx context.Context, code string) (bool, error)
@@ -125,18 +193,22 @@ type Querier interface {
 	// HR1-M3: tenant_id guard prevents cross-tenant soft-delete.
 	SoftDeleteClient(ctx context.Context, arg SoftDeleteClientParams) error
 	UpdateAdjustmentReasonCode(ctx context.Context, arg UpdateAdjustmentReasonCodeParams) (AdjustmentReasonCode, error)
+	// Tenant guard via WHERE id = $1 AND tenant_id = $24 — prevents cross-tenant update.
 	UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error)
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	// HR1-M3: tenant_id guard prevents cross-tenant update.
 	UpdateClient(ctx context.Context, arg UpdateClientParams) (Client, error)
-	UpdateLocation(ctx context.Context, arg UpdateLocationParams) (UpdateLocationRow, error)
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant update.
+	UpdateLocationForTenant(ctx context.Context, arg UpdateLocationForTenantParams) (UpdateLocationForTenantRow, error)
 	UpdateLocationType(ctx context.Context, arg UpdateLocationTypeParams) (LocationType, error)
+	// Tenant guard prevents cross-tenant updates (S3.5 W2-B).
 	UpdateLot(ctx context.Context, arg UpdateLotParams) (Lot, error)
 	UpdatePresentation(ctx context.Context, arg UpdatePresentationParams) (Presentation, error)
 	UpdatePresentationConversion(ctx context.Context, arg UpdatePresentationConversionParams) (PresentationConversion, error)
 	UpdatePresentationType(ctx context.Context, arg UpdatePresentationTypeParams) (PresentationType, error)
 	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) (Role, error)
-	UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error)
+	// S3.5 W2-A: tenant_id guard prevents cross-tenant update.
+	UpdateSerialForTenant(ctx context.Context, arg UpdateSerialForTenantParams) (Serial, error)
 	UpdateStockTransfer(ctx context.Context, arg UpdateStockTransferParams) (UpdateStockTransferRow, error)
 	UpdateStockTransferLine(ctx context.Context, arg UpdateStockTransferLineParams) (StockTransferLine, error)
 	UpdateStockTransferStatus(ctx context.Context, arg UpdateStockTransferStatusParams) (UpdateStockTransferStatusRow, error)

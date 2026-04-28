@@ -40,27 +40,38 @@ const (
 const analyzeCacheTTL = 60 * time.Second
 
 type analyzeCache struct {
-	result    *responses.StockAlertResponse
-	cachedAt  time.Time
+	result   *responses.StockAlertResponse
+	cachedAt time.Time
 }
 
-const redisAnalyzeKey = "stock_alerts:analyze"
+// redisAnalyzeKeyPrefix is namespaced per tenant so the cached payload from one tenant
+// can never be served to another (S3.5 W2-B).
+const redisAnalyzeKeyPrefix = "stock_alerts:analyze:"
+
+func redisAnalyzeKey(tenantID string) string {
+	return redisAnalyzeKeyPrefix + tenantID
+}
 
 type StockAlertsRepository struct {
 	DB    *gorm.DB
 	Redis *redis.Client // nil → in-memory fallback
 
 	// analyzeMu serializes concurrent Analyze() calls so only one runs at a time.
-	analyzeMu    sync.Mutex
-	analyzeCache analyzeCache // in-memory fallback when Redis is nil
+	// Locking is global (not per-tenant) because TRUNCATE locks the entire stock_alerts
+	// table. Per-tenant DELETE in the new tenant-scoped flow could be parallelised, but
+	// the simple mutex keeps semantics aligned with the previous implementation.
+	analyzeMu sync.Mutex
+	// analyzeCache: in-memory fallback when Redis is nil. Map keyed by tenantID so the
+	// fallback is also tenant-scoped (otherwise tenant A would receive tenant B's cache).
+	analyzeCache map[string]analyzeCache
 }
 
-func (r *StockAlertsRepository) GetAllStockAlerts(resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
+func (r *StockAlertsRepository) GetAllStockAlerts(tenantID string, resolved bool) ([]database.StockAlert, *responses.InternalResponse) {
 	var stockAlerts []database.StockAlert
 
 	err := r.DB.
 		Table(database.StockAlert{}.TableName()).
-		Where("is_resolved = ?", resolved).
+		Where("tenant_id = ? AND is_resolved = ?", tenantID, resolved).
 		Order("created_at ASC").
 		Find(&stockAlerts).Error
 
@@ -75,23 +86,43 @@ func (r *StockAlertsRepository) GetAllStockAlerts(resolved bool) ([]database.Sto
 	return stockAlerts, nil
 }
 
-func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *responses.InternalResponse) {
-	// Serialize concurrent calls: only one Analyze() runs at a time.
+// Analyze recomputes stock alerts for a single tenant. The previous implementation
+// TRUNCATEd the entire stock_alerts table and re-derived alerts from globally-scanned
+// inventory/movements; in a multi-tenant deployment that would erase tenant B's alerts
+// every time tenant A's user opened the dashboard.
+//
+// S3.5 W2-B refactor:
+//   - DELETE only this tenant's rows instead of TRUNCATE.
+//   - All inventory/movement/lot reads carry WHERE tenant_id = ?.
+//   - The Redis/in-memory cache key is tenant-scoped.
+//
+// Cron callers must invoke Analyze() per tenant; see tools/cron.go.
+func (r *StockAlertsRepository) Analyze(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
+	if tenantID == "" {
+		return nil, &responses.InternalResponse{
+			Message:    "tenant_id es requerido para analizar alertas de stock",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+
+	// Serialize concurrent calls: only one Analyze() runs at a time across all tenants.
 	r.analyzeMu.Lock()
 	defer r.analyzeMu.Unlock()
 
-	// --- Cache read ---
+	// --- Cache read (per-tenant) ---
+	cacheKey := redisAnalyzeKey(tenantID)
 	if r.Redis != nil {
-		// Try Redis first (survives restarts, shared across instances).
-		if cached, err := r.Redis.Get(context.Background(), redisAnalyzeKey).Bytes(); err == nil {
+		if cached, err := r.Redis.Get(context.Background(), cacheKey).Bytes(); err == nil {
 			var resp responses.StockAlertResponse
 			if json.Unmarshal(cached, &resp) == nil {
 				return &resp, nil
 			}
 		}
-	} else if r.analyzeCache.result != nil && time.Since(r.analyzeCache.cachedAt) < analyzeCacheTTL {
-		// Fall back to in-memory cache.
-		return r.analyzeCache.result, nil
+	} else if r.analyzeCache != nil {
+		if entry, ok := r.analyzeCache[tenantID]; ok && entry.result != nil && time.Since(entry.cachedAt) < analyzeCacheTTL {
+			return entry.result, nil
+		}
 	}
 
 	// Begin transaction
@@ -104,9 +135,12 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// TRUNCATE is ~10× faster than DELETE for full-table clears (no row-level logging).
-	err := tx.Exec("TRUNCATE TABLE " + database.StockAlert{}.TableName()).Error
+	// Per-tenant clear (replaces global TRUNCATE). Slower than TRUNCATE but isolation-safe.
+	err := tx.
+		Exec("DELETE FROM "+database.StockAlert{}.TableName()+" WHERE tenant_id = ?", tenantID).
+		Error
 	if err != nil {
+		tx.Rollback()
 		return nil, &responses.InternalResponse{
 			Error:   err,
 			Message: "Error al limpiar alertas de stock existentes",
@@ -114,10 +148,17 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// Get all inventory
+	// Get inventory for this tenant only.
+	// S3.5.4 (B16 fix): inventory + inventory_movements tables do NOT have tenant_id columns
+	// (deferred to S3.6 structural migration). Scope via JOIN through articles.tenant_id,
+	// which is safe because articles.sku has a global UNIQUE index — every SKU belongs to
+	// exactly one tenant.
 	var inventory []database.Inventory
 	err = tx.
-		Table(database.Inventory{}.TableName()).
+		Table(database.Inventory{}.TableName()+" AS i").
+		Joins("JOIN articles a ON a.sku = i.sku").
+		Where("a.tenant_id = ?", tenantID).
+		Select("i.*").
 		Find(&inventory).Error
 
 	if err != nil {
@@ -129,14 +170,17 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// Fix 1: Batch-fetch all outbound movements in the last 30 days — one query instead of N.
+	// Batch-fetch all outbound movements in the last 30 days for this tenant — one query.
+	// Same JOIN-via-articles approach: inventory_movements has no tenant_id column.
 	const movementLookbackDays = 30
 	lookbackCutoff := time.Now().AddDate(0, 0, -movementLookbackDays)
 
 	var allMovements []database.InventoryMovement
 	err = tx.
-		Table(database.InventoryMovement{}.TableName()).
-		Where("movement_type = ? AND created_at >= ?", "outbound", lookbackCutoff).
+		Table(database.InventoryMovement{}.TableName()+" AS im").
+		Joins("JOIN articles a ON a.sku = im.sku").
+		Where("a.tenant_id = ? AND im.movement_type = ? AND im.created_at >= ?", tenantID, "outbound", lookbackCutoff).
+		Select("im.*").
 		Find(&allMovements).Error
 
 	if err != nil {
@@ -158,8 +202,6 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	var alerts []database.StockAlert
 
 	for i := 0; i < len(inventory); i++ {
-		// Look up pre-fetched movements — empty slice if none in last 30 days.
-		// analyzeInventoryItem handles empty slices by classifying on stock level alone.
 		movements := movementMap[inventory[i].SKU+"|"+inventory[i].Location]
 
 		analysis, errResponse := analyzeInventoryItem(inventory[i], movements)
@@ -169,9 +211,9 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 
 		if analysis != nil && analysis.AlertLevel != "" {
-			// Use Go-generated UUID — no DB round-trip per alert.
 			alert := database.StockAlert{
 				ID:               uuid.NewString(),
+				TenantID:         tenantID,
 				SKU:              analysis.SKU,
 				AlertType:        analysis.AlertType,
 				CurrentStock:     analysis.CurrentStock,
@@ -182,7 +224,6 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 				CreatedAt:        time.Now(),
 			}
 
-			// Fix 2 (tail): sentinel MaxInt32 means "infinite" — store nil in DB.
 			if analysis.PredictedStockOutDays < math.MaxInt32 {
 				days := analysis.PredictedStockOutDays
 				alert.PredictedStockOutDays = &days
@@ -194,8 +235,8 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// Build lot expiration alerts in memory (no individual inserts).
-	lotAlerts, err := r.buildLotExpirationAlerts(tx)
+	// Build lot expiration alerts for this tenant only.
+	lotAlerts, err := r.buildLotExpirationAlerts(tx, tenantID)
 	if err != nil {
 		tx.Rollback()
 		return nil, &responses.InternalResponse{
@@ -206,7 +247,6 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 	}
 	alerts = append(alerts, lotAlerts...)
 
-	// Batch-insert all alerts in a single statement.
 	if len(alerts) > 0 {
 		err = tx.Create(&alerts).Error
 		if err != nil {
@@ -219,7 +259,6 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// Commit transaction
 	err = tx.Commit().Error
 	if err != nil {
 		tx.Rollback()
@@ -230,12 +269,10 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		}
 	}
 
-	// If no alerts were generated
 	if len(alerts) == 0 {
 		return nil, nil
 	}
 
-	// Fix 4: compute summary counts and use them (were hardcoded to 0 before).
 	criticalCount := 0
 	highCount := 0
 	mediumCount := 0
@@ -268,13 +305,16 @@ func (r *StockAlertsRepository) Analyze() (*responses.StockAlertResponse, *respo
 		},
 	}
 
-	// --- Cache write ---
+	// --- Cache write (per-tenant) ---
 	if r.Redis != nil {
 		if b, err := json.Marshal(response); err == nil {
-			r.Redis.Set(context.Background(), redisAnalyzeKey, b, analyzeCacheTTL)
+			r.Redis.Set(context.Background(), cacheKey, b, analyzeCacheTTL)
 		}
 	} else {
-		r.analyzeCache = analyzeCache{result: response, cachedAt: time.Now()}
+		if r.analyzeCache == nil {
+			r.analyzeCache = make(map[string]analyzeCache)
+		}
+		r.analyzeCache[tenantID] = analyzeCache{result: response, cachedAt: time.Now()}
 	}
 
 	return response, nil
@@ -288,7 +328,6 @@ func analyzeInventoryItem(item database.Inventory, movements []database.Inventor
 		return nil, errResponse
 	}
 
-	// Fix 2: Cap before int conversion to prevent +Inf → MaxInt64 overflow.
 	predictedFloat := consumptionTrend.PredictedStockOutDays
 	var predictedInt int
 	switch {
@@ -302,14 +341,12 @@ func analyzeInventoryItem(item database.Inventory, movements []database.Inventor
 
 	alertLevel := classifyAlertLevel(int(quantity), predictedInt)
 
-	// If null, no alert is needed
 	if alertLevel == nil {
 		return nil, nil
 	}
 
 	recommendedStock := calculateRecommendedStock(quantity, consumptionTrend.AverageDailyConsumption, *alertLevel)
 
-	// Determine alert type
 	alertType := classifyAlertType(int(quantity))
 
 	message := GenerateAlertMessage(
@@ -512,9 +549,9 @@ func GenerateAlertMessage(
 	return fmt.Sprintf("Alerta para SKU %s: Stock actual %d, se recomienda un nuevo pedido de %d unidades.", sku, currentStock, recommendedStock)
 }
 
-// buildLotExpirationAlerts fetches lots and builds alert structs in memory — no DB inserts.
-// Used by Analyze() which batch-inserts everything at the end.
-func (r *StockAlertsRepository) buildLotExpirationAlerts(tx *gorm.DB) ([]database.StockAlert, error) {
+// buildLotExpirationAlerts fetches lots for the given tenant and builds alert structs in
+// memory — no DB inserts. Used by Analyze() which batch-inserts everything at the end.
+func (r *StockAlertsRepository) buildLotExpirationAlerts(tx *gorm.DB, tenantID string) ([]database.StockAlert, error) {
 	var alerts []database.StockAlert
 	date := tools.GetCurrentTime()
 
@@ -522,7 +559,7 @@ func (r *StockAlertsRepository) buildLotExpirationAlerts(tx *gorm.DB) ([]databas
 	err := tx.
 		Table("lots").
 		Select("id, lot_number, sku, quantity, expiration_date").
-		Where("expiration_date IS NOT NULL AND expiration_date > ?", date).
+		Where("tenant_id = ? AND expiration_date IS NOT NULL AND expiration_date > ?", tenantID, date).
 		Order("expiration_date ASC").
 		Find(&lots).Error
 
@@ -552,6 +589,7 @@ func (r *StockAlertsRepository) buildLotExpirationAlerts(tx *gorm.DB) ([]databas
 		daysToExpireCopy := daysToExpire
 		alerts = append(alerts, database.StockAlert{
 			ID:               uuid.NewString(),
+			TenantID:         tenantID,
 			SKU:              lots[i].SKU,
 			AlertType:        "lot_expiration",
 			CurrentStock:     int(lots[i].Quantity),
@@ -574,8 +612,8 @@ func (r *StockAlertsRepository) buildLotExpirationAlerts(tx *gorm.DB) ([]databas
 
 // generateLotExpirationAlertsInTransaction builds and immediately inserts lot expiration alerts.
 // Used by LotExpiration() only.
-func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gorm.DB) ([]database.StockAlert, error) {
-	alerts, err := r.buildLotExpirationAlerts(tx)
+func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gorm.DB, tenantID string) ([]database.StockAlert, error) {
+	alerts, err := r.buildLotExpirationAlerts(tx, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -587,16 +625,23 @@ func (r *StockAlertsRepository) generateLotExpirationAlertsInTransaction(tx *gor
 	return alerts, nil
 }
 
-func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, *responses.InternalResponse) {
-	// Begin transaction
+func (r *StockAlertsRepository) LotExpiration(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
+	if tenantID == "" {
+		return nil, &responses.InternalResponse{
+			Message:    "tenant_id es requerido para generar alertas de expiración de lotes",
+			Handled:    true,
+			StatusCode: responses.StatusBadRequest,
+		}
+	}
+
 	tx := r.DB.Begin()
 	defer func() {
-		if r := recover(); r != nil {
+		if rec := recover(); rec != nil {
 			tx.Rollback()
 		}
 	}()
 
-	alerts, err := r.generateLotExpirationAlertsInTransaction(tx)
+	alerts, err := r.generateLotExpirationAlertsInTransaction(tx, tenantID)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
@@ -626,9 +671,11 @@ func (r *StockAlertsRepository) LotExpiration() (*responses.StockAlertResponse, 
 	return response, nil
 }
 
-func (r *StockAlertsRepository) ResolveAlert(alertID string) *responses.InternalResponse {
+// ResolveAlert flips is_resolved=true for an alert owned by tenantID. Cross-tenant
+// resolves return NotFound so the existence of another tenant's alert is not leaked.
+func (r *StockAlertsRepository) ResolveAlert(tenantID, alertID string) *responses.InternalResponse {
 	var alert database.StockAlert
-	err := r.DB.Where("id = ?", alertID).First(&alert).Error
+	err := r.DB.Where("id = ? AND tenant_id = ?", alertID, tenantID).First(&alert).Error
 	if err != nil {
 		return &responses.InternalResponse{
 			Error:   err,
@@ -661,12 +708,12 @@ func (r *StockAlertsRepository) ResolveAlert(alertID string) *responses.Internal
 	return nil
 }
 
-func (r *StockAlertsRepository) Summary() (*responses.StockAlertResponse, *responses.InternalResponse) {
+func (r *StockAlertsRepository) Summary(tenantID string) (*responses.StockAlertResponse, *responses.InternalResponse) {
 	var alerts []database.StockAlert
 
 	err := r.DB.
 		Table(database.StockAlert{}.TableName()).
-		Where("is_resolved = ?", false).
+		Where("tenant_id = ? AND is_resolved = ?", tenantID, false).
 		Order("created_at ASC").
 		Find(&alerts).Error
 
@@ -725,8 +772,8 @@ func sumarizeAlerts(alerts []database.StockAlert) responses.StockAlertSumary {
 	}
 }
 
-func (r *StockAlertsRepository) ExportAlertsToExcel() ([]byte, *responses.InternalResponse) {
-	alerts, errResp := r.GetAllStockAlerts(false)
+func (r *StockAlertsRepository) ExportAlertsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	alerts, errResp := r.GetAllStockAlerts(tenantID, false)
 	if errResp != nil {
 		return nil, errResp
 	}

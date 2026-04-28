@@ -7,12 +7,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// SerialsController is the HTTP entry point for serials master-data.
+//
+// S3.5 W2-A: tenantID is injected at construction time (from configuration.Config)
+// and threaded into every service call so serials are tenant-scoped end-to-end.
 type SerialsController struct {
-	Service services.SerialsService
+	Service  services.SerialsService
+	TenantID string
 }
 
-func NewSerialsController(service services.SerialsService) *SerialsController {
-	return &SerialsController{Service: service}
+func NewSerialsController(service services.SerialsService, tenantID string) *SerialsController {
+	return &SerialsController{Service: service, TenantID: tenantID}
 }
 
 func (c *SerialsController) GetSerialByID(ctx *gin.Context) {
@@ -21,7 +26,7 @@ func (c *SerialsController) GetSerialByID(ctx *gin.Context) {
 		return
 	}
 
-	serial, resp := c.Service.GetSerialByID(serialID)
+	serial, resp := c.Service.GetSerialByID(c.resolveTenantID(ctx), serialID)
 	if resp != nil {
 		writeErrorResponse(ctx, "GetSerialByID", "get_serial_by_id", resp)
 		return
@@ -42,7 +47,7 @@ func (c *SerialsController) GetSerialsBySKU(ctx *gin.Context) {
 		return
 	}
 
-	serials, resp := c.Service.GetSerialsBySKU(sku)
+	serials, resp := c.Service.GetSerialsBySKU(c.resolveTenantID(ctx), sku)
 	if resp != nil {
 		writeErrorResponse(ctx, "GetSerials", "get_serials", resp)
 		return
@@ -62,7 +67,7 @@ func (c *SerialsController) CreateSerial(ctx *gin.Context) {
 		return
 	}
 
-	resp := c.Service.Create(&request)
+	resp := c.Service.Create(c.resolveTenantID(ctx), &request)
 	if resp != nil {
 		writeErrorResponse(ctx, "CreateSerial", "create_serial", resp)
 		return
@@ -83,7 +88,7 @@ func (c *SerialsController) UpdateSerial(ctx *gin.Context) {
 		return
 	}
 
-	resp := c.Service.UpdateSerial(id, data)
+	resp := c.Service.UpdateSerial(c.resolveTenantID(ctx), id, data)
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdateSerial", "update_serial", resp)
 		return
@@ -98,11 +103,17 @@ func (c *SerialsController) DeleteSerial(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.Delete(id)
+	response := c.Service.Delete(c.resolveTenantID(ctx), id)
 	if response != nil {
 		writeErrorResponse(ctx, "DeleteSerial", "delete_serial", response)
 		return
 	}
 
 	tools.ResponseOK(ctx, "DeleteSerial", "Serie eliminada con éxito", "delete_serial", nil, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *SerialsController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

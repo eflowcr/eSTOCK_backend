@@ -131,7 +131,7 @@ const inventoryTestJWTSecret = "test-secret"
 
 func generateInventoryTestToken(t *testing.T) string {
 	t.Helper()
-	token, err := tools.GenerateToken(inventoryTestJWTSecret, "user-1", "testuser", "test@example.com", "admin")
+	token, err := tools.GenerateToken(inventoryTestJWTSecret, "user-1", "testuser", "test@example.com", "admin", "tenant-test", nil)
 	if err != nil {
 		t.Fatalf("failed to generate test token: %v", err)
 	}

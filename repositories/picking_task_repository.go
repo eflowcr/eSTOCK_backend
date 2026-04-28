@@ -19,10 +19,27 @@ import (
 	"gorm.io/gorm"
 )
 
+// SOPickedQtyUpdater is a narrow interface for updating SO picked quantities after picking (SO3).
+// Implemented by SalesOrdersRepository; defined here to avoid import cycle.
+// Returns the new SO status ('completed' or 'partial') so CompletePickingTask can trigger DN/BO generation.
+type SOPickedQtyUpdater interface {
+	UpdatePickedQty(salesOrderID string, pickedPerSKU map[string]float64) (string, *responses.InternalResponse)
+}
+
+// DNPDFGenerator is a narrow interface for async PDF generation (DN2).
+// Allows PickingTaskRepository to trigger PDF creation without importing the services package directly.
+type DNPDFGenerator interface {
+	GeneratePDFAsync(dnID, tenantID string)
+}
+
 type PickingTaskRepository struct {
 	DB               *gorm.DB
-	AuditService     *services.AuditService     // injected via wire for audit logging
+	AuditService     *services.AuditService        // injected via wire for audit logging
 	NotificationsSvc *services.NotificationsService // optional: emit task events
+	// S3-W2-B SO3: optional auto-link to update sales order after picking completion.
+	SORepository SOPickedQtyUpdater
+	// S3-W3-A DN2: optional async PDF generator for delivery notes.
+	DNPDFGen DNPDFGenerator
 }
 
 // validPickingTransitions declares the allowed status transitions.
@@ -223,6 +240,8 @@ func sanitizePickingUpdatePayload(data map[string]interface{}) map[string]interf
 // Read methods
 // ─────────────────────────────────────────────────────────────────────────────
 
+// GetAllPickingTasks returns all picking tasks without tenant filter.
+// internal use only — bypass tenant. Prefer GetAllForTenant in HTTP handlers.
 func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	var tasks []responses.PickingTaskView
 
@@ -232,7 +251,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 			pt.task_id,
 			pt.order_number,
 			pt.created_by,
-			usr.first_name || ' ' || usr.last_name AS user_creator_name,
+			COALESCE(usr.first_name || ' ' || usr.last_name, '') AS user_creator_name,
 			pt.assigned_to,
 			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
 			pt.status,
@@ -263,7 +282,7 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 				)
 			) AS items
 		FROM picking_tasks pt
-		INNER JOIN users usr ON pt.created_by = usr.id
+		LEFT JOIN users usr ON pt.created_by = usr.id
 		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
 		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
 		LEFT JOIN articles a ON a.sku = item->>'sku'
@@ -299,6 +318,84 @@ func (r *PickingTaskRepository) GetAllPickingTasks() ([]responses.PickingTaskVie
 	return tasks, nil
 }
 
+// GetAllForTenant returns picking tasks scoped to a specific tenant (S2.5 M3.1).
+func (r *PickingTaskRepository) GetAllForTenant(tenantID string) ([]responses.PickingTaskView, *responses.InternalResponse) {
+	var tasks []responses.PickingTaskView
+
+	sqlTenant := `
+		SELECT
+			pt.id,
+			pt.task_id,
+			pt.order_number,
+			pt.created_by,
+			COALESCE(usr.first_name || ' ' || usr.last_name, '') AS user_creator_name,
+			pt.assigned_to,
+			usr_assignee.first_name || ' ' || usr_assignee.last_name AS user_assignee_name,
+			pt.status,
+			pt.priority,
+			pt.notes,
+			pt.created_at,
+			pt.updated_at,
+			pt.completed_at,
+			pt.customer_id,
+			c.code AS customer_code,
+			c.name AS customer_name,
+			jsonb_agg(
+				jsonb_build_object(
+					'sku', item->>'sku',
+					'item_name', a.name,
+					'status', COALESCE(item->>'status', 'pending'),
+					'location', item->>'location',
+					'required_qty', item->>'required_qty',
+					'picked_qty', item->>'picked_qty',
+					'lots', (
+						SELECT jsonb_agg(l)
+						FROM jsonb_array_elements(item->'lots') AS l
+					),
+					'serials', (
+						SELECT jsonb_agg(s)
+						FROM jsonb_array_elements(item->'serials') AS s
+					)
+				)
+			) AS items
+		FROM picking_tasks pt
+		LEFT JOIN users usr ON pt.created_by = usr.id
+		LEFT JOIN users usr_assignee ON pt.assigned_to = usr_assignee.id
+		LEFT JOIN LATERAL jsonb_array_elements(pt.items) AS item ON TRUE
+		LEFT JOIN articles a ON a.sku = item->>'sku'
+		LEFT JOIN clients c ON pt.customer_id = c.id
+		WHERE pt.tenant_id = ?
+		GROUP BY
+			pt.id,
+			pt.task_id,
+			pt.order_number,
+			pt.created_by,
+			usr.first_name,
+			usr.last_name,
+			pt.assigned_to,
+			usr_assignee.first_name,
+			usr_assignee.last_name,
+			pt.status,
+			pt.priority,
+			pt.notes,
+			pt.created_at,
+			pt.updated_at,
+			pt.completed_at,
+			pt.customer_id,
+			c.code,
+			c.name;
+	`
+
+	if err := r.DB.Raw(sqlTenant, tenantID).Scan(&tasks).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener todas las tareas de picking",
+			Handled: false,
+		}
+	}
+	return tasks, nil
+}
+
 func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	var task database.PickingTask
 	if err := r.DB.Table(database.PickingTask{}.TableName()).Where("id = ?", id).First(&task).Error; err != nil {
@@ -322,7 +419,7 @@ func (r *PickingTaskRepository) GetPickingTaskByID(id string) (*database.Picking
 // CreatePickingTask
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
+func (r *PickingTaskRepository) CreatePickingTask(userId string, tenantID string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
 	handledResp := &responses.InternalResponse{}
 
 	var items []requests.PickingTaskItemRequest
@@ -341,7 +438,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Model(&database.PickingTask{}).Where("order_number = ?", task.OutboundNumber).Count(&count).Error; err != nil {
+		if err := tx.Model(&database.PickingTask{}).Where("order_number = ? AND tenant_id = ?", task.OutboundNumber, tenantID).Count(&count).Error; err != nil {
 			*handledResp = responses.InternalResponse{Error: err, Message: "Error al verificar la unicidad del número de salida", Handled: false}
 			return nil
 		}
@@ -412,6 +509,7 @@ func (r *PickingTaskRepository) CreatePickingTask(userId string, task *requests.
 			Notes:       task.Notes,
 			Items:       json.RawMessage(itemsJSON),
 			CustomerID:  task.CustomerID, // S2 R2
+			TenantID:    tenantID,        // S2.5 M3.1
 		}
 
 		if err := tx.Create(&pickingTask).Error; err != nil {
@@ -800,6 +898,20 @@ func (r *PickingTaskRepository) CompletePickingLine(ctx context.Context, id, use
 
 func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
 	var handledResp *responses.InternalResponse
+	// SO3: captured for post-tx SO update.
+	var linkedSOID string
+	var soPickedPerSKU map[string]float64
+	// DN1/BO1: captured for post-tx delivery note + backorder generation.
+	var taskTenantID string
+	var taskCustomerID string
+	var sourceBackorderID *string // set when task was created from a backorder (max depth=1 guard)
+	type pickedItemSnapshot struct {
+		SKU        string
+		Qty        float64
+		LotNumbers []string
+	}
+	var pickedItems []pickedItemSnapshot
+	var soItems []database.SalesOrderItem // loaded for BO1 computation
 
 	txErr := r.DB.Transaction(func(tx *gorm.DB) error {
 		var task database.PickingTask
@@ -826,6 +938,10 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 		}
 
 		hasDifferences := false
+		// perSKULots collects lot numbers picked per SKU for DN snapshot.
+		perSKULots := make(map[string][]string)
+		perSKUPickedQty := make(map[string]float64)
+
 		for _, item := range items {
 			for _, alloc := range item.Allocations {
 				pickedQty := alloc.Quantity
@@ -866,6 +982,8 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 						UPDATE lots SET quantity = GREATEST(0, quantity - ?), updated_at = NOW()
 						 WHERE sku = ? AND lot_number = ?
 					`, pickedQty, item.SKU, *alloc.LotNumber)
+
+					perSKULots[item.SKU] = append(perSKULots[item.SKU], *alloc.LotNumber)
 				}
 
 				// Resolve lot_id if allocation references a lot.
@@ -905,6 +1023,8 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 				if err := tx.Create(mov).Error; err != nil {
 					return fmt.Errorf("create outbound movement %s @ %s: %w", item.SKU, alloc.Location, err)
 				}
+
+				perSKUPickedQty[item.SKU] += pickedQty
 			}
 		}
 
@@ -920,6 +1040,46 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 			return fmt.Errorf("update status: %w", err)
 		}
 
+		// SO3 — capture SO ID and picked quantities for post-tx update (avoids nested tx deadlock).
+		if task.SalesOrderID != nil && *task.SalesOrderID != "" {
+			linkedSOID = *task.SalesOrderID
+			soPickedPerSKU = make(map[string]float64)
+			for _, item := range items {
+				for _, alloc := range item.Allocations {
+					pickedQty := alloc.Quantity
+					if alloc.PickedQty != nil {
+						pickedQty = *alloc.PickedQty
+					}
+					soPickedPerSKU[item.SKU] += pickedQty
+				}
+			}
+		}
+
+		// DN1/BO1 — capture context for post-tx generation.
+		taskTenantID = task.TenantID
+		if task.CustomerID != nil {
+			taskCustomerID = *task.CustomerID
+		}
+		sourceBackorderID = task.SourceBackorderID
+
+		// Build picked item snapshots for DN creation.
+		for sku, qty := range perSKUPickedQty {
+			if qty > 0 {
+				pickedItems = append(pickedItems, pickedItemSnapshot{
+					SKU:        sku,
+					Qty:        qty,
+					LotNumbers: perSKULots[sku],
+				})
+			}
+		}
+
+		// Load SO items for BO1 backorder computation (need expected vs picked).
+		if linkedSOID != "" && task.SourceBackorderID == nil {
+			if err := tx.Where("sales_order_id = ?", linkedSOID).Find(&soItems).Error; err != nil {
+				return fmt.Errorf("load so items for BO1: %w", err)
+			}
+		}
+
 		return nil
 	})
 
@@ -932,6 +1092,89 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 
 	if r.AuditService != nil {
 		r.AuditService.Log(ctx, &userId, tools.ActionExecute, "picking_task", id, nil, nil, "", "")
+	}
+
+	// SO3 — post-commit: update sales order picked quantities (outside the picking tx to avoid deadlock).
+	var newSOStatus string
+	if linkedSOID != "" && r.SORepository != nil && len(soPickedPerSKU) > 0 {
+		// Returns new SO status ('completed' | 'partial') — used for DN1/BO1 routing.
+		newSOStatus, _ = r.SORepository.UpdatePickedQty(linkedSOID, soPickedPerSKU) //nolint:errcheck
+	}
+
+	// DN1 — generate delivery note when SO has been advanced (completed or partial).
+	if linkedSOID != "" && taskTenantID != "" && (newSOStatus == "completed" || newSOStatus == "partial") {
+		dnParams := DNCreationParams{
+			TenantID:      taskTenantID,
+			SalesOrderID:  linkedSOID,
+			PickingTaskID: id,
+			CustomerID:    taskCustomerID,
+		}
+		for _, pi := range pickedItems {
+			dnParams.Items = append(dnParams.Items, DNItemCreationParam{
+				ArticleSKU: pi.SKU,
+				Qty:        pi.Qty,
+				LotNumbers: pi.LotNumbers,
+			})
+		}
+		if len(dnParams.Items) > 0 {
+			// Use a new standalone transaction for DN creation (picking is committed).
+			dnTx := r.DB.Begin()
+			if dnTx.Error == nil {
+				if dnID, err := CreateDeliveryNote(dnTx, dnParams); err != nil {
+					dnTx.Rollback()
+					// Log but don't fail — picking is already committed.
+					fmt.Printf("[WARN] CompletePickingTask: failed to create delivery note for picking %s: %v\n", id, err)
+				} else {
+					dnTx.Commit()
+					// DN2 — async PDF generation (fire-and-forget via injected generator).
+					// GeneratePDFAsync already spawns its own goroutine internally — do NOT wrap in another go.
+					if r.DNPDFGen != nil {
+						r.DNPDFGen.GeneratePDFAsync(dnID, taskTenantID)
+					}
+				}
+			}
+		}
+	}
+
+	// BO1 — generate backorders for partial SO (only when NOT sourced from backorder — max depth=1).
+	if newSOStatus == "partial" && sourceBackorderID == nil && len(soItems) > 0 {
+		// Compute remaining per SKU (expected - totalPicked including this picking).
+		// soItems was loaded INSIDE the picking transaction (before commit), so soItem.PickedQty
+		// is the pre-this-picking value from DB. soPickedPerSKU holds the qty picked THIS batch.
+		// totalPicked = pre-pick DB value + this batch qty = correct cumulative total.
+		// NOTE: UpdatePickedQty runs AFTER the picking tx commits, so it does NOT affect soItem.PickedQty here.
+		boParams := make([]BackorderCreationParam, 0)
+		for _, soItem := range soItems {
+			totalPicked := soItem.PickedQty + soPickedPerSKU[soItem.ArticleSKU]
+			if totalPicked < soItem.ExpectedQty {
+				remaining := soItem.ExpectedQty - totalPicked
+				boParams = append(boParams, BackorderCreationParam{
+					TenantID:             taskTenantID,
+					OriginalSalesOrderID: linkedSOID,
+					ArticleSKU:           soItem.ArticleSKU,
+					RemainingQty:         remaining,
+				})
+			}
+		}
+		if len(boParams) > 0 {
+			boTx := r.DB.Begin()
+			if boTx.Error == nil {
+				if err := CreateBackorders(boTx, boParams); err != nil {
+					boTx.Rollback()
+					fmt.Printf("[WARN] CompletePickingTask: failed to create backorders for SO %s: %v\n", linkedSOID, err)
+				} else {
+					boTx.Commit()
+				}
+			}
+		}
+	}
+
+	// BO2 follow-up — if this picking was sourced from a backorder, update its remaining qty.
+	if sourceBackorderID != nil && len(soPickedPerSKU) > 0 {
+		if err := UpdateFulfilledBackorder(r.DB, *sourceBackorderID, soPickedPerSKU); err != nil {
+			// Log only — picking is committed.
+			fmt.Printf("[WARN] CompletePickingTask: failed to update backorder %s: %v\n", *sourceBackorderID, err)
+		}
 	}
 
 	// Emit task_completed notification to the assigned operator (fire-and-forget).
@@ -951,7 +1194,7 @@ func (r *PickingTaskRepository) CompletePickingTask(ctx context.Context, id, use
 // Excel Import / Export
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	f, err := excelize.OpenReader(bytes.NewReader(fileBytes))
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Error al abrir el archivo de Excel"}
@@ -1136,7 +1379,7 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 		Items:          json.RawMessage(itemsJSON),
 	}
 
-	if resp := r.CreatePickingTask(userID, req); resp != nil && resp.Error != nil {
+	if resp := r.CreatePickingTask(userID, tenantID, req); resp != nil && resp.Error != nil {
 		return resp
 	}
 
@@ -1146,8 +1389,8 @@ func (r *PickingTaskRepository) ImportPickingTaskFromExcel(userID string, fileBy
 	}
 }
 
-func (r *PickingTaskRepository) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
-	tasks, errResp := r.GetAllPickingTasks()
+func (r *PickingTaskRepository) ExportPickingTasksToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	tasks, errResp := r.GetAllForTenant(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}

@@ -15,6 +15,7 @@ const articleExistsBySku = `-- name: ArticleExistsBySku :one
 SELECT EXISTS(SELECT 1 FROM articles WHERE sku = $1) AS exists
 `
 
+// INTERNAL USE ONLY. Tenant-scoped variant below.
 func (q *Queries) ArticleExistsBySku(ctx context.Context, sku string) (bool, error) {
 	row := q.db.QueryRow(ctx, articleExistsBySku, sku)
 	var exists bool
@@ -22,19 +23,35 @@ func (q *Queries) ArticleExistsBySku(ctx context.Context, sku string) (bool, err
 	return exists, err
 }
 
+const articleExistsBySkuForTenant = `-- name: ArticleExistsBySkuForTenant :one
+SELECT EXISTS(SELECT 1 FROM articles WHERE sku = $1 AND tenant_id = $2) AS exists
+`
+
+type ArticleExistsBySkuForTenantParams struct {
+	Sku      string      `json:"sku"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ArticleExistsBySkuForTenant(ctx context.Context, arg ArticleExistsBySkuForTenantParams) (bool, error) {
+	row := q.db.QueryRow(ctx, articleExistsBySkuForTenant, arg.Sku, arg.TenantID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createArticle = `-- name: CreateArticle :one
 INSERT INTO articles (
-    sku, name, description, unit_price, presentation,
+    tenant_id, sku, name, description, unit_price, presentation,
     track_by_lot, track_by_serial, track_expiration, rotation_strategy,
     min_quantity, max_quantity, image_url,
     category_id, shelf_life_in_days, safety_stock, batch_number_series,
     serial_number_series, min_order_qty, default_location_id,
     receiving_notes, shipping_notes
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-    $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+    $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
-RETURNING id, sku, name, description, unit_price, presentation,
+RETURNING id, tenant_id, sku, name, description, unit_price, presentation,
           track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
           created_at, updated_at,
@@ -44,6 +61,7 @@ RETURNING id, sku, name, description, unit_price, presentation,
 `
 
 type CreateArticleParams struct {
+	TenantID           pgtype.UUID    `json:"tenant_id"`
 	Sku                string         `json:"sku"`
 	Name               string         `json:"name"`
 	Description        pgtype.Text    `json:"description"`
@@ -69,6 +87,7 @@ type CreateArticleParams struct {
 
 type CreateArticleRow struct {
 	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 	Sku                string           `json:"sku"`
 	Name               string           `json:"name"`
 	Description        pgtype.Text      `json:"description"`
@@ -95,8 +114,10 @@ type CreateArticleRow struct {
 	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
+// All inserts now require tenant_id ($1).
 func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error) {
 	row := q.db.QueryRow(ctx, createArticle,
+		arg.TenantID,
 		arg.Sku,
 		arg.Name,
 		arg.Description,
@@ -122,6 +143,7 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (C
 	var i CreateArticleRow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Sku,
 		&i.Name,
 		&i.Description,
@@ -151,16 +173,22 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (C
 }
 
 const deleteArticle = `-- name: DeleteArticle :exec
-DELETE FROM articles WHERE id = $1
+DELETE FROM articles WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) DeleteArticle(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteArticle, id)
+type DeleteArticleParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant guard prevents cross-tenant delete.
+func (q *Queries) DeleteArticle(ctx context.Context, arg DeleteArticleParams) error {
+	_, err := q.db.Exec(ctx, deleteArticle, arg.ID, arg.TenantID)
 	return err
 }
 
 const getArticleByID = `-- name: GetArticleByID :one
-SELECT id, sku, name, description, unit_price, presentation,
+SELECT id, tenant_id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
        created_at, updated_at,
@@ -174,6 +202,7 @@ LIMIT 1
 
 type GetArticleByIDRow struct {
 	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 	Sku                string           `json:"sku"`
 	Name               string           `json:"name"`
 	Description        pgtype.Text      `json:"description"`
@@ -200,11 +229,95 @@ type GetArticleByIDRow struct {
 	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
+// INTERNAL USE ONLY. HTTP handlers must call GetArticleByIDForTenant.
 func (q *Queries) GetArticleByID(ctx context.Context, id string) (GetArticleByIDRow, error) {
 	row := q.db.QueryRow(ctx, getArticleByID, id)
 	var i GetArticleByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.Sku,
+		&i.Name,
+		&i.Description,
+		&i.UnitPrice,
+		&i.Presentation,
+		&i.TrackByLot,
+		&i.TrackBySerial,
+		&i.TrackExpiration,
+		&i.RotationStrategy,
+		&i.MinQuantity,
+		&i.MaxQuantity,
+		&i.ImageUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CategoryID,
+		&i.ShelfLifeInDays,
+		&i.SafetyStock,
+		&i.BatchNumberSeries,
+		&i.SerialNumberSeries,
+		&i.MinOrderQty,
+		&i.DefaultLocationID,
+		&i.ReceivingNotes,
+		&i.ShippingNotes,
+	)
+	return i, err
+}
+
+const getArticleByIDForTenant = `-- name: GetArticleByIDForTenant :one
+SELECT id, tenant_id, sku, name, description, unit_price, presentation,
+       track_by_lot, track_by_serial, track_expiration, rotation_strategy,
+       min_quantity, max_quantity, image_url, is_active,
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
+FROM articles
+WHERE id = $1 AND tenant_id = $2
+LIMIT 1
+`
+
+type GetArticleByIDForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetArticleByIDForTenantRow struct {
+	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
+}
+
+// HR-style tenant guard. Use for HTTP responses to prevent cross-tenant enumeration.
+func (q *Queries) GetArticleByIDForTenant(ctx context.Context, arg GetArticleByIDForTenantParams) (GetArticleByIDForTenantRow, error) {
+	row := q.db.QueryRow(ctx, getArticleByIDForTenant, arg.ID, arg.TenantID)
+	var i GetArticleByIDForTenantRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
 		&i.Sku,
 		&i.Name,
 		&i.Description,
@@ -234,7 +347,7 @@ func (q *Queries) GetArticleByID(ctx context.Context, id string) (GetArticleByID
 }
 
 const getArticleBySku = `-- name: GetArticleBySku :one
-SELECT id, sku, name, description, unit_price, presentation,
+SELECT id, tenant_id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
        created_at, updated_at,
@@ -248,6 +361,7 @@ LIMIT 1
 
 type GetArticleBySkuRow struct {
 	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 	Sku                string           `json:"sku"`
 	Name               string           `json:"name"`
 	Description        pgtype.Text      `json:"description"`
@@ -274,11 +388,95 @@ type GetArticleBySkuRow struct {
 	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
+// INTERNAL USE ONLY (FK lookups, dashboards). HTTP handlers must call GetArticleBySkuForTenant.
 func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (GetArticleBySkuRow, error) {
 	row := q.db.QueryRow(ctx, getArticleBySku, sku)
 	var i GetArticleBySkuRow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.Sku,
+		&i.Name,
+		&i.Description,
+		&i.UnitPrice,
+		&i.Presentation,
+		&i.TrackByLot,
+		&i.TrackBySerial,
+		&i.TrackExpiration,
+		&i.RotationStrategy,
+		&i.MinQuantity,
+		&i.MaxQuantity,
+		&i.ImageUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CategoryID,
+		&i.ShelfLifeInDays,
+		&i.SafetyStock,
+		&i.BatchNumberSeries,
+		&i.SerialNumberSeries,
+		&i.MinOrderQty,
+		&i.DefaultLocationID,
+		&i.ReceivingNotes,
+		&i.ShippingNotes,
+	)
+	return i, err
+}
+
+const getArticleBySkuForTenant = `-- name: GetArticleBySkuForTenant :one
+SELECT id, tenant_id, sku, name, description, unit_price, presentation,
+       track_by_lot, track_by_serial, track_expiration, rotation_strategy,
+       min_quantity, max_quantity, image_url, is_active,
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
+FROM articles
+WHERE sku = $1 AND tenant_id = $2
+LIMIT 1
+`
+
+type GetArticleBySkuForTenantParams struct {
+	Sku      string      `json:"sku"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetArticleBySkuForTenantRow struct {
+	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
+}
+
+// Per-tenant SKU lookup. Hits articles_tenant_sku_key index.
+func (q *Queries) GetArticleBySkuForTenant(ctx context.Context, arg GetArticleBySkuForTenantParams) (GetArticleBySkuForTenantRow, error) {
+	row := q.db.QueryRow(ctx, getArticleBySkuForTenant, arg.Sku, arg.TenantID)
+	var i GetArticleBySkuForTenantRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
 		&i.Sku,
 		&i.Name,
 		&i.Description,
@@ -309,7 +507,7 @@ func (q *Queries) GetArticleBySku(ctx context.Context, sku string) (GetArticleBy
 
 const listArticles = `-- name: ListArticles :many
 
-SELECT id, sku, name, description, unit_price, presentation,
+SELECT id, tenant_id, sku, name, description, unit_price, presentation,
        track_by_lot, track_by_serial, track_expiration, rotation_strategy,
        min_quantity, max_quantity, image_url, is_active,
        created_at, updated_at,
@@ -322,6 +520,7 @@ ORDER BY created_at ASC
 
 type ListArticlesRow struct {
 	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 	Sku                string           `json:"sku"`
 	Name               string           `json:"name"`
 	Description        pgtype.Text      `json:"description"`
@@ -348,8 +547,13 @@ type ListArticlesRow struct {
 	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
-// Articles CRUD and related queries for sqlc
-// Schema: db/migrations (articles, lots, serials tables)
+// Articles CRUD and related queries for sqlc.
+// Schema: db/migrations (articles, lots, serials tables).
+// S3.5 W1 — every read/write is now tenant-scoped via tenant_id (HR-S3-W5 C2).
+// The legacy global queries (ListArticles, GetArticleBySku, ArticleExistsBySku) remain
+// ONLY for internal lookups (FK validation, stock alerts cron, dashboards) where the
+// caller has no JWT/Config tenant context. HTTP endpoints MUST use the *ForTenant variants.
+// INTERNAL USE ONLY (cron, FK lookups). HTTP handlers must call ListArticlesForTenant.
 func (q *Queries) ListArticles(ctx context.Context) ([]ListArticlesRow, error) {
 	rows, err := q.db.Query(ctx, listArticles)
 	if err != nil {
@@ -361,6 +565,97 @@ func (q *Queries) ListArticles(ctx context.Context) ([]ListArticlesRow, error) {
 		var i ListArticlesRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
+			&i.Sku,
+			&i.Name,
+			&i.Description,
+			&i.UnitPrice,
+			&i.Presentation,
+			&i.TrackByLot,
+			&i.TrackBySerial,
+			&i.TrackExpiration,
+			&i.RotationStrategy,
+			&i.MinQuantity,
+			&i.MaxQuantity,
+			&i.ImageUrl,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CategoryID,
+			&i.ShelfLifeInDays,
+			&i.SafetyStock,
+			&i.BatchNumberSeries,
+			&i.SerialNumberSeries,
+			&i.MinOrderQty,
+			&i.DefaultLocationID,
+			&i.ReceivingNotes,
+			&i.ShippingNotes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArticlesForTenant = `-- name: ListArticlesForTenant :many
+SELECT id, tenant_id, sku, name, description, unit_price, presentation,
+       track_by_lot, track_by_serial, track_expiration, rotation_strategy,
+       min_quantity, max_quantity, image_url, is_active,
+       created_at, updated_at,
+       category_id, shelf_life_in_days, safety_stock, batch_number_series,
+       serial_number_series, min_order_qty, default_location_id,
+       receiving_notes, shipping_notes
+FROM articles
+WHERE tenant_id = $1
+ORDER BY created_at DESC
+`
+
+type ListArticlesForTenantRow struct {
+	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
+	Sku                string           `json:"sku"`
+	Name               string           `json:"name"`
+	Description        pgtype.Text      `json:"description"`
+	UnitPrice          pgtype.Numeric   `json:"unit_price"`
+	Presentation       string           `json:"presentation"`
+	TrackByLot         bool             `json:"track_by_lot"`
+	TrackBySerial      bool             `json:"track_by_serial"`
+	TrackExpiration    bool             `json:"track_expiration"`
+	RotationStrategy   string           `json:"rotation_strategy"`
+	MinQuantity        pgtype.Int4      `json:"min_quantity"`
+	MaxQuantity        pgtype.Int4      `json:"max_quantity"`
+	ImageUrl           pgtype.Text      `json:"image_url"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	CategoryID         pgtype.Text      `json:"category_id"`
+	ShelfLifeInDays    pgtype.Int4      `json:"shelf_life_in_days"`
+	SafetyStock        pgtype.Numeric   `json:"safety_stock"`
+	BatchNumberSeries  pgtype.Text      `json:"batch_number_series"`
+	SerialNumberSeries pgtype.Text      `json:"serial_number_series"`
+	MinOrderQty        pgtype.Numeric   `json:"min_order_qty"`
+	DefaultLocationID  pgtype.Text      `json:"default_location_id"`
+	ReceivingNotes     pgtype.Text      `json:"receiving_notes"`
+	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
+}
+
+// HTTP-facing list. Uses idx_articles_tenant_created (composite covering index).
+func (q *Queries) ListArticlesForTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListArticlesForTenantRow, error) {
+	rows, err := q.db.Query(ctx, listArticlesForTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArticlesForTenantRow{}
+	for rows.Next() {
+		var i ListArticlesForTenantRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
 			&i.Sku,
 			&i.Name,
 			&i.Description,
@@ -398,12 +693,20 @@ func (q *Queries) ListArticles(ctx context.Context) ([]ListArticlesRow, error) {
 
 const listLotsBySku = `-- name: ListLotsBySku :many
 SELECT id, lot_number, sku, quantity, expiration_date, created_at, updated_at, status,
-       lot_notes, manufactured_at, best_before_date
+       lot_notes, manufactured_at, best_before_date, tenant_id
 FROM lots
 WHERE sku = $1
 `
 
-// Lots by SKU (for UpdateArticle warnings)
+// Lots by SKU (for UpdateArticle warnings) — internal, no tenant filter (lots table
+// not yet tenant-scoped; tracked in S3.5 W2).
+// NOTE (S3.5 W2-B): SELECT column list mirrors db/sqlc/models.go::Lot (tenant_id was
+// added at the end by migration 000030); without it sqlc would emit a per-query Row
+// struct and break sqlcLotToDatabase consumers. This query is intentionally global
+// (no tenant filter) because it powers the article-update warning that surfaces
+// "lot rows still exist" feedback when an admin disables track_by_lot. ArticlesService
+// runs in a tenant-scoped controller already; revisiting this for strict tenant scoping
+// is tracked as an articles-domain follow-up (W1 owns articles.sql).
 func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) {
 	rows, err := q.db.Query(ctx, listLotsBySku, sku)
 	if err != nil {
@@ -425,6 +728,7 @@ func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) 
 			&i.LotNotes,
 			&i.ManufacturedAt,
 			&i.BestBeforeDate,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -437,12 +741,16 @@ func (q *Queries) ListLotsBySku(ctx context.Context, sku string) ([]Lot, error) 
 }
 
 const listSerialsBySku = `-- name: ListSerialsBySku :many
-SELECT id, serial_number, sku, status, created_at, updated_at
+SELECT id, serial_number, sku, status, created_at, updated_at, tenant_id
 FROM serials
 WHERE sku = $1
 `
 
-// Serials by SKU (for UpdateArticle warnings)
+// Serials by SKU (for UpdateArticle warnings) — internal helper, intentionally
+// not tenant-filtered (called from already tenant-scoped article controllers).
+// S3.5 W2-A: tenant_id added to SELECT so the row type matches sqlc.Serial after
+// migration 000033 added the column. Without it sqlc emits a per-query Row struct
+// and the sqlcSerialToDatabase helper stops compiling.
 func (q *Queries) ListSerialsBySku(ctx context.Context, sku string) ([]Serial, error) {
 	rows, err := q.db.Query(ctx, listSerialsBySku, sku)
 	if err != nil {
@@ -459,6 +767,7 @@ func (q *Queries) ListSerialsBySku(ctx context.Context, sku string) ([]Serial, e
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -496,8 +805,8 @@ SET
     receiving_notes = $22,
     shipping_notes = $23,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
-RETURNING id, sku, name, description, unit_price, presentation,
+WHERE id = $1 AND tenant_id = $24
+RETURNING id, tenant_id, sku, name, description, unit_price, presentation,
           track_by_lot, track_by_serial, track_expiration, rotation_strategy,
           min_quantity, max_quantity, image_url, is_active,
           created_at, updated_at,
@@ -530,10 +839,12 @@ type UpdateArticleParams struct {
 	DefaultLocationID  pgtype.Text    `json:"default_location_id"`
 	ReceivingNotes     pgtype.Text    `json:"receiving_notes"`
 	ShippingNotes      pgtype.Text    `json:"shipping_notes"`
+	TenantID           pgtype.UUID    `json:"tenant_id"`
 }
 
 type UpdateArticleRow struct {
 	ID                 string           `json:"id"`
+	TenantID           pgtype.UUID      `json:"tenant_id"`
 	Sku                string           `json:"sku"`
 	Name               string           `json:"name"`
 	Description        pgtype.Text      `json:"description"`
@@ -560,6 +871,7 @@ type UpdateArticleRow struct {
 	ShippingNotes      pgtype.Text      `json:"shipping_notes"`
 }
 
+// Tenant guard via WHERE id = $1 AND tenant_id = $24 — prevents cross-tenant update.
 func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (UpdateArticleRow, error) {
 	row := q.db.QueryRow(ctx, updateArticle,
 		arg.ID,
@@ -585,10 +897,12 @@ func (q *Queries) UpdateArticle(ctx context.Context, arg UpdateArticleParams) (U
 		arg.DefaultLocationID,
 		arg.ReceivingNotes,
 		arg.ShippingNotes,
+		arg.TenantID,
 	)
 	var i UpdateArticleRow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Sku,
 		&i.Name,
 		&i.Description,

@@ -21,7 +21,7 @@ func TestArticlesService_ImportJSON_Success(t *testing.T) {
 		{SKU: "SKU-002", Name: "Product Two", Presentation: "box", TrackByLot: "Si"},
 	}
 
-	imported, skipped, errs := svc.ImportArticlesFromJSON(rows)
+	imported, skipped, errs := svc.ImportArticlesFromJSON(testTenantID, rows)
 	assert.Empty(t, errs)
 	assert.Empty(t, skipped)
 	assert.Len(t, imported, 0) // mock returns nil; real repo would return skus
@@ -31,7 +31,7 @@ func TestArticlesService_ImportJSON_EmptyRows(t *testing.T) {
 	repo := &mockArticlesRepo{}
 	svc := NewArticlesService(repo)
 
-	imported, skipped, errs := svc.ImportArticlesFromJSON([]requests.ArticleImportRow{})
+	imported, skipped, errs := svc.ImportArticlesFromJSON(testTenantID, []requests.ArticleImportRow{})
 	assert.Empty(t, errs)
 	assert.Empty(t, skipped)
 	assert.Empty(t, imported)
@@ -46,7 +46,7 @@ func TestArticlesService_ValidateImportRows_Delegates(t *testing.T) {
 	rows := []requests.ArticleImportRow{
 		{SKU: "A", Name: "Alfa", Presentation: "unit"},
 	}
-	results, errResp := svc.ValidateImportRows(rows)
+	results, errResp := svc.ValidateImportRows(testTenantID, rows)
 	// mock returns nil,nil — just verifies delegation doesn't panic
 	assert.Nil(t, errResp)
 	assert.Nil(t, results)
@@ -65,7 +65,7 @@ func TestArticlesService_RotationStrategy_FEFORequiresExpiration(t *testing.T) {
 		TrackExpiration:  false,
 		RotationStrategy: "fefo",
 	}
-	errResp := svc.CreateArticle(req)
+	errResp := svc.CreateArticle(testTenantID, req)
 	require.NotNil(t, errResp)
 	assert.True(t, errResp.Handled)
 	assert.Contains(t, errResp.Message, "FEFO")
@@ -82,7 +82,7 @@ func TestArticlesService_RotationStrategy_FIFONoExpiration(t *testing.T) {
 		TrackExpiration:  false,
 		RotationStrategy: "fifo",
 	}
-	errResp := svc.CreateArticle(req)
+	errResp := svc.CreateArticle(testTenantID, req)
 	assert.Nil(t, errResp)
 }
 
@@ -97,7 +97,7 @@ func TestArticlesService_RotationStrategy_FEFOWithExpiration(t *testing.T) {
 		TrackExpiration:  true,
 		RotationStrategy: "fefo",
 	}
-	errResp := svc.CreateArticle(req)
+	errResp := svc.CreateArticle(testTenantID, req)
 	assert.Nil(t, errResp)
 }
 
@@ -112,7 +112,7 @@ func TestArticlesService_UpdateArticle_LotTrackingDisabledWarning(t *testing.T) 
 	svc := NewArticlesService(repo)
 
 	req := &requests.Article{SKU: "SKU1", Name: "Art", Presentation: "unit", TrackByLot: false}
-	_, errResp, warnings := svc.UpdateArticle("1", req)
+	_, errResp, warnings := svc.UpdateArticle("1", testTenantID, req)
 	assert.Nil(t, errResp)
 	require.Len(t, warnings, 1)
 	assert.Equal(t, "lot_tracking_disabled", warnings[0]["type"])
@@ -127,7 +127,7 @@ func TestArticlesService_UpdateArticle_SerialTrackingDisabledWarning(t *testing.
 	svc := NewArticlesService(repo)
 
 	req := &requests.Article{SKU: "SKU1", Name: "Art", Presentation: "unit", TrackBySerial: false}
-	_, errResp, warnings := svc.UpdateArticle("1", req)
+	_, errResp, warnings := svc.UpdateArticle("1", testTenantID, req)
 	assert.Nil(t, errResp)
 	require.Len(t, warnings, 1)
 	assert.Equal(t, "serial_tracking_disabled", warnings[0]["type"])
@@ -137,7 +137,7 @@ func TestArticlesService_UpdateArticle_NotFound(t *testing.T) {
 	repo := &mockArticlesRepo{byID: map[string]*database.Article{}}
 	svc := NewArticlesService(repo)
 
-	_, errResp, _ := svc.UpdateArticle("999", &requests.Article{SKU: "X", Name: "X", Presentation: "unit"})
+	_, errResp, _ := svc.UpdateArticle("999", testTenantID, &requests.Article{SKU: "X", Name: "X", Presentation: "unit"})
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusNotFound, errResp.StatusCode)
 }

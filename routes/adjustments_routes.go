@@ -17,7 +17,8 @@ var _ ports.AdjustmentsRepository = (*repositories.AdjustmentsRepository)(nil)
 
 func RegisterAdjustmentsRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, auditSvc *services.AuditService, rolesRepo ports.RolesRepository) {
 	_, adjustmentsService := wire.NewAdjustments(db, pool)
-	adjustmentsController := controllers.NewAdjustmentsController(*adjustmentsService, config.JWTSecret, auditSvc)
+	adjustmentsController := controllers.NewAdjustmentsController(*adjustmentsService, config.JWTSecret, auditSvc).
+		WithTenantID(config.TenantID)
 
 	route := router.Group("/adjustments")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))

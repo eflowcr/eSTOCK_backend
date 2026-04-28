@@ -1023,7 +1023,7 @@ func (c *MobileController) ListStockAlerts(ctx *gin.Context) {
 		return
 	}
 	resolved := strings.EqualFold(ctx.Query("resolved"), "true")
-	alerts, resp := c.StockAlerts.GetAllStockAlerts(resolved)
+	alerts, resp := c.StockAlerts.GetAllStockAlerts(tools.TenantIDFromContext(ctx), resolved)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileListStockAlerts", "mobile_list_stock_alerts", resp)
 		return

@@ -10,14 +10,19 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
+	github.com/jung-kurt/gofpdf v1.16.2
+	github.com/lib/pq v1.10.9
+	github.com/redis/go-redis/v9 v9.18.0
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
+	github.com/stripe/stripe-go/v79 v79.12.0
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0
 	github.com/xuri/excelize/v2 v2.9.1
 	golang.org/x/crypto v0.47.0
+	golang.org/x/time v0.15.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlserver v1.6.1
 	gorm.io/gorm v1.31.0
@@ -79,7 +84,6 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/lib/pq v1.10.9 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
@@ -102,7 +106,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
-	github.com/redis/go-redis/v9 v9.18.0 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.6 // indirect
@@ -129,7 +132,6 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/grpc v1.79.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

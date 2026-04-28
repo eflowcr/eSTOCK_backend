@@ -12,21 +12,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	ctrlTenantA = "00000000-0000-0000-0000-000000000001"
+	ctrlTenantB = "00000000-0000-0000-0000-000000000002"
+)
+
 // ─── mock repo ───────────────────────────────────────────────────────────────
+//
+// S3.5 W2-A: mock records the tenantID it was called with so isolation tests
+// can assert the controller forwarded the right tenant.
 
 type mockLocationsRepoCtrl struct {
-	locations []database.Location
-	byID      map[string]*database.Location
-	createErr *responses.InternalResponse
-	updateErr *responses.InternalResponse
-	deleteErr *responses.InternalResponse
+	locations    []database.Location
+	byID         map[string]*database.Location
+	createErr    *responses.InternalResponse
+	updateErr    *responses.InternalResponse
+	deleteErr    *responses.InternalResponse
+	gotTenantIDs []string
 }
 
-func (m *mockLocationsRepoCtrl) GetAllLocations() ([]database.Location, *responses.InternalResponse) {
+func (m *mockLocationsRepoCtrl) recordTenant(t string) { m.gotTenantIDs = append(m.gotTenantIDs, t) }
+
+func (m *mockLocationsRepoCtrl) GetAllLocations(tenantID string) ([]database.Location, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	return m.locations, nil
 }
 
-func (m *mockLocationsRepoCtrl) GetLocationByID(id string) (*database.Location, *responses.InternalResponse) {
+func (m *mockLocationsRepoCtrl) GetLocationByID(tenantID, id string) (*database.Location, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	if m.byID != nil {
 		if l, ok := m.byID[id]; ok {
 			return l, nil
@@ -35,23 +48,28 @@ func (m *mockLocationsRepoCtrl) GetLocationByID(id string) (*database.Location, 
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }
 
-func (m *mockLocationsRepoCtrl) CreateLocation(loc *requests.Location) *responses.InternalResponse {
+func (m *mockLocationsRepoCtrl) CreateLocation(tenantID string, loc *requests.Location) *responses.InternalResponse {
+	m.recordTenant(tenantID)
 	return m.createErr
 }
 
-func (m *mockLocationsRepoCtrl) UpdateLocation(id string, data map[string]interface{}) *responses.InternalResponse {
+func (m *mockLocationsRepoCtrl) UpdateLocation(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
+	m.recordTenant(tenantID)
 	return m.updateErr
 }
 
-func (m *mockLocationsRepoCtrl) DeleteLocation(id string) *responses.InternalResponse {
+func (m *mockLocationsRepoCtrl) DeleteLocation(tenantID, id string) *responses.InternalResponse {
+	m.recordTenant(tenantID)
 	return m.deleteErr
 }
 
-func (m *mockLocationsRepoCtrl) ImportLocationsFromExcel(fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
+func (m *mockLocationsRepoCtrl) ImportLocationsFromExcel(tenantID string, fileBytes []byte) ([]string, []string, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	return []string{"LOC-001"}, nil, nil
 }
 
-func (m *mockLocationsRepoCtrl) ImportLocationsFromJSON(rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+func (m *mockLocationsRepoCtrl) ImportLocationsFromJSON(tenantID string, rows []requests.LocationImportRow) ([]string, []string, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	imported := make([]string, len(rows))
 	for i, r := range rows {
 		imported[i] = r.LocationCode
@@ -59,11 +77,13 @@ func (m *mockLocationsRepoCtrl) ImportLocationsFromJSON(rows []requests.Location
 	return imported, nil, nil
 }
 
-func (m *mockLocationsRepoCtrl) ValidateImportRows(rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+func (m *mockLocationsRepoCtrl) ValidateImportRows(tenantID string, rows []requests.LocationImportRow) ([]responses.LocationValidationResult, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	return []responses.LocationValidationResult{}, nil
 }
 
-func (m *mockLocationsRepoCtrl) ExportLocationsToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockLocationsRepoCtrl) ExportLocationsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	m.recordTenant(tenantID)
 	return []byte("xlsx"), nil
 }
 
@@ -75,7 +95,7 @@ func (m *mockLocationsRepoCtrl) GenerateImportTemplate(language string) ([]byte,
 
 func newLocationsController(repo *mockLocationsRepoCtrl) *LocationsController {
 	svc := services.NewLocationsService(repo)
-	return NewLocationsController(*svc)
+	return NewLocationsController(*svc, ctrlTenantA)
 }
 
 // ─── tests ───────────────────────────────────────────────────────────────────
@@ -93,6 +113,8 @@ func TestLocationsController_GetAllLocations_WithData(t *testing.T) {
 	ctrl := newLocationsController(repo)
 	w := performRequest(ctrl.GetAllLocations, "GET", "/locations", nil, nil)
 	assert.Equal(t, http.StatusOK, w.Code)
+	// S3.5 W2-A: controller must forward its TenantID to the repo.
+	assert.Contains(t, repo.gotTenantIDs, ctrlTenantA)
 }
 
 func TestLocationsController_GetLocationByID_Found(t *testing.T) {
@@ -232,4 +254,24 @@ func TestLocationsController_ImportLocationsFromJSON_EmptyBody(t *testing.T) {
 	ctrl := newLocationsController(&mockLocationsRepoCtrl{})
 	w := performRequest(ctrl.ImportLocationsFromJSON, "POST", "/locations/import/json", nil, nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// TestLocationsController_TenantIsolation_GetAll_returnsOnlyOwnTenant verifies
+// the controller-level TenantID is forwarded to every repo call. With the
+// constructor-injected tenant, no other tenant's id can leak through the HTTP
+// surface.
+func TestLocationsController_TenantIsolation_GetAll_forwardsControllerTenant(t *testing.T) {
+	repo := &mockLocationsRepoCtrl{locations: []database.Location{}}
+	ctrl := newLocationsController(repo)
+
+	// trigger a few endpoints
+	performRequest(ctrl.GetAllLocations, "GET", "/locations", nil, nil)
+	performRequest(ctrl.CreateLocation, "POST", "/locations", requests.Location{LocationCode: "X", Type: "shelf"}, nil)
+	performRequest(ctrl.DeleteLocation, "DELETE", "/locations/x", nil, gin.Params{{Key: "id", Value: "x"}})
+
+	// All tenant IDs forwarded must equal ctrlTenantA — nothing else.
+	for _, tid := range repo.gotTenantIDs {
+		assert.Equal(t, ctrlTenantA, tid)
+	}
+	assert.NotContains(t, repo.gotTenantIDs, ctrlTenantB)
 }

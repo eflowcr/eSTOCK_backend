@@ -4,6 +4,9 @@ import "time"
 
 type Lot struct {
 	ID             string     `gorm:"column:id;primaryKey" json:"id"`
+	// TenantID isolates lots per tenant (S3.5 W2-B). Hidden from JSON because clients
+	// resolve tenancy via JWT/Config, never via response payloads.
+	TenantID       string     `gorm:"column:tenant_id;type:uuid;not null;index" json:"-"`
 	LotNumber      string     `gorm:"column:lot_number" json:"lot_number"`
 	SKU            string     `gorm:"column:sku" json:"sku"`
 	Quantity       float64    `gorm:"column:quantity" json:"quantity"`

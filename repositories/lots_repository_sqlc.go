@@ -34,9 +34,23 @@ func NewLotsRepositorySQLCWithGORM(queries *sqlc.Queries, db *gorm.DB) *LotsRepo
 
 var _ ports.LotsRepository = (*LotsRepositorySQLC)(nil)
 
-func (r *LotsRepositorySQLC) GetAllLots() ([]database.Lot, *responses.InternalResponse) {
+// tenantBadRequest converts a tenant_id parse error into a 400 response.
+func tenantBadRequest(err error) *responses.InternalResponse {
+	return &responses.InternalResponse{
+		Error:      err,
+		Message:    "tenant_id inválido",
+		Handled:    true,
+		StatusCode: responses.StatusBadRequest,
+	}
+}
+
+func (r *LotsRepositorySQLC) GetAllLots(tenantID string) ([]database.Lot, *responses.InternalResponse) {
 	ctx := context.Background()
-	list, err := r.queries.ListLots(ctx)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, tenantBadRequest(err)
+	}
+	list, err := r.queries.ListLots(ctx, tid)
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Failed to fetch lots", Handled: false}
 	}
@@ -47,14 +61,17 @@ func (r *LotsRepositorySQLC) GetAllLots() ([]database.Lot, *responses.InternalRe
 	return out, nil
 }
 
-func (r *LotsRepositorySQLC) GetLotsBySKU(sku *string) ([]database.Lot, *responses.InternalResponse) {
+func (r *LotsRepositorySQLC) GetLotsBySKU(tenantID string, sku *string) ([]database.Lot, *responses.InternalResponse) {
 	ctx := context.Background()
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, tenantBadRequest(err)
+	}
 	var list []sqlc.Lot
-	var err error
 	if sku != nil && *sku != "" {
-		list, err = r.queries.ListLotsBySku(ctx, *sku)
+		list, err = r.queries.ListLotsBySkuForTenant(ctx, sqlc.ListLotsBySkuForTenantParams{TenantID: tid, Sku: *sku})
 	} else {
-		list, err = r.queries.ListLots(ctx)
+		list, err = r.queries.ListLots(ctx, tid)
 	}
 	if err != nil {
 		return nil, &responses.InternalResponse{Error: err, Message: "Failed to fetch lots", Handled: false}
@@ -66,8 +83,12 @@ func (r *LotsRepositorySQLC) GetLotsBySKU(sku *string) ([]database.Lot, *respons
 	return out, nil
 }
 
-func (r *LotsRepositorySQLC) CreateLot(data *requests.CreateLotRequest) *responses.InternalResponse {
+func (r *LotsRepositorySQLC) CreateLot(tenantID string, data *requests.CreateLotRequest) *responses.InternalResponse {
 	ctx := context.Background()
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return tenantBadRequest(err)
+	}
 	var expPg pgtype.Timestamp
 	if data.ExpirationDate != nil && *data.ExpirationDate != "" {
 		if t, err := time.Parse("2006-01-02", *data.ExpirationDate); err == nil {
@@ -81,6 +102,7 @@ func (r *LotsRepositorySQLC) CreateLot(data *requests.CreateLotRequest) *respons
 	qty := pgtype.Numeric{}
 	_ = qty.Scan(data.Quantity)
 	arg := sqlc.CreateLotParams{
+		TenantID:       tid,
 		LotNumber:      data.LotNumber,
 		Sku:            data.SKU,
 		Quantity:       qty,
@@ -90,16 +112,21 @@ func (r *LotsRepositorySQLC) CreateLot(data *requests.CreateLotRequest) *respons
 		ManufacturedAt: ptrStringToPgDate(data.ManufacturedAt),
 		BestBeforeDate: ptrStringToPgDate(data.BestBeforeDate),
 	}
-	_, err := r.queries.CreateLot(ctx, arg)
+	_, err = r.queries.CreateLot(ctx, arg)
 	if err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Failed to create lot", Handled: false}
 	}
 	return nil
 }
 
-func (r *LotsRepositorySQLC) UpdateLot(id string, data map[string]interface{}) *responses.InternalResponse {
+func (r *LotsRepositorySQLC) UpdateLot(tenantID, id string, data map[string]interface{}) *responses.InternalResponse {
 	ctx := context.Background()
-	lot, err := r.queries.GetLotByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return tenantBadRequest(err)
+	}
+	// Tenant-scoped fetch — cross-tenant lookup returns NotFound, never the actual row.
+	lot, err := r.queries.GetLotByIDForTenant(ctx, sqlc.GetLotByIDForTenantParams{ID: id, TenantID: tid})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
@@ -129,6 +156,7 @@ func (r *LotsRepositorySQLC) UpdateLot(id string, data map[string]interface{}) *
 	}
 	arg := sqlc.UpdateLotParams{
 		ID:             lot.ID,
+		TenantID:       tid,
 		LotNumber:      lot.LotNumber,
 		Sku:            lot.Sku,
 		Quantity:       lot.Quantity,
@@ -145,10 +173,14 @@ func (r *LotsRepositorySQLC) UpdateLot(id string, data map[string]interface{}) *
 	return nil
 }
 
-func (r *LotsRepositorySQLC) DeleteLot(id string) *responses.InternalResponse {
+func (r *LotsRepositorySQLC) DeleteLot(tenantID, id string) *responses.InternalResponse {
 	ctx := context.Background()
-	_, err := r.queries.GetLotByID(ctx, id)
+	tid, err := stringToPgUUID(tenantID)
 	if err != nil {
+		return tenantBadRequest(err)
+	}
+	// Tenant-scoped existence check — guarantees Delete cannot affect another tenant's row.
+	if _, err := r.queries.GetLotByIDForTenant(ctx, sqlc.GetLotByIDForTenantParams{ID: id, TenantID: tid}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &responses.InternalResponse{
 				Message:    "Lot not found",
@@ -158,12 +190,14 @@ func (r *LotsRepositorySQLC) DeleteLot(id string) *responses.InternalResponse {
 		}
 		return &responses.InternalResponse{Error: err, Message: "Failed to retrieve lot", Handled: false}
 	}
-	if err := r.queries.DeleteLot(ctx, id); err != nil {
+	if err := r.queries.DeleteLot(ctx, sqlc.DeleteLotParams{ID: id, TenantID: tid}); err != nil {
 		return &responses.InternalResponse{Error: err, Message: "Failed to delete lot", Handled: false}
 	}
 	return nil
 }
 
+// GetLotByID is the internal-use lookup (no tenant filter). HTTP callers must use
+// GetLotByIDForTenant instead.
 func (r *LotsRepositorySQLC) GetLotByID(id string) (*database.Lot, *responses.InternalResponse) {
 	ctx := context.Background()
 	l, err := r.queries.GetLotByID(ctx, id)
@@ -181,8 +215,31 @@ func (r *LotsRepositorySQLC) GetLotByID(id string) (*database.Lot, *responses.In
 	return &lot, nil
 }
 
+// GetLotByIDForTenant scopes the lookup to tenantID. S3.5 W2-B.
+func (r *LotsRepositorySQLC) GetLotByIDForTenant(id, tenantID string) (*database.Lot, *responses.InternalResponse) {
+	ctx := context.Background()
+	tid, err := stringToPgUUID(tenantID)
+	if err != nil {
+		return nil, tenantBadRequest(err)
+	}
+	l, err := r.queries.GetLotByIDForTenant(ctx, sqlc.GetLotByIDForTenantParams{ID: id, TenantID: tid})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &responses.InternalResponse{
+				Message:    "Lot not found",
+				Handled:    true,
+				StatusCode: responses.StatusNotFound,
+			}
+		}
+		return nil, &responses.InternalResponse{Error: err, Message: "Failed to retrieve lot", Handled: false}
+	}
+	lot := sqlcLotToDatabase(l)
+	return &lot, nil
+}
+
 // GetLotTrace delegates to the GORM-based LotsRepository when DB is available.
-func (r *LotsRepositorySQLC) GetLotTrace(lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
+// S3.5 W2-B: tenantID propagates so the lot lookup itself is tenant-scoped.
+func (r *LotsRepositorySQLC) GetLotTrace(tenantID, lotID string) (*responses.LotTraceResponse, *responses.InternalResponse) {
 	if r.DB == nil {
 		return nil, &responses.InternalResponse{
 			Message:    "GetLotTrace requiere conexión GORM — configure DB en el repositorio SQLC",
@@ -191,5 +248,5 @@ func (r *LotsRepositorySQLC) GetLotTrace(lotID string) (*responses.LotTraceRespo
 		}
 	}
 	gormRepo := &LotsRepository{DB: r.DB}
-	return gormRepo.GetLotTrace(lotID)
+	return gormRepo.GetLotTrace(tenantID, lotID)
 }

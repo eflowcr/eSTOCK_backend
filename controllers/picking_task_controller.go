@@ -26,7 +26,7 @@ func (c *PickingTasksController) WithTenantID(tenantID string) *PickingTasksCont
 }
 
 func (c *PickingTasksController) GetAllPickingTasks(ctx *gin.Context) {
-	tasks, response := c.Service.GetAllPickingTasks()
+	tasks, response := c.Service.ListByTenant(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllPickingTasks", "get_all_picking_tasks", response)
 		return
@@ -72,7 +72,7 @@ func (c *PickingTasksController) CreatePickingTask(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.CreatePickingTask(userId, &request)
+	response := c.Service.CreatePickingTask(userId, c.resolveTenantID(ctx), &request)
 	if response != nil {
 		writeErrorResponse(ctx, "CreatePickingTask", "create_picking_task", response)
 		return
@@ -221,7 +221,7 @@ func (c *PickingTasksController) ImportPickingTaskFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.ImportPickingTaskFromExcel(userId, fileBytes)
+	response := c.Service.ImportPickingTaskFromExcel(userId, c.resolveTenantID(ctx), fileBytes)
 	if response != nil {
 		writeErrorResponse(ctx, "ImportPickingTaskFromExcel", "import_picking_task_from_excel", response)
 		return
@@ -242,7 +242,7 @@ func (c *PickingTasksController) DownloadImportTemplate(ctx *gin.Context) {
 }
 
 func (c *PickingTasksController) ExportPickingTasksToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportPickingTasksToExcel()
+	fileBytes, response := c.Service.ExportPickingTasksToExcel(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "ExportPickingTasksToExcel", "export_picking_tasks_to_excel", response)
 		return
@@ -275,4 +275,10 @@ func (c *PickingTasksController) LinkCustomer(ctx *gin.Context) {
 	} else {
 		tools.ResponseOK(ctx, "LinkCustomer", "Cliente vinculado a la tarea", "link_customer", nil, false, "")
 	}
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *PickingTasksController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

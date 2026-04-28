@@ -12,10 +12,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// StockTransfersService orchestrates stock transfer flows.
+//
+// S3.5 W2-A: TenantID is required for ExecuteTransfer because the locations
+// repository is tenant-scoped. Tests that exercise non-execute methods may
+// leave TenantID empty.
 type StockTransfersService struct {
-	Repository       ports.StockTransfersRepository
+	Repository          ports.StockTransfersRepository
 	LocationsRepository ports.LocationsRepository
-	DB               *gorm.DB
+	DB                  *gorm.DB
+	TenantID            string
 }
 
 func NewStockTransfersService(repo ports.StockTransfersRepository) *StockTransfersService {
@@ -23,11 +29,13 @@ func NewStockTransfersService(repo ports.StockTransfersRepository) *StockTransfe
 }
 
 // NewStockTransfersServiceWithExecute builds the service with ExecuteTransfer support (locations + GORM DB).
-func NewStockTransfersServiceWithExecute(repo ports.StockTransfersRepository, locationsRepo ports.LocationsRepository, db *gorm.DB) *StockTransfersService {
+// S3.5 W2-A: tenantID is plumbed through so location lookups are tenant-scoped.
+func NewStockTransfersServiceWithExecute(repo ports.StockTransfersRepository, locationsRepo ports.LocationsRepository, db *gorm.DB, tenantID string) *StockTransfersService {
 	return &StockTransfersService{
-		Repository:         repo,
+		Repository:          repo,
 		LocationsRepository: locationsRepo,
-		DB:                 db,
+		DB:                  db,
+		TenantID:            tenantID,
 	}
 }
 
@@ -118,7 +126,7 @@ func (s *StockTransfersService) ExecuteTransfer(transferID, userID string) (*dat
 		}
 	}
 
-	fromLoc, resp := s.LocationsRepository.GetLocationByID(transfer.FromLocationID)
+	fromLoc, resp := s.LocationsRepository.GetLocationByID(s.TenantID, transfer.FromLocationID)
 	if resp != nil || fromLoc == nil {
 		if resp != nil {
 			return nil, resp
@@ -129,7 +137,7 @@ func (s *StockTransfersService) ExecuteTransfer(transferID, userID string) (*dat
 			StatusCode: responses.StatusNotFound,
 		}
 	}
-	toLoc, resp := s.LocationsRepository.GetLocationByID(transfer.ToLocationID)
+	toLoc, resp := s.LocationsRepository.GetLocationByID(s.TenantID, transfer.ToLocationID)
 	if resp != nil || toLoc == nil {
 		if resp != nil {
 			return nil, resp

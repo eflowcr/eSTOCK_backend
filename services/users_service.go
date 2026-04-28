@@ -25,8 +25,8 @@ func (s *UserService) GetUserByID(id string) (*database.User, *responses.Interna
 	return s.Repository.GetUserByID(id)
 }
 
-func (s *UserService) CreateUser(user *requests.User) *responses.InternalResponse {
-	return s.Repository.CreateUser(user)
+func (s *UserService) CreateUser(tenantID string, user *requests.User) *responses.InternalResponse {
+	return s.Repository.CreateUser(tenantID, user)
 }
 
 func (s *UserService) UpdateUser(id string, data map[string]interface{}) *responses.InternalResponse {
@@ -37,8 +37,8 @@ func (s *UserService) DeleteUser(id string) *responses.InternalResponse {
 	return s.Repository.DeleteUser(id)
 }
 
-func (s *UserService) ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
-	return s.Repository.ImportUsersFromExcel(fileBytes)
+func (s *UserService) ImportUsersFromExcel(tenantID string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
+	return s.Repository.ImportUsersFromExcel(tenantID, fileBytes)
 }
 
 func (s *UserService) ExportUsersToExcel() ([]byte, *responses.InternalResponse) {

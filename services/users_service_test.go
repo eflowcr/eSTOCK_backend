@@ -44,7 +44,7 @@ func (m *mockUsersRepo) GetUserByID(id string) (*database.User, *responses.Inter
 	}
 }
 
-func (m *mockUsersRepo) CreateUser(user *requests.User) *responses.InternalResponse {
+func (m *mockUsersRepo) CreateUser(_ string, user *requests.User) *responses.InternalResponse {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -72,7 +72,7 @@ func (m *mockUsersRepo) DeleteUser(id string) *responses.InternalResponse {
 	return nil
 }
 
-func (m *mockUsersRepo) ImportUsersFromExcel(fileBytes []byte) ([]string, []*responses.InternalResponse) {
+func (m *mockUsersRepo) ImportUsersFromExcel(_ string, fileBytes []byte) ([]string, []*responses.InternalResponse) {
 	return m.importedIDs, m.importErrs
 }
 
@@ -148,7 +148,7 @@ func TestUserService_CreateUser_Success(t *testing.T) {
 		LastName:  "User",
 		RoleID:    "role-1",
 	}
-	errResp := svc.CreateUser(req)
+	errResp := svc.CreateUser("tenant-1", req)
 	require.Nil(t, errResp)
 	require.Len(t, repo.users, 1)
 	assert.Equal(t, "newuser@example.com", repo.users[0].Email)
@@ -164,7 +164,7 @@ func TestUserService_CreateUser_Conflict(t *testing.T) {
 	}
 	svc := NewUserService(repo)
 	req := &requests.User{Email: "dup@example.com", FirstName: "Dup", LastName: "User", RoleID: "role-1"}
-	errResp := svc.CreateUser(req)
+	errResp := svc.CreateUser("tenant-1", req)
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusConflict, errResp.StatusCode)
 }
@@ -260,7 +260,7 @@ func TestUserService_ImportUsersFromExcel_Success(t *testing.T) {
 		importErrs:  nil,
 	}
 	svc := NewUserService(repo)
-	ids, errs := svc.ImportUsersFromExcel([]byte("some-excel"))
+	ids, errs := svc.ImportUsersFromExcel("tenant-1", []byte("some-excel"))
 	assert.Len(t, ids, 2)
 	assert.Nil(t, errs)
 }

@@ -1,32 +1,42 @@
 -- Locations CRUD for sqlc
--- Schema: db/migrations (locations table)
+-- Schema: db/migrations (locations table; tenant_id added in 000032).
+-- All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
 
--- name: ListLocations :many
-SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+-- name: ListLocationsByTenant :many
+-- S3.5 W2-A: tenant_id guard prevents cross-tenant location enumeration.
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 FROM locations
+WHERE tenant_id = $1
 ORDER BY created_at ASC;
 
--- name: GetLocationByID :one
-SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+-- name: GetLocationByIDForTenant :one
+-- S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 FROM locations
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1;
 
--- name: GetLocationByLocationCode :one
-SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at
+-- name: GetLocationByLocationCodeForTenant :one
+-- S3.5 W2-A: tenant_id guard. Used as fallback by ID lookup when caller passed a code.
+SELECT id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id
 FROM locations
-WHERE location_code = $1
+WHERE location_code = $1 AND tenant_id = $2
 LIMIT 1;
 
--- name: LocationExistsByLocationCode :one
-SELECT EXISTS(SELECT 1 FROM locations WHERE location_code = $1) AS exists;
+-- name: LocationExistsByLocationCodeForTenant :one
+-- S3.5 W2-A: tenant_id guard. Used by Create to enforce per-tenant unique location_code.
+SELECT EXISTS(
+  SELECT 1 FROM locations WHERE location_code = $1 AND tenant_id = $2
+) AS exists;
 
 -- name: CreateLocation :one
-INSERT INTO locations (location_code, description, zone, type, is_active, is_way_out)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at;
+-- S3.5 W2-A: tenant_id is required and provided by the controller layer.
+INSERT INTO locations (location_code, description, zone, type, is_active, is_way_out, tenant_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id;
 
--- name: UpdateLocation :one
+-- name: UpdateLocationForTenant :one
+-- S3.5 W2-A: tenant_id guard prevents cross-tenant update.
 UPDATE locations
 SET
     location_code = $2,
@@ -36,8 +46,9 @@ SET
     is_active = $6,
     is_way_out = $7,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
-RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at;
+WHERE id = $1 AND tenant_id = $8
+RETURNING id, location_code, description, zone, type, is_active, is_way_out, created_at, updated_at, tenant_id;
 
--- name: DeleteLocation :exec
-DELETE FROM locations WHERE id = $1;
+-- name: DeleteLocationForTenant :exec
+-- S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+DELETE FROM locations WHERE id = $1 AND tenant_id = $2;

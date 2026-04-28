@@ -20,6 +20,13 @@ type PickingTask struct {
 	CompletedAt *time.Time      `gorm:"column:completed_at" json:"completed_at"`
 	// S2 M2 customer field
 	CustomerID *string `gorm:"column:customer_id" json:"customer_id,omitempty"`
+	// S2.5 M3.1 tenant isolation
+	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
+	// S3-W2-B: SO auto-link (migration 000025)
+	SalesOrderID *string `gorm:"column:sales_order_id" json:"sales_order_id,omitempty"`
+	// S3-W3-A: Backorder fulfillment link (migration 000026).
+	// When set, CompletePickingTask will NOT generate another backorder (max depth=1).
+	SourceBackorderID *string `gorm:"column:source_backorder_id" json:"source_backorder_id,omitempty"`
 }
 
 func (PickingTask) TableName() string {

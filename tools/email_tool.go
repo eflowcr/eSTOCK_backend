@@ -7,7 +7,12 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net/http"
+	"net/smtp"
+	"net/textproto"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -115,6 +120,110 @@ func (r *ResendEmailSender) SendPasswordReset(toEmail, userName, resetLink strin
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SMTPEmailSender — generic SMTP/STARTTLS sender (Brevo, Mailgun, Postmark…)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// SMTPEmailSender sends transactional emails via any standard SMTP relay with
+// STARTTLS + PLAIN auth (compatible with Brevo smtp-relay.brevo.com:587,
+// Mailgun, Postmark SMTP, etc.).
+type SMTPEmailSender struct {
+	Host     string // e.g. "smtp-relay.brevo.com"
+	Port     int    // e.g. 587
+	Username string
+	Password string
+	FromAddr string // e.g. "noreply@eflowsuite.com"
+	AppName  string // e.g. "eSTOCK"
+}
+
+// Send delivers a multipart/alternative email (HTML + plain text) via STARTTLS.
+// It honours ctx cancellation: if the context is already done before dialing,
+// Send returns ctx.Err() immediately without touching the network.
+func (s *SMTPEmailSender) Send(ctx context.Context, to, subject, htmlBody, textBody string) error {
+	// Honour context cancellation before any network I/O.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	from := fmt.Sprintf("%s <%s>", s.AppName, s.FromAddr)
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	auth := smtp.PlainAuth("", s.Username, s.Password, s.Host)
+
+	raw, err := buildMIMEMessage(from, to, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("smtp: build MIME: %w", err)
+	}
+
+	if err := smtp.SendMail(addr, auth, s.FromAddr, []string{to}, raw); err != nil {
+		return fmt.Errorf("smtp: send: %w", err)
+	}
+	return nil
+}
+
+// SendPasswordReset sends the standard password-reset email using the SMTP transport.
+func (s *SMTPEmailSender) SendPasswordReset(toEmail, userName, resetLink string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	htmlBody := renderResetEmailHTML(userName, resetLink, s.AppName)
+	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.", userName, s.AppName, resetLink)
+	return s.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", s.AppName), htmlBody, text)
+}
+
+// buildMIMEMessage constructs a multipart/alternative MIME message with plain
+// text and HTML parts using quoted-printable encoding for the HTML part.
+func buildMIMEMessage(from, to, subject, htmlBody, textBody string) ([]byte, error) {
+	var buf bytes.Buffer
+
+	// RFC 5322 headers.
+	buf.WriteString("From: " + from + "\r\n")
+	buf.WriteString("To: " + to + "\r\n")
+	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("MIME-Version: 1.0\r\n")
+
+	mw := multipart.NewWriter(&buf)
+	buf.WriteString("Content-Type: multipart/alternative; boundary=\"" + mw.Boundary() + "\"\r\n")
+	buf.WriteString("\r\n")
+
+	// Plain-text part.
+	th := make(textproto.MIMEHeader)
+	th.Set("Content-Type", "text/plain; charset=UTF-8")
+	th.Set("Content-Transfer-Encoding", "quoted-printable")
+	pw, err := mw.CreatePart(th)
+	if err != nil {
+		return nil, err
+	}
+	qpw := quotedprintable.NewWriter(pw)
+	if _, err := strings.NewReader(textBody).WriteTo(qpw); err != nil {
+		return nil, err
+	}
+	if err := qpw.Close(); err != nil {
+		return nil, err
+	}
+
+	// HTML part.
+	hh := make(textproto.MIMEHeader)
+	hh.Set("Content-Type", "text/html; charset=UTF-8")
+	hh.Set("Content-Transfer-Encoding", "quoted-printable")
+	hw, err := mw.CreatePart(hh)
+	if err != nil {
+		return nil, err
+	}
+	qph := quotedprintable.NewWriter(hw)
+	if _, err := strings.NewReader(htmlBody).WriteTo(qph); err != nil {
+		return nil, err
+	}
+	if err := qph.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Email templates
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -137,6 +246,110 @@ func RenderNotificationEmail(eventType, title, body string) (htmlBody, text stri
 	default:
 		return renderGenericHTML(title, body), fmt.Sprintf("%s\n\n%s", title, body)
 	}
+}
+
+// RenderTrialEmail returns (subject, htmlBody, textBody) for trial lifecycle emails.
+// templateType is one of: "trial_reminder_7d", "trial_reminder_11d", "trial_reminder_13d", "trial_expired".
+// tenantName and daysLeft are HTML-escaped before embedding.
+func RenderTrialEmail(templateType, tenantName string, daysLeft int) (subject, htmlBody, textBody string) {
+	switch templateType {
+	case "trial_reminder_13d", "trial_reminder_11d", "trial_reminder_7d":
+		subject = fmt.Sprintf("Tu prueba de eSTOCK vence en %d días", daysLeft)
+		htmlBody = renderTrialReminderHTML(tenantName, daysLeft)
+		textBody = fmt.Sprintf(
+			"Hola %s,\n\nTu período de prueba gratuita de eSTOCK vence en %d día(s).\n\n"+
+				"Para continuar usando eSTOCK sin interrupciones, activa tu suscripción en:\nhttps://app.estock.app/billing\n\n"+
+				"Si tienes alguna duda, escríbenos a soporte@eprac.com.\n\neSTOCK — Sistema de gestión de inventario",
+			tenantName, daysLeft,
+		)
+	case "trial_expired":
+		subject = "Tu prueba de eSTOCK ha expirado"
+		htmlBody = renderTrialExpiredHTML(tenantName)
+		textBody = fmt.Sprintf(
+			"Hola %s,\n\nTu período de prueba gratuita de eSTOCK ha finalizado y tu cuenta ha sido suspendida.\n\n"+
+				"Para reactivar tu cuenta y recuperar acceso completo, visita:\nhttps://app.estock.app/billing\n\n"+
+				"Si necesitas ayuda, contáctanos en soporte@eprac.com.\n\neSTOCK — Sistema de gestión de inventario",
+			tenantName,
+		)
+	default:
+		subject = "Aviso sobre tu cuenta eSTOCK"
+		htmlBody = renderGenericHTML("Aviso sobre tu cuenta eSTOCK", fmt.Sprintf("Hola %s, hay un aviso sobre tu cuenta.", html.EscapeString(tenantName)))
+		textBody = fmt.Sprintf("Hola %s,\n\nHay un aviso sobre tu cuenta de eSTOCK.", tenantName)
+	}
+	return
+}
+
+// renderTrialReminderHTML returns a branded HTML email body for a trial reminder.
+// tenantName is HTML-escaped before use.
+func renderTrialReminderHTML(tenantName string, daysLeft int) string {
+	safeName := html.EscapeString(tenantName)
+	urgencyColor := "#F59E0B" // amber — default
+	urgencyLabel := "Recordatorio de prueba"
+	urgencyBg := "#FEF3C7"
+	urgencyText := "#92400E"
+
+	if daysLeft <= 7 {
+		urgencyColor = "#EF4444" // red — urgent
+		urgencyLabel = "Accion requerida — prueba por vencer"
+		urgencyBg = "#FEE2E2"
+		urgencyText = "#991B1B"
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 12px rgba(32,49,115,0.08);">
+    <div style="background:%s;border-left:4px solid %s;padding:12px 16px;border-radius:4px;margin-bottom:24px;">
+      <strong style="color:%s;">%s</strong>
+    </div>
+    <h1 style="color:#203173;font-family:Montserrat,sans-serif;font-weight:700;margin:0 0 16px;font-size:22px;">Tu prueba vence en %d día(s)</h1>
+    <p style="color:#475569;line-height:1.6;margin:0 0 24px;">
+      Hola <strong>%s</strong>,<br><br>
+      Tu período de prueba gratuita de <strong>eSTOCK</strong> vence en <strong>%d día(s)</strong>.
+      Para continuar usando eSTOCK sin interrupciones, activa tu suscripción ahora.
+    </p>
+    <a href="https://app.estock.app/billing"
+       style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">
+      Activar suscripción
+    </a>
+    <p style="color:#94A3B8;font-size:12px;margin-top:32px;">
+      Si tienes alguna pregunta, escríbenos a <a href="mailto:soporte@eprac.com" style="color:#203173;">soporte@eprac.com</a>.<br>
+      eSTOCK — Sistema de gestión de inventario
+    </p>
+  </div>
+</body></html>`,
+		urgencyBg, urgencyColor, urgencyText, urgencyLabel,
+		daysLeft, safeName, daysLeft,
+	)
+}
+
+// renderTrialExpiredHTML returns a branded HTML email body for trial expiration.
+// tenantName is HTML-escaped before use.
+func renderTrialExpiredHTML(tenantName string) string {
+	safeName := html.EscapeString(tenantName)
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:-apple-system,'Plus Jakarta Sans',sans-serif;background:#F0F4FA;margin:0;padding:40px 20px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 12px rgba(32,49,115,0.08);">
+    <div style="background:#FEE2E2;border-left:4px solid #EF4444;padding:12px 16px;border-radius:4px;margin-bottom:24px;">
+      <strong style="color:#991B1B;">Cuenta suspendida</strong>
+    </div>
+    <h1 style="color:#203173;font-family:Montserrat,sans-serif;font-weight:700;margin:0 0 16px;font-size:22px;">Tu prueba de eSTOCK ha expirado</h1>
+    <p style="color:#475569;line-height:1.6;margin:0 0 24px;">
+      Hola <strong>%s</strong>,<br><br>
+      Tu período de prueba gratuita de <strong>eSTOCK</strong> ha finalizado y tu cuenta ha sido <strong>suspendida</strong>.
+      Para recuperar acceso completo y reactivar tu cuenta, actualiza tu plan de facturación.
+    </p>
+    <a href="https://app.estock.app/billing"
+       style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">
+      Reactivar cuenta
+    </a>
+    <p style="color:#94A3B8;font-size:12px;margin-top:32px;">
+      ¿Necesitas ayuda? Contáctanos en <a href="mailto:soporte@eprac.com" style="color:#203173;">soporte@eprac.com</a>.<br>
+      eSTOCK — Sistema de gestión de inventario
+    </p>
+  </div>
+</body></html>`, safeName)
 }
 
 func renderResetEmailHTML(userName, resetLink, appName string) string {

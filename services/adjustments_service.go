@@ -40,8 +40,15 @@ func (s *AdjustmentsService) WithNotifications(n *NotificationsService) *Adjustm
 	return s
 }
 
+// GetAllAdjustments returns all adjustments (no tenant filter).
+// internal use only — bypass tenant. Prefer ListByTenant in HTTP handlers.
 func (s *AdjustmentsService) GetAllAdjustments() ([]database.Adjustment, *responses.InternalResponse) {
 	return s.Repository.GetAllAdjustments()
+}
+
+// ListByTenant returns adjustments scoped to a specific tenant (S2.5 M3.1).
+func (s *AdjustmentsService) ListByTenant(tenantID string) ([]database.Adjustment, *responses.InternalResponse) {
+	return s.Repository.GetAllForTenant(tenantID)
 }
 
 func (s *AdjustmentsService) GetAdjustmentByID(id string) (*database.Adjustment, *responses.InternalResponse) {
@@ -52,7 +59,7 @@ func (s *AdjustmentsService) GetAdjustmentDetails(id string) (*dto.AdjustmentDet
 	return s.Repository.GetAdjustmentDetails(id)
 }
 
-func (s *AdjustmentsService) CreateAdjustment(userId string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
+func (s *AdjustmentsService) CreateAdjustment(userId string, tenantID string, adjustment requests.CreateAdjustment) (*database.Adjustment, *responses.InternalResponse) {
 	// Quantity must be non-negative; direction is determined by adjustment_type or reason code.
 	if adjustment.AdjustmentQuantity < 0 {
 		return nil, &responses.InternalResponse{
@@ -140,11 +147,11 @@ func (s *AdjustmentsService) CreateAdjustment(userId string, adjustment requests
 	req := adjustment
 	req.AdjustmentQuantity = signedQuantity
 	req.AdjustmentType = adjType
-	return s.Repository.CreateAdjustment(userId, req)
+	return s.Repository.CreateAdjustment(userId, tenantID, req)
 }
 
-func (s *AdjustmentsService) ExportAdjustmentsToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportAdjustmentsToExcel()
+func (s *AdjustmentsService) ExportAdjustmentsToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportAdjustmentsToExcel(tenantID)
 }
 
 // CreateAdjustmentTx applies the same reason-code/sign logic as CreateAdjustment

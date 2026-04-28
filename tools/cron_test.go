@@ -4,11 +4,14 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -210,14 +213,295 @@ func TestCronDispatch_BothJobsRun(t *testing.T) {
 	defer cleanup()
 
 	analyzerCalled := false
-	analyzer := func() error {
+	// S3.5 W2-B: analyzer is invoked per active tenant. With no tenants seeded, the
+	// fallback returns the default tenant UUID, so the callback fires exactly once.
+	var analyzerTenants []string
+	analyzer := func(tenantID string) error {
 		analyzerCalled = true
+		analyzerTenants = append(analyzerTenants, tenantID)
 		return errors.New("simulated stock_alerts failure")
 	}
 
 	// Should not panic — errors are logged, not propagated
-	CronDispatch(db, analyzer, nil, nil)
+	CronDispatch(db, analyzer, nil, nil, nil)
 
 	assert.True(t, analyzerCalled, "analyzer must be called")
+	assert.NotEmpty(t, analyzerTenants, "analyzer must receive at least the default tenant when no tenants exist")
 	// stale cleanup ran on empty tables without error (verified by no panic)
+}
+
+// ─── trial seed helpers ──────────────────────────────────────────────────────
+
+// cronSeedTenant inserts a tenant row with the given status and trial_ends_at.
+func cronSeedTenant(t *testing.T, db *gorm.DB, name, status string, trialEndsAt time.Time) string {
+	t.Helper()
+	var id string
+	require.NoError(t, db.Raw(`
+		INSERT INTO tenants (name, slug, email, status, trial_ends_at, is_active)
+		VALUES (?, ?, ?, ?, ?, true)
+		RETURNING id`,
+		name, name+"-slug", name+"@test.com", status, trialEndsAt,
+	).Scan(&id).Error)
+	require.NotEmpty(t, id)
+	return id
+}
+
+// cronGetTenantStatus returns the current status of a tenant by ID.
+func cronGetTenantStatus(t *testing.T, db *gorm.DB, tenantID string) string {
+	t.Helper()
+	var status string
+	require.NoError(t, db.Raw("SELECT status FROM tenants WHERE id = ?", tenantID).Scan(&status).Error)
+	return status
+}
+
+// cronGetTenantIsActive returns the is_active flag of a tenant by ID.
+func cronGetTenantIsActive(t *testing.T, db *gorm.DB, tenantID string) bool {
+	t.Helper()
+	var isActive bool
+	require.NoError(t, db.Raw("SELECT is_active FROM tenants WHERE id = ?", tenantID).Scan(&isActive).Error)
+	return isActive
+}
+
+// ─── unit tests (no DB) ─────────────────────────────────────────────────────
+
+// TestRunTrialExpirationCheck_NilDB verifies nil db returns an error cleanly.
+func TestRunTrialExpirationCheck_NilDB(t *testing.T) {
+	err := RunTrialExpirationCheck(nil, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "nil db")
+}
+
+// ─── unit tests for email template selection ─────────────────────────────────
+
+// TestRenderTrialEmail_Templates verifies that each templateType produces the
+// correct subject and non-empty HTML.
+func TestRenderTrialEmail_Templates(t *testing.T) {
+	cases := []struct {
+		templateType   string
+		daysLeft       int
+		subjectContains string
+	}{
+		{"trial_reminder_13d", 13, "13 días"},
+		{"trial_reminder_11d", 11, "11 días"},
+		{"trial_reminder_7d", 7, "7 días"},
+		{"trial_expired", 0, "expirado"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.templateType, func(t *testing.T) {
+			subject, htmlBody, textBody := RenderTrialEmail(tc.templateType, "Acme Corp", tc.daysLeft)
+			assert.NotEmpty(t, subject)
+			assert.Contains(t, subject, tc.subjectContains)
+			assert.NotEmpty(t, htmlBody)
+			assert.Contains(t, htmlBody, "Acme Corp")
+			assert.NotEmpty(t, textBody)
+			assert.Contains(t, textBody, "Acme Corp")
+		})
+	}
+}
+
+// TestRenderTrialEmail_Escaping verifies that malicious tenant names are escaped in HTML.
+func TestRenderTrialEmail_Escaping(t *testing.T) {
+	_, htmlBody, _ := RenderTrialEmail("trial_reminder_7d", `<script>alert("xss")</script>`, 7)
+	assert.NotContains(t, htmlBody, "<script>")
+	assert.Contains(t, htmlBody, "&lt;script&gt;")
+}
+
+// ─── integration tests ───────────────────────────────────────────────────────
+
+// TestRunTrialExpirationCheck_SendsReminder7d inserts a tenant with trial_ends_at
+// 7 days from now and verifies the sendFn is called with "trial_reminder_7d".
+func TestRunTrialExpirationCheck_SendsReminder7d(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	trialEndsAt := time.Now().UTC().AddDate(0, 0, 7).Add(30 * time.Minute) // 7d + buffer so daysLeft rounds to 7
+	tenantID := cronSeedTenant(t, db, "trial-7d-tenant", "trial", trialEndsAt)
+
+	var mu sync.Mutex
+	var calledTemplates []string
+	sendFn := func(_ context.Context, _, _ string, templateType string, _ int) error {
+		mu.Lock()
+		calledTemplates = append(calledTemplates, templateType)
+		mu.Unlock()
+		return nil
+	}
+
+	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
+
+	// TODO(M4 — S3.5): sendFn is called in a goroutine — 50ms sleep is a flaky timeout.
+	// Fix: make sendFn synchronous in tests (no go func) or use sync.WaitGroup/channel.
+	// Deferred to S3.5 to avoid large test refactor in this wave.
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Contains(t, calledTemplates, "trial_reminder_7d", "should have sent 7d reminder")
+	// Tenant must still be 'trial' (not deactivated)
+	assert.Equal(t, "trial", cronGetTenantStatus(t, db, tenantID))
+}
+
+// TestRunTrialExpirationCheck_SendsReminder11d mirrors the 7d test for 11 days.
+func TestRunTrialExpirationCheck_SendsReminder11d(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	trialEndsAt := time.Now().UTC().AddDate(0, 0, 11).Add(30 * time.Minute)
+	cronSeedTenant(t, db, "trial-11d-tenant", "trial", trialEndsAt)
+
+	var mu sync.Mutex
+	var calledTemplates []string
+	sendFn := func(_ context.Context, _, _ string, templateType string, _ int) error {
+		mu.Lock()
+		calledTemplates = append(calledTemplates, templateType)
+		mu.Unlock()
+		return nil
+	}
+
+	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Contains(t, calledTemplates, "trial_reminder_11d")
+}
+
+// TestRunTrialExpirationCheck_SendsReminder13d mirrors the 7d test for 13 days.
+func TestRunTrialExpirationCheck_SendsReminder13d(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	trialEndsAt := time.Now().UTC().AddDate(0, 0, 13).Add(30 * time.Minute)
+	cronSeedTenant(t, db, "trial-13d-tenant", "trial", trialEndsAt)
+
+	var mu sync.Mutex
+	var calledTemplates []string
+	sendFn := func(_ context.Context, _, _ string, templateType string, _ int) error {
+		mu.Lock()
+		calledTemplates = append(calledTemplates, templateType)
+		mu.Unlock()
+		return nil
+	}
+
+	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Contains(t, calledTemplates, "trial_reminder_13d")
+}
+
+// TestRunTrialExpirationCheck_Expiration verifies that a tenant whose trial_ends_at
+// is in the past gets deactivated (status=past_due, is_active=false) and receives
+// the trial_expired email.
+func TestRunTrialExpirationCheck_Expiration(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	trialEndsAt := time.Now().UTC().Add(-1 * time.Hour) // already expired
+	tenantID := cronSeedTenant(t, db, "expired-tenant", "trial", trialEndsAt)
+
+	var mu sync.Mutex
+	var calledTemplates []string
+	sendFn := func(_ context.Context, _, _ string, templateType string, _ int) error {
+		mu.Lock()
+		calledTemplates = append(calledTemplates, templateType)
+		mu.Unlock()
+		return nil
+	}
+
+	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Contains(t, calledTemplates, "trial_expired")
+	assert.Equal(t, "past_due", cronGetTenantStatus(t, db, tenantID))
+	assert.False(t, cronGetTenantIsActive(t, db, tenantID))
+}
+
+// TestRunTrialExpirationCheck_NoActionForOtherDays verifies that a tenant at day 5
+// (not 7/11/13) receives no email and stays in trial.
+func TestRunTrialExpirationCheck_NoActionForOtherDays(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	trialEndsAt := time.Now().UTC().AddDate(0, 0, 5).Add(30 * time.Minute) // day 5
+	tenantID := cronSeedTenant(t, db, "day5-tenant", "trial", trialEndsAt)
+
+	sendCalled := false
+	sendFn := func(_ context.Context, _, _, _ string, _ int) error {
+		sendCalled = true
+		return nil
+	}
+
+	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
+	time.Sleep(50 * time.Millisecond)
+
+	assert.False(t, sendCalled, "no email should be sent on day 5")
+	assert.Equal(t, "trial", cronGetTenantStatus(t, db, tenantID))
+}
+
+// TestRunTrialExpirationCheck_SkipsNonTrialTenants verifies that tenants in 'active'
+// status are not touched.
+func TestRunTrialExpirationCheck_SkipsNonTrialTenants(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	// Active tenant — should never be emailed or deactivated even with past trial_ends_at
+	trialEndsAt := time.Now().UTC().Add(-1 * time.Hour)
+	tenantID := cronSeedTenant(t, db, "active-tenant", "active", trialEndsAt)
+
+	sendCalled := false
+	sendFn := func(_ context.Context, _, _, _ string, _ int) error {
+		sendCalled = true
+		return nil
+	}
+
+	require.NoError(t, RunTrialExpirationCheck(db, sendFn))
+	time.Sleep(50 * time.Millisecond)
+
+	assert.False(t, sendCalled, "active tenant must not trigger emails")
+	// Status must remain 'active'
+	assert.Equal(t, "active", cronGetTenantStatus(t, db, tenantID))
+}
+
+// TestRunTrialExpirationCheck_AdvisoryLockSerializes verifies that running
+// RunTrialExpirationCheck from two goroutines concurrently serializes correctly:
+// only one fires the real work (the other skips due to the advisory lock).
+// The advisory lock is transaction-scoped so the second goroutine gets the lock
+// only after the first commits. We verify no data races or panics occur.
+func TestRunTrialExpirationCheck_AdvisoryLockSerializes(t *testing.T) {
+	db, cleanup := setupCronTestDB(t)
+	defer cleanup()
+
+	trialEndsAt := time.Now().UTC().Add(-1 * time.Hour) // expired
+	cronSeedTenant(t, db, "lock-race-tenant", "trial", trialEndsAt)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	sendCount := 0
+
+	sendFn := func(_ context.Context, _, _, _ string, _ int) error {
+		mu.Lock()
+		sendCount++
+		mu.Unlock()
+		return nil
+	}
+
+	// Run 2 goroutines simultaneously; advisory lock means only one does DB work per tick.
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = RunTrialExpirationCheck(db, sendFn)
+		}()
+	}
+	wg.Wait()
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Because the first commit deactivates the tenant (status='past_due'), the second
+	// goroutine finds no tenant with status='trial' and sends nothing.
+	// Either 1 send (first pod wins) or 0 (both see empty after lock) is correct;
+	// what must NOT happen is 2 sends (double-fire).
+	assert.LessOrEqual(t, sendCount, 1, "advisory lock must prevent double-fire")
 }

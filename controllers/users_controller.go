@@ -59,7 +59,16 @@ func (c *UserController) CreateUser(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.CreateUser(&user)
+	// S3.5 W5.5 (HR-S3.5 C2): the new user inherits the calling admin's tenant_id from
+	// the JWT — never the pod env var. Without this an admin from tenant 2 would create
+	// users that ended up in whichever tenant Config.TenantID points to.
+	tenantID := tools.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tools.ResponseUnauthorized(ctx, "CreateUser", "tenant no identificado en token", "create_user")
+		return
+	}
+
+	response := c.Service.CreateUser(tenantID, &user)
 
 	if response != nil {
 		writeErrorResponse(ctx, "CreateUser", "create_user", response)
@@ -119,7 +128,13 @@ func (c *UserController) ImportUsersFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	importedUsers, errorResponses := c.Service.ImportUsersFromExcel(fileBytes)
+	tenantID := tools.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tools.ResponseUnauthorized(ctx, "ImportUsersFromExcel", "tenant no identificado en token", "import_users_from_excel")
+		return
+	}
+
+	importedUsers, errorResponses := c.Service.ImportUsersFromExcel(tenantID, fileBytes)
 
 	if len(importedUsers) == 0 && len(errorResponses) > 0 {
 		resp := errorResponses[0]

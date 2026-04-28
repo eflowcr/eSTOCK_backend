@@ -28,7 +28,7 @@ func (m *mockAuthRepo) Login(login requests.Login) (*responses.LoginResponse, *r
 	return m.loginResp, m.loginErr
 }
 
-func (m *mockAuthRepo) RequestPasswordReset(_ context.Context, _ string) *responses.InternalResponse {
+func (m *mockAuthRepo) RequestPasswordReset(_ context.Context, _ string, _ string) *responses.InternalResponse {
 	return m.requestResetResp
 }
 

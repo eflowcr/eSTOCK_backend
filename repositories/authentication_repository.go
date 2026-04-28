@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/rs/zerolog/log"
@@ -22,6 +24,11 @@ type AuthenticationRepository struct {
 	Config       configuration.Config
 	EmailSender  tools.EmailSender
 	AuditService *services.AuditService
+	// RolesRepository is optional. When set (S3.8+), Login looks up the role's permissions
+	// blob and embeds it into the issued JWT so RequirePermission can authorize without
+	// a per-request DB roundtrip. When nil, GenerateToken receives nil permissions and the
+	// resulting token forces RequirePermission to fall back to the DB lookup (legacy path).
+	RolesRepository ports.RolesRepository
 }
 
 func (a *AuthenticationRepository) Login(login requests.Login) (*responses.LoginResponse, *responses.InternalResponse) {
@@ -60,7 +67,36 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 		}
 	}
 
-	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID)
+	// S3.5 W5.5 (HR-S3.5 C2 fix) — embed the user's own tenant_id into the JWT. Pre-W5.5
+	// this used Config.TenantID (the env-injected pod default), which silently moved every
+	// authenticated user into whichever tenant the pod was started for — defeating the
+	// W3 multi-tenant claim plumbing. After 000035_users_tenant_id, every users row carries
+	// tenant_id (backfilled to the default tenant for legacy rows; freshly stamped on signup),
+	// so the JWT now correctly scopes to the user's own tenant.
+	//
+	// Defense in depth: if user.TenantID is empty (should never happen post-migration —
+	// the column is NOT NULL), we fall back to Config.TenantID rather than issue a token
+	// with no tenant claim, since RequirePermission would 401 it anyway.
+	tenantClaim := user.TenantID
+	if tenantClaim == "" {
+		tenantClaim = a.Config.TenantID
+	}
+
+	// S3.8 — embed the role's permissions blob into the JWT so RequirePermission
+	// can authorize without a per-request DB lookup. Failure here is non-fatal:
+	// we issue a permissions-less token and RequirePermission falls back to the
+	// DB lookup (legacy path). Avoids breaking login if the roles table is
+	// briefly unreachable; permissions remain enforced either way.
+	var permsClaim json.RawMessage
+	if a.RolesRepository != nil && user.RoleID != "" {
+		if perms, permErr := a.RolesRepository.GetRolePermissions(context.Background(), user.RoleID); permErr == nil && len(perms) > 0 {
+			permsClaim = perms
+		} else if permErr != nil {
+			log.Warn().Err(permErr).Str("role_id", user.RoleID).Msg("login: failed to load role permissions for JWT — issuing token without permissions claim (DB fallback will apply)")
+		}
+	}
+
+	token, err := tools.GenerateToken(a.JWTSecret, user.ID, user.Name, user.Email, user.RoleID, tenantClaim, permsClaim)
 	if err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
@@ -78,7 +114,7 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 	}, nil
 }
 
-func (r *AuthenticationRepository) RequestPasswordReset(ctx context.Context, email string) *responses.InternalResponse {
+func (r *AuthenticationRepository) RequestPasswordReset(ctx context.Context, email string, originURL string) *responses.InternalResponse {
 	// 1. Buscar usuario activo por email (case-insensitive)
 	var user database.User
 	err := r.DB.Where("LOWER(email) = LOWER(?) AND is_active = true", email).First(&user).Error
@@ -122,10 +158,7 @@ func (r *AuthenticationRepository) RequestPasswordReset(ctx context.Context, ema
 		}
 
 		// 4. Enviar email (no bloquear si falla — el token ya está creado)
-		appURL := r.Config.AppURL
-		if appURL == "" {
-			appURL = "http://localhost:4200"
-		}
+		appURL := tools.ResolveFrontendURL(originURL, r.Config.AppURL)
 		resetLink := fmt.Sprintf("%s/reset-password?token=%s", appURL, token)
 		userName := user.FirstName
 		if userName == "" {

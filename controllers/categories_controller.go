@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"strconv"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
@@ -17,7 +19,32 @@ func NewCategoriesController(service services.CategoriesService, tenantID string
 }
 
 func (c *CategoriesController) List(ctx *gin.Context) {
-	categories, resp := c.Service.ListByTenant(c.TenantID)
+	// C1 fix: wire M8 SQL filter params to HTTP query string (mirrors clients_controller.go).
+	var isActive *bool
+	if a := ctx.Query("is_active"); a != "" {
+		v := a == "true"
+		isActive = &v
+	}
+	var search *string
+	if s := ctx.Query("search"); s != "" {
+		search = &s
+	}
+	var limit *int32
+	if l := ctx.Query("limit"); l != "" {
+		if n, err := strconv.ParseInt(l, 10, 32); err == nil && n > 0 {
+			v := int32(n)
+			limit = &v
+		}
+	}
+	var offset *int32
+	if o := ctx.Query("offset"); o != "" {
+		if n, err := strconv.ParseInt(o, 10, 32); err == nil && n >= 0 {
+			v := int32(n)
+			offset = &v
+		}
+	}
+
+	categories, resp := c.Service.ListByTenantFiltered(c.resolveTenantID(ctx), isActive, search, limit, offset)
 	if resp != nil {
 		writeErrorResponse(ctx, "ListCategories", "list_categories", resp)
 		return
@@ -26,7 +53,7 @@ func (c *CategoriesController) List(ctx *gin.Context) {
 }
 
 func (c *CategoriesController) GetTree(ctx *gin.Context) {
-	tree, resp := c.Service.GetTree(c.TenantID)
+	tree, resp := c.Service.GetTree(c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "GetCategoriesTree", "get_categories_tree", resp)
 		return
@@ -58,7 +85,7 @@ func (c *CategoriesController) Create(ctx *gin.Context) {
 		return
 	}
 
-	cat, resp := c.Service.Create(c.TenantID, &req)
+	cat, resp := c.Service.Create(c.resolveTenantID(ctx), &req)
 	if resp != nil {
 		writeErrorResponse(ctx, "CreateCategory", "create_category", resp)
 		return
@@ -81,7 +108,7 @@ func (c *CategoriesController) Update(ctx *gin.Context) {
 		return
 	}
 
-	cat, resp := c.Service.Update(id, &req, c.TenantID)
+	cat, resp := c.Service.Update(id, &req, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "UpdateCategory", "update_category", resp)
 		return
@@ -99,4 +126,10 @@ func (c *CategoriesController) SoftDelete(ctx *gin.Context) {
 		return
 	}
 	tools.ResponseOK(ctx, "DeleteCategory", "Categoría eliminada", "delete_category", nil, false, "")
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *CategoriesController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

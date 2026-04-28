@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -57,9 +58,42 @@ type Config struct {
 	// Example: "noreply@estock.app". Defaults to "noreply@estock.app" if unset.
 	ResendFromAddress string
 
+	// SMTP configuration — generic SMTP/STARTTLS sender (env: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD).
+	// Used when RESEND_API_KEY is unset. Compatible with Brevo, Mailgun SMTP, Postmark SMTP, etc.
+	// SMTPPort defaults to 587 (STARTTLS) if unset.
+	SMTPHost     string // SMTP_HOST
+	SMTPPort     int    // SMTP_PORT (default 587)
+	SMTPUsername string // SMTP_USERNAME
+	SMTPPassword string // SMTP_PASSWORD
+
+	// EmailFrom is the "from" address used by the SMTP sender (env: EMAIL_FROM).
+	// Defaults to "noreply@eflowsuite.com" if unset.
+	EmailFrom string // EMAIL_FROM
+
+	// EmailFromName is the display name used by the SMTP sender (env: EMAIL_FROM_NAME).
+	// Defaults to "eSTOCK" if unset.
+	EmailFromName string // EMAIL_FROM_NAME
+
 	// TenantID is the UUID of the current tenant (env: TENANT_ID).
 	// Single-tenant mode: defaults to a fixed UUID if unset.
 	TenantID string
+
+	// EnableSignup gates the self-service signup endpoint (env: ENABLE_SIGNUP).
+	// Default: true in development, false in all other environments.
+	// Keep false in prod until S3.5 (articles tenant_id isolation is complete).
+	EnableSignup bool
+
+	// Stripe billing configuration (S3-W5-B).
+	// StripeSecretKey is the Stripe secret API key (env: STRIPE_SECRET_KEY).
+	StripeSecretKey string
+	// StripeWebhookSecret is the webhook endpoint signing secret (env: STRIPE_WEBHOOK_SECRET).
+	StripeWebhookSecret string
+	// StripePriceStarter is the Stripe Price ID for the Starter plan (env: STRIPE_PRICE_STARTER).
+	StripePriceStarter string
+	// StripePricePro is the Stripe Price ID for the Pro plan (env: STRIPE_PRICE_PRO).
+	StripePricePro string
+	// StripePriceEnterprise is the Stripe Price ID for the Enterprise plan (env: STRIPE_PRICE_ENTERPRISE).
+	StripePriceEnterprise string
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -92,10 +126,45 @@ func LoadConfig() (Config, error) {
 		AppURL:               os.Getenv("APP_URL"),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		ResendFromAddress:    os.Getenv("RESEND_FROM_ADDRESS"),
+		SMTPHost:             os.Getenv("SMTP_HOST"),
+		SMTPUsername:         os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:         os.Getenv("SMTP_PASSWORD"),
+		EmailFrom:            os.Getenv("EMAIL_FROM"),
+		EmailFromName:        os.Getenv("EMAIL_FROM_NAME"),
 		TenantID:             os.Getenv("TENANT_ID"),
+		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripePriceStarter:   os.Getenv("STRIPE_PRICE_STARTER"),
+		StripePricePro:       os.Getenv("STRIPE_PRICE_PRO"),
+		StripePriceEnterprise: os.Getenv("STRIPE_PRICE_ENTERPRISE"),
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"
+	}
+
+	// SMTP port: parse SMTP_PORT env var; default to 587 (STARTTLS).
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		if p, err := strconv.Atoi(raw); err == nil && p > 0 {
+			cfg.SMTPPort = p
+		}
+	}
+	if cfg.SMTPPort == 0 {
+		cfg.SMTPPort = 587
+	}
+
+	// SMTP from defaults.
+	if cfg.EmailFrom == "" {
+		cfg.EmailFrom = "noreply@eflowsuite.com"
+	}
+	if cfg.EmailFromName == "" {
+		cfg.EmailFromName = "eSTOCK"
+	}
+
+	// EnableSignup: explicit env var takes priority; defaults to true in development, false elsewhere.
+	if raw := os.Getenv("ENABLE_SIGNUP"); raw != "" {
+		cfg.EnableSignup = strings.EqualFold(raw, "true")
+	} else if strings.EqualFold(cfg.Environment, "development") {
+		cfg.EnableSignup = true
 	}
 	if cfg.DBSource == "" {
 		cfg.DBSource = os.Getenv("DATABASE_URL")
@@ -123,6 +192,11 @@ func LoadConfig() (Config, error) {
 
 const minJWTSecretLength = 32
 
+// TODO(M6 — S3.5): log a startup warning if any STRIPE_* var is unset when billing routes are
+// registered. Currently billing routes are always registered (activate_routes.go) even when
+// STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are empty — checkout panics or returns cryptic errors.
+// Add: if cfg.StripeSecretKey == "" { log.Warn().Msg("STRIPE_SECRET_KEY not set — billing disabled") }
+// Deferred to S3.5 since current deploy uses env vars; risk is ops error, not code bug.
 func validateRequired(cfg Config) error {
 	if cfg.JWTSecret == "" {
 		return fmt.Errorf("missing required config: JWT_SECRET (or Secret)")

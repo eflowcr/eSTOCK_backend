@@ -88,32 +88,40 @@ func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.Authenti
 }
 
 // NewAuthenticationWithRoles builds the auth service with roles repo so login response includes permissions.
+// S3.8: also threads rolesRepo into the repository so the issued JWT embeds the permissions claim.
 func NewAuthenticationWithRoles(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository) (ports.AuthenticationRepository, *services.AuthenticationService) {
 	r := &repositories.AuthenticationRepository{
-		DB:          db,
-		JWTSecret:   config.JWTSecret,
-		Config:      config,
-		EmailSender: EmailSenderForConfig(config),
+		DB:              db,
+		JWTSecret:       config.JWTSecret,
+		Config:          config,
+		EmailSender:     EmailSenderForConfig(config),
+		RolesRepository: rolesRepo,
 	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
 // NewAuthenticationWithAudit builds the auth service with roles repo and audit service.
+// S3.8: also threads rolesRepo into the repository so the issued JWT embeds the permissions claim.
 func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository, auditSvc *services.AuditService) (ports.AuthenticationRepository, *services.AuthenticationService) {
 	r := &repositories.AuthenticationRepository{
-		DB:           db,
-		JWTSecret:    config.JWTSecret,
-		Config:       config,
-		EmailSender:  EmailSenderForConfig(config),
-		AuditService: auditSvc,
+		DB:              db,
+		JWTSecret:       config.JWTSecret,
+		Config:          config,
+		EmailSender:     EmailSenderForConfig(config),
+		AuditService:    auditSvc,
+		RolesRepository: rolesRepo,
 	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
-// EmailSenderForConfig returns the appropriate EmailSender for the current environment.
-// In production with RESEND_API_KEY set, returns ResendEmailSender. Otherwise returns LoggerEmailSender.
+// EmailSenderForConfig returns the appropriate EmailSender based on available credentials.
+//
+// Priority order:
+//  1. RESEND_API_KEY set → ResendEmailSender (Resend API)
+//  2. SMTP_HOST set      → SMTPEmailSender (generic SMTP/STARTTLS — Brevo, Mailgun, etc.)
+//  3. Neither set        → LoggerEmailSender (dev/test fallback; logs to stdout)
 func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
-	if config.Environment == "production" && config.ResendAPIKey != "" {
+	if config.ResendAPIKey != "" {
 		fromAddr := config.ResendFromAddress
 		if fromAddr == "" {
 			fromAddr = "noreply@estock.app"
@@ -122,6 +130,16 @@ func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
 			APIKey:   config.ResendAPIKey,
 			FromAddr: fromAddr,
 			AppName:  "eSTOCK",
+		}
+	}
+	if config.SMTPHost != "" {
+		return &tools.SMTPEmailSender{
+			Host:     config.SMTPHost,
+			Port:     config.SMTPPort,
+			Username: config.SMTPUsername,
+			Password: config.SMTPPassword,
+			FromAddr: config.EmailFrom,
+			AppName:  config.EmailFromName,
 		}
 	}
 	return &tools.LoggerEmailSender{}
@@ -144,8 +162,18 @@ func NewGamification(db *gorm.DB) (ports.GamificationRepository, *services.Gamif
 
 // NewInventory builds InventoryRepository and InventoryService. When pool is non-nil, injects
 // ArticlesRepository so GetPickSuggestionsBySKU sorts by rotation (FIFO/FEFO) then quantity.
+//
+// S3.5 W2-A: tenantID is left empty here to preserve the legacy signature for
+// internal callers (sales orders, backorders) that compose their own inventory
+// repo. Routes that handle live HTTP traffic must use NewInventoryWithConfig.
 func NewInventory(db *gorm.DB, pool *pgxpool.Pool) (ports.InventoryRepository, *services.InventoryService) {
-	r := &repositories.InventoryRepository{DB: db}
+	return NewInventoryWithConfig(db, pool, configuration.Config{})
+}
+
+// NewInventoryWithConfig is identical to NewInventory but stamps the configured
+// tenant_id on every inventory_lots row created via this repository.
+func NewInventoryWithConfig(db *gorm.DB, pool *pgxpool.Pool, config configuration.Config) (ports.InventoryRepository, *services.InventoryService) {
+	r := &repositories.InventoryRepository{DB: db, TenantID: config.TenantID}
 	var articlesRepo ports.ArticlesRepository
 	if pool != nil {
 		articlesRepo, _ = NewArticles(db, pool)
@@ -188,8 +216,15 @@ func NewLots(db *gorm.DB, pool *pgxpool.Pool) (ports.LotsRepository, *services.L
 }
 
 // NewPickingTask builds PickingTaskRepository and PickingTaskService.
-func NewPickingTask(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService) (ports.PickingTaskRepository, *services.PickingTaskService) {
-	r := &repositories.PickingTaskRepository{DB: db, AuditService: auditSvc, NotificationsSvc: notifSvc}
+// soRepo is optional (nil-safe): when non-nil, SO3 cross-domain link is active and
+// CompletePickingTask will update picked quantities on the linked sales order.
+func NewPickingTask(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService, soRepo repositories.SOPickedQtyUpdater) (ports.PickingTaskRepository, *services.PickingTaskService) {
+	r := &repositories.PickingTaskRepository{
+		DB:               db,
+		AuditService:     auditSvc,
+		NotificationsSvc: notifSvc,
+		SORepository:     soRepo,
+	}
 	return r, services.NewPickingTaskService(r)
 }
 
@@ -338,4 +373,55 @@ func NewStockSettings(pool *pgxpool.Pool) (ports.StockSettingsRepository, *servi
 	queries := sqlc.New(pool)
 	r := repositories.NewStockSettingsRepositorySQLC(queries)
 	return r, services.NewStockSettingsService(r)
+}
+
+// NewPurchaseOrders builds PurchaseOrdersRepository and PurchaseOrdersService.
+// Uses GORM (consistent with ReceivingTasksRepository and PickingTaskRepository).
+func NewPurchaseOrders(db *gorm.DB) (ports.PurchaseOrdersRepository, *services.PurchaseOrdersService) {
+	r := &repositories.PurchaseOrdersRepository{DB: db}
+	return r, services.NewPurchaseOrdersService(r)
+}
+
+// NewSalesOrders builds SalesOrdersRepository and SalesOrdersService (S3-W2-B).
+// Injects InventoryService for FEFO pick suggestions on submit.
+func NewSalesOrders(db *gorm.DB, config configuration.Config) (ports.SalesOrdersRepository, *services.SalesOrdersService) {
+	invRepo := &repositories.InventoryRepository{DB: db}
+	invSvc := services.NewInventoryService(invRepo, nil)
+
+	r := &repositories.SalesOrdersRepository{
+		DB:           db,
+		InventorySvc: invSvc,
+	}
+	return r, services.NewSalesOrdersService(r)
+}
+
+// NewDeliveryNotes builds DeliveryNotesRepository and DeliveryNotesService (S3-W3-A DN3).
+func NewDeliveryNotes(db *gorm.DB) (ports.DeliveryNotesRepository, *services.DeliveryNotesService) {
+	r := &repositories.DeliveryNotesRepository{DB: db}
+	return r, services.NewDeliveryNotesService(r, db)
+}
+
+// NewBackorders builds BackordersRepository and BackordersService (S3-W3-A BO1+BO2).
+// Injects InventoryService for FEFO pick suggestions on fulfill.
+func NewBackorders(db *gorm.DB) (ports.BackordersRepository, *services.BackordersService) {
+	invRepo := &repositories.InventoryRepository{DB: db}
+	invSvc := services.NewInventoryService(invRepo, nil)
+	r := &repositories.BackordersRepository{
+		DB:           db,
+		InventorySvc: invSvc,
+	}
+	return r, services.NewBackordersService(r)
+}
+
+// NewPickingTaskWithDN builds PickingTaskRepository with SO + DN PDF generator injected (S3-W3-A).
+func NewPickingTaskWithDN(db *gorm.DB, auditSvc *services.AuditService, notifSvc *services.NotificationsService, soRepo repositories.SOPickedQtyUpdater) (ports.PickingTaskRepository, *services.PickingTaskService) {
+	_, dnSvc := NewDeliveryNotes(db)
+	r := &repositories.PickingTaskRepository{
+		DB:               db,
+		AuditService:     auditSvc,
+		NotificationsSvc: notifSvc,
+		SORepository:     soRepo,
+		DNPDFGen:         dnSvc,
+	}
+	return r, services.NewPickingTaskService(r)
 }

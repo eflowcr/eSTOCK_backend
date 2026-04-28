@@ -32,6 +32,10 @@ func (m *mockReceivingTasksRepo) GetAllReceivingTasks() ([]responses.ReceivingTa
 	return m.allTasks, m.allTasksErr
 }
 
+func (m *mockReceivingTasksRepo) GetAllForTenant(tenantID string) ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	return m.allTasks, m.allTasksErr
+}
+
 func (m *mockReceivingTasksRepo) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	if m.byIDErr != nil {
 		return nil, m.byIDErr
@@ -48,7 +52,7 @@ func (m *mockReceivingTasksRepo) GetReceivingTaskByID(id string) (*database.Rece
 	}
 }
 
-func (m *mockReceivingTasksRepo) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+func (m *mockReceivingTasksRepo) CreateReceivingTask(userId string, tenantID string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	return m.createErr
 }
 
@@ -56,11 +60,11 @@ func (m *mockReceivingTasksRepo) UpdateReceivingTask(id string, data map[string]
 	return m.updateErr
 }
 
-func (m *mockReceivingTasksRepo) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (m *mockReceivingTasksRepo) ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	return m.importErr
 }
 
-func (m *mockReceivingTasksRepo) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockReceivingTasksRepo) ExportReceivingTaskToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return m.exportBytes, m.exportErr
 }
 
@@ -143,7 +147,7 @@ func TestReceivingTasksService_CreateReceivingTask_Success(t *testing.T) {
 		InboundNumber: "INB-001",
 		Priority:      "normal",
 	}
-	errResp := svc.CreateReceivingTask("user-1", req)
+	errResp := svc.CreateReceivingTask("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.Nil(t, errResp)
 }
 
@@ -157,7 +161,7 @@ func TestReceivingTasksService_CreateReceivingTask_Error(t *testing.T) {
 	}
 	svc := NewReceivingTasksService(repo)
 	req := &requests.CreateReceivingTaskRequest{InboundNumber: "INB-DUP"}
-	errResp := svc.CreateReceivingTask("user-1", req)
+	errResp := svc.CreateReceivingTask("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusConflict, errResp.StatusCode)
 }
@@ -186,7 +190,7 @@ func TestReceivingTasksService_UpdateReceivingTask_Error(t *testing.T) {
 func TestReceivingTasksService_ImportReceivingTaskFromExcel_Success(t *testing.T) {
 	repo := &mockReceivingTasksRepo{}
 	svc := NewReceivingTasksService(repo)
-	errResp := svc.ImportReceivingTaskFromExcel("user-1", []byte("data"))
+	errResp := svc.ImportReceivingTaskFromExcel("user-1", "00000000-0000-0000-0000-000000000001", []byte("data"))
 	require.Nil(t, errResp)
 }
 
@@ -199,7 +203,7 @@ func TestReceivingTasksService_ImportReceivingTaskFromExcel_Error(t *testing.T) 
 		},
 	}
 	svc := NewReceivingTasksService(repo)
-	errResp := svc.ImportReceivingTaskFromExcel("user-1", []byte("bad"))
+	errResp := svc.ImportReceivingTaskFromExcel("user-1", "00000000-0000-0000-0000-000000000001", []byte("bad"))
 	require.NotNil(t, errResp)
 	assert.Equal(t, responses.StatusBadRequest, errResp.StatusCode)
 }
@@ -209,7 +213,7 @@ func TestReceivingTasksService_ExportReceivingTaskToExcel_Success(t *testing.T) 
 		exportBytes: []byte("excel-data"),
 	}
 	svc := NewReceivingTasksService(repo)
-	data, errResp := svc.ExportReceivingTaskToExcel()
+	data, errResp := svc.ExportReceivingTaskToExcel("tenant-1")
 	require.Nil(t, errResp)
 	assert.Equal(t, []byte("excel-data"), data)
 }
@@ -223,7 +227,7 @@ func TestReceivingTasksService_ExportReceivingTaskToExcel_Error(t *testing.T) {
 		},
 	}
 	svc := NewReceivingTasksService(repo)
-	data, errResp := svc.ExportReceivingTaskToExcel()
+	data, errResp := svc.ExportReceivingTaskToExcel("tenant-1")
 	require.NotNil(t, errResp)
 	assert.Nil(t, data)
 }
@@ -394,7 +398,7 @@ func TestReceivingTasksService_CreateReceivingTask_InvalidSupplier_Returns400(t 
 		InboundNumber: "INB-001",
 		SupplierID:    &supplierID,
 	}
-	resp := svc.CreateReceivingTask("user-1", req)
+	resp := svc.CreateReceivingTask("user-1", "00000000-0000-0000-0000-000000000001", req)
 	require.NotNil(t, resp)
 	assert.Equal(t, responses.StatusBadRequest, resp.StatusCode)
 }
@@ -411,19 +415,22 @@ type mockReceivingTasksRepoCapture struct {
 func (m *mockReceivingTasksRepoCapture) GetAllReceivingTasks() ([]responses.ReceivingTasksView, *responses.InternalResponse) {
 	return nil, nil
 }
+func (m *mockReceivingTasksRepoCapture) GetAllForTenant(tenantID string) ([]responses.ReceivingTasksView, *responses.InternalResponse) {
+	return nil, nil
+}
 func (m *mockReceivingTasksRepoCapture) GetReceivingTaskByID(id string) (*database.ReceivingTask, *responses.InternalResponse) {
 	return nil, nil
 }
-func (m *mockReceivingTasksRepoCapture) CreateReceivingTask(userId string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
+func (m *mockReceivingTasksRepoCapture) CreateReceivingTask(userId string, tenantID string, task *requests.CreateReceivingTaskRequest) *responses.InternalResponse {
 	return nil
 }
 func (m *mockReceivingTasksRepoCapture) UpdateReceivingTask(id string, data map[string]interface{}) *responses.InternalResponse {
 	return nil
 }
-func (m *mockReceivingTasksRepoCapture) ImportReceivingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
+func (m *mockReceivingTasksRepoCapture) ImportReceivingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
 	return nil
 }
-func (m *mockReceivingTasksRepoCapture) ExportReceivingTaskToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockReceivingTasksRepoCapture) ExportReceivingTaskToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return nil, nil
 }
 func (m *mockReceivingTasksRepoCapture) CompleteFullTask(id string, location, userId string) *responses.InternalResponse {

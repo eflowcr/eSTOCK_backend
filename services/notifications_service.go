@@ -36,7 +36,7 @@ func NewNotificationsService(repo ports.NotificationsRepository, emailSender too
 // Send creates an in-app notification and optionally emails the user using their stored preferences
 // (defaults: in_app=true, email=true, push=false). Email is fire-and-forget with a 5s timeout.
 func (s *NotificationsService) Send(ctx context.Context, userID, eventType, title, body, resourceType, resourceID string) error {
-	prefs, _ := s.repo.GetPreferences(userID)
+	prefs, _ := s.repo.GetPreferences(userID, s.tenantID)
 	pref, hasPref := prefs[eventType]
 	if !hasPref {
 		pref = defaultPrefs
@@ -108,9 +108,9 @@ func (s *NotificationsService) Send(ctx context.Context, userID, eventType, titl
 	return nil
 }
 
-// GetPreferences returns stored preferences for a user.
+// GetPreferences returns stored preferences for a user scoped to the service's tenantID.
 func (s *NotificationsService) GetPreferences(userID string) ([]database.NotificationPreference, error) {
-	prefs, resp := s.repo.ListPreferences(userID)
+	prefs, resp := s.repo.ListPreferences(userID, s.tenantID)
 	if resp != nil {
 		return nil, resp.Error
 	}

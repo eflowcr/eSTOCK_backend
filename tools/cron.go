@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -87,19 +88,21 @@ func RunStaleReservationsCleanup(db *gorm.DB) error {
 }
 
 // RunStockAlertAnalysis corre el análisis de alertas de stock (low + expiring).
-// HR1-C2: usa pg_try_advisory_xact_lock (transaction-scoped) dentro de db.Transaction(),
-// igual que RunStaleReservationsCleanup. El lock se libera automáticamente al commit/rollback,
-// eliminando el bug donde lock y unlock corrían en distintas conexiones del pool (session-level
-// pg_try_advisory_lock + defer pg_advisory_unlock en conexiones distintas del pool).
-// analyzer() corre dentro de la misma transacción; GORM maneja transacciones anidadas vía
-// savepoints, por lo que los Begin() internos del repo no causan deadlock.
-func RunStockAlertAnalysis(db *gorm.DB, analyzer func() error) error {
+// HR1-C2: usa pg_try_advisory_xact_lock (transaction-scoped) dentro de db.Transaction().
+// El lock se libera automáticamente al commit/rollback.
+//
+// S3.5 W2-B: el analyzer ahora se ejecuta una vez por tenant activo. La firma
+// `analyzer(tenantID string) error` permite al caller (main, admin_cron) inyectar
+// la lógica concreta (Analyze + LotExpiration por tenant) sin dependencia de servicios
+// — evita ciclos de import. La iteración consulta `tenants` directamente; si la tabla
+// no existe (deploys S2/S2.5 antiguos) se hace fallback al tenant default para preservar
+// el comportamiento single-tenant.
+func RunStockAlertAnalysis(db *gorm.DB, analyzer func(tenantID string) error) error {
 	if db == nil {
 		return errors.New("cron: nil db")
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		// Advisory lock a nivel de transacción — un pod a la vez.
-		// Se libera automáticamente al commit/rollback.
 		var locked bool
 		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(987654321)").Scan(&locked).Error; err != nil {
 			return err
@@ -108,8 +111,49 @@ func RunStockAlertAnalysis(db *gorm.DB, analyzer func() error) error {
 			log.Debug().Msg("cron: stock_alerts: otro pod tiene el lock, skipping")
 			return nil
 		}
-		return analyzer()
+
+		tenantIDs, err := activeTenantIDs(tx)
+		if err != nil {
+			return fmt.Errorf("stock_alerts: list tenants: %w", err)
+		}
+
+		for _, tid := range tenantIDs {
+			if err := analyzer(tid); err != nil {
+				// Don't abort the whole run — log and continue so one bad tenant does
+				// not starve every other tenant of fresh alerts.
+				log.Error().Err(err).Str("tenant_id", tid).Msg("cron: stock_alerts: analyzer failed for tenant")
+			}
+		}
+		return nil
 	})
+}
+
+// activeTenantIDs returns the set of tenant UUIDs eligible for cron processing.
+// Falls back to the global default tenant UUID when the `tenants` table is missing
+// (older deployments) or empty — preserves single-tenant behavior pre-S3.
+func activeTenantIDs(tx *gorm.DB) ([]string, error) {
+	const defaultTenantID = "00000000-0000-0000-0000-000000000001"
+
+	// Cheap probe: if `tenants` doesn't exist, return the default tenant.
+	var exists bool
+	if err := tx.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tenants')").
+		Scan(&exists).Error; err != nil || !exists {
+		return []string{defaultTenantID}, nil
+	}
+
+	var ids []string
+	if err := tx.Raw(`
+		SELECT id::text FROM tenants
+		 WHERE deleted_at IS NULL
+		   AND (is_active IS NULL OR is_active = true)
+		   AND (status IS NULL OR status NOT IN ('past_due','cancelled','suspended'))
+	`).Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []string{defaultTenantID}, nil
+	}
+	return ids, nil
 }
 
 // LotExpirationWindow describes a lot approaching expiration.
@@ -125,9 +169,20 @@ type LotExpirationWindow struct {
 // RunLotExpirationCheck queries lots expiring in the next 8 days and calls notifyFn for each.
 // It emits "lot_expiring_7d" for lots with 6-8 days to expire, and "lot_expiring_1d" for 0-2 days.
 // notifyFn is responsible for calling NotificationsService.Send; it's injected to avoid import cycles.
-func RunLotExpirationCheck(db *gorm.DB, notifyFn func(eventType, title, body string) error) error {
+//
+// S3.5 W5.5 (HR-S3.5 C3): now iterates per active tenant. Pre-W5.5 the helper queried lots
+// globally and dispatched notifications via a single notifyFn — every tenant's expiring lot
+// triggered emails to whichever tenant's admins the closure happened to capture (tenant 1
+// in single-pod deploys). Now each per-tenant pass calls notifyFn(tenantID, ...) so the
+// caller wires admins for THAT tenant. A failure for one tenant logs and continues.
+func RunLotExpirationCheck(db *gorm.DB, notifyFn func(tenantID, eventType, title, body string) error) error {
 	if db == nil {
 		return errors.New("cron: nil db")
+	}
+
+	tenantIDs, err := activeTenantIDs(db)
+	if err != nil {
+		return fmt.Errorf("lot_expiration_check: list tenants: %w", err)
 	}
 
 	type lotRow struct {
@@ -137,42 +192,50 @@ func RunLotExpirationCheck(db *gorm.DB, notifyFn func(eventType, title, body str
 		ExpirationDate *time.Time `gorm:"column:expiration_date"`
 	}
 
-	var lots []lotRow
 	now := time.Now().UTC()
 	in8days := now.AddDate(0, 0, 8)
 
-	if err := db.Table("lots").
-		Select("id, lot_number, sku, expiration_date").
-		Where("expiration_date IS NOT NULL AND expiration_date BETWEEN ? AND ? AND quantity > 0", now, in8days).
-		Scan(&lots).Error; err != nil {
-		return fmt.Errorf("lot_expiration_check: query: %w", err)
-	}
-
-	for _, lot := range lots {
-		if lot.ExpirationDate == nil {
-			continue
-		}
-		days := int(lot.ExpirationDate.Sub(now).Hours() / 24)
-
-		var eventType, title, body string
-		switch {
-		case days <= 2:
-			eventType = "lot_expiring_1d"
-			title = fmt.Sprintf("⚠ Lote por vencer: %s (%s)", lot.LotNumber, lot.SKU)
-			body = fmt.Sprintf("El lote %s del SKU %s vence en %d día(s) (%s).",
-				lot.LotNumber, lot.SKU, days, lot.ExpirationDate.Format("2006-01-02"))
-		case days <= 8:
-			eventType = "lot_expiring_7d"
-			title = fmt.Sprintf("Lote próximo a vencer: %s (%s)", lot.LotNumber, lot.SKU)
-			body = fmt.Sprintf("El lote %s del SKU %s vence en %d día(s) (%s). Tome acción pronto.",
-				lot.LotNumber, lot.SKU, days, lot.ExpirationDate.Format("2006-01-02"))
-		default:
+	for _, tid := range tenantIDs {
+		var lots []lotRow
+		if err := db.Table("lots").
+			Select("id, lot_number, sku, expiration_date").
+			Where("tenant_id = ? AND expiration_date IS NOT NULL AND expiration_date BETWEEN ? AND ? AND quantity > 0",
+				tid, now, in8days).
+			Scan(&lots).Error; err != nil {
+			// Don't abort the whole run — log and continue so one bad tenant does
+			// not starve every other tenant of expiration alerts.
+			log.Error().Err(err).Str("tenant_id", tid).Msg("cron: lot_expiration: query failed for tenant")
 			continue
 		}
 
-		if notifyFn != nil {
-			if err := notifyFn(eventType, title, body); err != nil {
-				log.Warn().Err(err).Str("lot", lot.LotNumber).Str("event", eventType).Msg("cron: lot_expiration notify failed")
+		for _, lot := range lots {
+			if lot.ExpirationDate == nil {
+				continue
+			}
+			days := int(lot.ExpirationDate.Sub(now).Hours() / 24)
+
+			var eventType, title, body string
+			switch {
+			case days <= 2:
+				eventType = "lot_expiring_1d"
+				title = fmt.Sprintf("⚠ Lote por vencer: %s (%s)", lot.LotNumber, lot.SKU)
+				body = fmt.Sprintf("El lote %s del SKU %s vence en %d día(s) (%s).",
+					lot.LotNumber, lot.SKU, days, lot.ExpirationDate.Format("2006-01-02"))
+			case days <= 8:
+				eventType = "lot_expiring_7d"
+				title = fmt.Sprintf("Lote próximo a vencer: %s (%s)", lot.LotNumber, lot.SKU)
+				body = fmt.Sprintf("El lote %s del SKU %s vence en %d día(s) (%s). Tome acción pronto.",
+					lot.LotNumber, lot.SKU, days, lot.ExpirationDate.Format("2006-01-02"))
+			default:
+				continue
+			}
+
+			if notifyFn != nil {
+				if err := notifyFn(tid, eventType, title, body); err != nil {
+					log.Warn().Err(err).
+						Str("tenant_id", tid).Str("lot", lot.LotNumber).Str("event", eventType).
+						Msg("cron: lot_expiration notify failed")
+				}
 			}
 		}
 	}
@@ -182,8 +245,19 @@ func RunLotExpirationCheck(db *gorm.DB, notifyFn func(eventType, title, body str
 
 // RunLowStockNotifications queries open stock_alerts and calls notifyFn for each unresolved low-stock alert.
 // notifyFn is injected to avoid import cycles with services.
-func RunLowStockNotifications(db *gorm.DB, notifyFn func(sku, message string) error) error {
+//
+// S3.5 W5.5 (HR-S3.5 C3): per-tenant iteration. Same rationale as RunLotExpirationCheck —
+// pre-W5.5 alerts were dispatched globally so a tenant 2 low-stock alert would email tenant 1
+// admins. Now notifyFn receives the tenant_id so the caller can scope the recipient list.
+// A failure for one tenant logs and continues.
+func RunLowStockNotifications(db *gorm.DB, notifyFn func(tenantID, sku, message string) error) error {
 	if db == nil {
+		return nil
+	}
+
+	tenantIDs, err := activeTenantIDs(db)
+	if err != nil {
+		log.Warn().Err(err).Msg("cron: low_stock_notifications: list tenants failed")
 		return nil
 	}
 
@@ -192,35 +266,185 @@ func RunLowStockNotifications(db *gorm.DB, notifyFn func(sku, message string) er
 		Message string `gorm:"column:message"`
 	}
 
-	var alerts []alertRow
-	if err := db.Table("stock_alerts").
-		Select("sku, message").
-		Where("is_resolved = false AND alert_type = 'low_stock'").
-		Order("created_at DESC").
-		Limit(50).
-		Scan(&alerts).Error; err != nil {
-		log.Warn().Err(err).Msg("cron: low_stock_notifications query failed")
-		return nil
-	}
+	for _, tid := range tenantIDs {
+		var alerts []alertRow
+		if err := db.Table("stock_alerts").
+			Select("sku, message").
+			Where("tenant_id = ? AND is_resolved = false AND alert_type = 'low_stock'", tid).
+			Order("created_at DESC").
+			Limit(50).
+			Scan(&alerts).Error; err != nil {
+			log.Warn().Err(err).Str("tenant_id", tid).Msg("cron: low_stock_notifications query failed for tenant")
+			continue
+		}
 
-	for _, a := range alerts {
-		if notifyFn != nil {
-			if err := notifyFn(a.SKU, a.Message); err != nil {
-				log.Warn().Err(err).Str("sku", a.SKU).Msg("cron: low_stock notify failed")
+		for _, a := range alerts {
+			if notifyFn != nil {
+				if err := notifyFn(tid, a.SKU, a.Message); err != nil {
+					log.Warn().Err(err).
+						Str("tenant_id", tid).Str("sku", a.SKU).
+						Msg("cron: low_stock notify failed")
+				}
 			}
 		}
 	}
 	return nil
 }
 
+// TrialEmailSender is the minimal interface RunTrialExpirationCheck needs from
+// a notifications service. Using an interface avoids an import cycle between
+// tools and services packages.
+type TrialEmailSender interface {
+	SendTrialEmail(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error
+}
+
+// trialTenantRow is the raw DB row selected for each active trial tenant.
+type trialTenantRow struct {
+	ID          string    `gorm:"column:id"`
+	Name        string    `gorm:"column:name"`
+	Email       string    `gorm:"column:email"`
+	TrialEndsAt time.Time `gorm:"column:trial_ends_at"`
+}
+
+// RunTrialExpirationCheck inspects all tenants in 'trial' status and:
+//   - Sends a reminder email at exactly 13, 11, or 7 days remaining.
+//   - Marks the tenant as past_due + deactivates it when trial has expired (daysLeft <= 0).
+//
+// Advisory lock 987654323 (transaction-scoped) ensures only one pod fires per tick.
+// Email sends are fire-and-forget via sendFn — a failure never blocks the cron.
+// sendFn signature: (ctx, toEmail, tenantName, templateType, daysLeft) error
+// templateType is one of: "trial_reminder_7d", "trial_reminder_11d", "trial_reminder_13d", "trial_expired".
+func RunTrialExpirationCheck(db *gorm.DB, sendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error) error {
+	if db == nil {
+		return errors.New("cron: nil db")
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Advisory lock (transaction-scoped) — released automatically on commit/rollback.
+		var locked bool
+		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(987654323)").Scan(&locked).Error; err != nil {
+			return err
+		}
+		if !locked {
+			log.Debug().Msg("trial_expiration: otro pod tiene el lock, skipping")
+			return nil
+		}
+
+		var tenants []trialTenantRow
+		if err := tx.Raw(`
+			SELECT id, name, email, trial_ends_at
+			  FROM tenants
+			 WHERE status = 'trial'
+			   AND deleted_at IS NULL
+		`).Scan(&tenants).Error; err != nil {
+			return fmt.Errorf("trial_expiration: query tenants: %w", err)
+		}
+
+		now := time.Now().UTC()
+		ctx := context.Background()
+
+		for _, t := range tenants {
+			endsAt := t.TrialEndsAt.UTC()
+			// TODO(CS1 — S3.5): integer truncation means a tenant who signed up at 23:59 with
+			// trial_ends_at 14d later at 23:59 will show daysLeft=6 at midnight on day 7 (only
+			// 23h elapsed). Use math.Round or add +0.5 before int() to fix off-by-one on reminder day.
+			daysLeft := int(endsAt.Sub(now).Hours() / 24)
+
+			switch {
+			case daysLeft <= 0:
+				// Trial expired — mark tenant past_due and deactivate.
+				if err := tx.Exec(`
+					UPDATE tenants
+					   SET status     = 'past_due',
+					       is_active  = false,
+					       updated_at = NOW()
+					 WHERE id = ? AND status = 'trial'
+				`, t.ID).Error; err != nil {
+					log.Error().Err(err).Str("tenant_id", t.ID).Msg("cron: trial_expiration: failed to deactivate tenant")
+					continue
+				}
+				log.Info().Str("tenant_id", t.ID).Str("tenant", t.Name).Msg("cron: trial expired — tenant deactivated")
+
+				if sendFn != nil {
+					go func(email, name string) {
+						if err := sendFn(ctx, email, name, "trial_expired", 0); err != nil {
+							log.Warn().Err(err).Str("email", email).Msg("cron: trial_expired email failed")
+						}
+					}(t.Email, t.Name)
+				}
+
+			case daysLeft == 7, daysLeft == 11, daysLeft == 13:
+				templateType := fmt.Sprintf("trial_reminder_%dd", daysLeft)
+
+				// M1 fix: per-day dedup — skip if a reminder with this event_type was already
+				// sent to this tenant in the last 23 hours (cron fires hourly, so without this
+				// a tenant could receive up to 24 reminder emails in a single day).
+				var lastSentCount int64
+				if err := tx.Raw(`
+					SELECT COUNT(*) FROM notifications
+					 WHERE tenant_id = ? AND event_type = ? AND created_at > NOW() - INTERVAL '23 hours'
+				`, t.ID, templateType).Scan(&lastSentCount).Error; err != nil {
+					log.Warn().Err(err).Str("tenant_id", t.ID).Str("event_type", templateType).
+						Msg("cron: trial_reminder dedup check failed — skipping to be safe")
+					continue
+				}
+				if lastSentCount > 0 {
+					log.Debug().Str("tenant_id", t.ID).Str("template", templateType).
+						Msg("cron: trial reminder already sent today — skipping")
+					continue
+				}
+
+				log.Info().Str("tenant_id", t.ID).Str("tenant", t.Name).Int("days_left", daysLeft).
+					Str("template", templateType).Msg("cron: sending trial reminder")
+
+				// Insert notification record inside tx to mark as sent (dedup gate).
+				// title/body are informational only — the actual content is in the email.
+				notifID := fmt.Sprintf("trial-%s-%s", t.ID[:8], templateType)
+				if err := tx.Exec(`
+					INSERT INTO notifications (id, tenant_id, user_id, event_type, title, channels, created_at)
+					VALUES (?, ?, '', ?, ?, 'email', NOW())
+					ON CONFLICT DO NOTHING
+				`, notifID, t.ID, templateType,
+					fmt.Sprintf("Trial reminder: %d días restantes", daysLeft),
+				).Error; err != nil {
+					log.Warn().Err(err).Str("tenant_id", t.ID).Str("template", templateType).
+						Msg("cron: failed to insert trial reminder notification record — skipping email to avoid duplicates")
+					continue
+				}
+
+				if sendFn != nil {
+					capturedEmail := t.Email
+					capturedName := t.Name
+					capturedDays := daysLeft
+					capturedTemplate := templateType
+					go func() {
+						if err := sendFn(ctx, capturedEmail, capturedName, capturedTemplate, capturedDays); err != nil {
+							log.Warn().Err(err).Str("email", capturedEmail).Str("template", capturedTemplate).
+								Msg("cron: trial reminder email failed")
+						}
+					}()
+				}
+
+			default:
+				// Nothing to do for other day counts.
+			}
+		}
+
+		log.Info().Int("tenants_checked", len(tenants)).Msg("cron: trial_expiration check completed")
+		return nil
+	})
+}
+
 // CronDispatch ejecuta todos los jobs del cron en secuencia.
 // Se invoca: una vez al arrancar (tras delay de estabilización) y luego cada hora por el ticker.
 // Los errores se loggean sin parar la ejecución del siguiente job.
 //
-// Callbacks (both optional, pass nil to skip):
-//   - lotNotifyFn: called per expiring lot event (eventType, title, body)
-//   - lowStockNotifyFn: called per unresolved low-stock alert (sku, message)
-func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType, title, body string) error, lowStockNotifyFn func(sku, message string) error) {
+// Callbacks (all optional, pass nil to skip):
+//   - analyzer: invoked per active tenant (S3.5 W2-B); receives the tenant UUID string.
+//   - lotNotifyFn: called per expiring lot event (tenantID, eventType, title, body) — S3.5 W5.5 per-tenant
+//   - lowStockNotifyFn: called per unresolved low-stock alert (tenantID, sku, message) — S3.5 W5.5 per-tenant
+//   - trialSendFn: called per trial tenant requiring a reminder or expiration email
+func CronDispatch(db *gorm.DB, analyzer func(tenantID string) error, lotNotifyFn func(tenantID, eventType, title, body string) error, lowStockNotifyFn func(tenantID, sku, message string) error, trialSendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error) {
 	if err := RunStockAlertAnalysis(db, analyzer); err != nil {
 		log.Error().Err(err).Msg("cron: stock alerts failed")
 	}
@@ -233,6 +457,10 @@ func CronDispatch(db *gorm.DB, analyzer func() error, lotNotifyFn func(eventType
 	// HR1-M5: wire RunLowStockNotifications so low-stock email alerts are actually sent.
 	if err := RunLowStockNotifications(db, lowStockNotifyFn); err != nil {
 		log.Error().Err(err).Msg("cron: low stock notifications failed")
+	}
+	// S3-W5-C: trial lifecycle reminders + expiration.
+	if err := RunTrialExpirationCheck(db, trialSendFn); err != nil {
+		log.Error().Err(err).Msg("cron: trial expiration check failed")
 	}
 }
 

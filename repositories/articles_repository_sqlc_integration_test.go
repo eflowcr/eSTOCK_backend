@@ -20,6 +20,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
+// testTenantSqlc is the canonical tenant UUID used by SQLC integration tests.
+// Matches the migration 000029 backfill default so legacy reads still find seeded rows.
+const testTenantSqlc = "00000000-0000-0000-0000-000000000001"
+
 func setupTestDB(t *testing.T) (connStr string, cleanup func()) {
 	t.Helper()
 	if testing.Short() {
@@ -88,7 +92,7 @@ func TestArticlesRepositorySQLC_ListAndCreate(t *testing.T) {
 		Name:         "Test Article",
 		Presentation: "unit",
 	}
-	resp = repo.CreateArticle(data)
+	resp = repo.CreateArticleForTenant(testTenantSqlc, data)
 	require.Nil(t, resp)
 
 	// List has one
@@ -111,7 +115,7 @@ func TestArticlesRepositorySQLC_GetByIDAndBySku(t *testing.T) {
 		Name:         "Get Test",
 		Presentation: "unit",
 	}
-	resp := repo.CreateArticle(data)
+	resp := repo.CreateArticleForTenant(testTenantSqlc, data)
 	require.Nil(t, resp)
 
 	list, _ := repo.GetAllArticles()
@@ -170,7 +174,7 @@ func TestArticlesRepositorySQLC_CreateDuplicate_Conflict(t *testing.T) {
 		Name:         "First",
 		Presentation: "unit",
 	}
-	resp := repo.CreateArticle(data)
+	resp := repo.CreateArticleForTenant(testTenantSqlc, data)
 	require.Nil(t, resp)
 
 	// Duplicate SKU
@@ -179,7 +183,7 @@ func TestArticlesRepositorySQLC_CreateDuplicate_Conflict(t *testing.T) {
 		Name:         "Second",
 		Presentation: "unit",
 	}
-	resp = repo.CreateArticle(data2)
+	resp = repo.CreateArticleForTenant(testTenantSqlc, data2)
 	require.NotNil(t, resp)
 	assert.True(t, resp.Handled)
 	assert.Equal(t, responses.StatusConflict, resp.StatusCode)
@@ -198,7 +202,7 @@ func TestArticlesRepositorySQLC_UpdateAndDelete(t *testing.T) {
 		Name:         "Original",
 		Presentation: "unit",
 	}
-	resp := repo.CreateArticle(data)
+	resp := repo.CreateArticleForTenant(testTenantSqlc, data)
 	require.Nil(t, resp)
 
 	list, _ := repo.GetAllArticles()
@@ -211,13 +215,13 @@ func TestArticlesRepositorySQLC_UpdateAndDelete(t *testing.T) {
 		Name:         "Updated Name",
 		Presentation: "unit",
 	}
-	art, resp := repo.UpdateArticle(id, updated)
+	art, resp := repo.UpdateArticleForTenant(id, testTenantSqlc, updated)
 	require.Nil(t, resp)
 	require.NotNil(t, art)
 	assert.Equal(t, "Updated Name", art.Name)
 
 	// Delete
-	resp = repo.DeleteArticle(id)
+	resp = repo.DeleteArticleForTenant(id, testTenantSqlc)
 	require.Nil(t, resp)
 
 	// Get returns 404
@@ -238,7 +242,7 @@ func TestArticlesRepositorySQLC_Update_NotFound(t *testing.T) {
 		Name:         "X",
 		Presentation: "unit",
 	}
-	art, resp := repo.UpdateArticle("99999", data)
+	art, resp := repo.UpdateArticleForTenant("99999", testTenantSqlc, data)
 	require.Nil(t, art)
 	require.NotNil(t, resp)
 	assert.Equal(t, responses.StatusNotFound, resp.StatusCode)

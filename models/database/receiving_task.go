@@ -24,6 +24,10 @@ type ReceivingTask struct {
 	TrackingNumber  *string `gorm:"column:tracking_number" json:"tracking_number,omitempty"`
 	ReceptionMethod *string `gorm:"column:reception_method" json:"reception_method,omitempty"`
 	Incoterms       *string `gorm:"column:incoterms" json:"incoterms,omitempty"`
+	// S2.5 M3.1 tenant isolation
+	TenantID string `gorm:"column:tenant_id" json:"tenant_id"`
+	// S3 W2-A PO3 — link to the purchase order that generated this receiving task (nullable).
+	PurchaseOrderID *string `gorm:"column:purchase_order_id" json:"purchase_order_id,omitempty"`
 }
 
 func (ReceivingTask) TableName() string {

@@ -9,18 +9,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// LocationsController is the HTTP entry point for location master-data.
+//
+// S3.5 W2-A: tenantID is injected at construction time (from configuration.Config)
+// and threaded into every service call so locations are tenant-scoped end-to-end.
 type LocationsController struct {
-	Service services.LocationsService
+	Service  services.LocationsService
+	TenantID string
 }
 
-func NewLocationsController(service services.LocationsService) *LocationsController {
+func NewLocationsController(service services.LocationsService, tenantID string) *LocationsController {
 	return &LocationsController{
-		Service: service,
+		Service:  service,
+		TenantID: tenantID,
 	}
 }
 
 func (c *LocationsController) GetAllLocations(ctx *gin.Context) {
-	locations, response := c.Service.GetAllLocations()
+	locations, response := c.Service.GetAllLocations(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllLocations", "get_all_locations", response)
@@ -40,7 +46,7 @@ func (c *LocationsController) GetLocationByID(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	location, response := c.Service.GetLocationByID(id)
+	location, response := c.Service.GetLocationByID(c.resolveTenantID(ctx), id)
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetLocationByID", "get_location_by_id", response)
@@ -67,7 +73,7 @@ func (c *LocationsController) CreateLocation(ctx *gin.Context) {
 		return
 	}
 
-	resp := c.Service.CreateLocation(&body)
+	resp := c.Service.CreateLocation(c.resolveTenantID(ctx), &body)
 
 	if resp != nil {
 		writeErrorResponse(ctx, "CreateLocation", "create_location", resp)
@@ -89,7 +95,7 @@ func (c *LocationsController) UpdateLocation(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.UpdateLocation(id, data)
+	response := c.Service.UpdateLocation(c.resolveTenantID(ctx), id, data)
 	if response != nil {
 		writeErrorResponse(ctx, "UpdateLocation", "update_location", response)
 		return
@@ -104,7 +110,7 @@ func (c *LocationsController) DeleteLocation(ctx *gin.Context) {
 		return
 	}
 
-	response := c.Service.DeleteLocation(id)
+	response := c.Service.DeleteLocation(c.resolveTenantID(ctx), id)
 	if response != nil {
 		writeErrorResponse(ctx, "DeleteLocation", "delete_location", response)
 		return
@@ -133,7 +139,7 @@ func (c *LocationsController) ImportLocationsFromExcel(ctx *gin.Context) {
 		return
 	}
 
-	imported, skipped, errResp := c.Service.ImportLocationsFromExcel(fileBytes)
+	imported, skipped, errResp := c.Service.ImportLocationsFromExcel(c.resolveTenantID(ctx), fileBytes)
 	if errResp != nil && len(imported) == 0 {
 		writeErrorResponse(ctx, "ImportLocationsFromExcel", "import_locations_from_excel", errResp)
 		return
@@ -158,7 +164,7 @@ func (c *LocationsController) ValidateImportRows(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_location_import_rows")
 		return
 	}
-	results, resp := c.Service.ValidateImportRows(rows)
+	results, resp := c.Service.ValidateImportRows(c.resolveTenantID(ctx), rows)
 	if resp != nil {
 		writeErrorResponse(ctx, "ValidateImportRows", "validate_location_import_rows", resp)
 		return
@@ -178,7 +184,7 @@ func (c *LocationsController) ImportLocationsFromJSON(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "ImportLocationsFromJSON", "No se proporcionaron filas", "import_locations_from_json")
 		return
 	}
-	imported, skipped, errResp := c.Service.ImportLocationsFromJSON(rows)
+	imported, skipped, errResp := c.Service.ImportLocationsFromJSON(c.resolveTenantID(ctx), rows)
 	if errResp != nil {
 		writeErrorResponse(ctx, "ImportLocationsFromJSON", "import_locations_from_json", errResp)
 		return
@@ -205,7 +211,7 @@ func (c *LocationsController) DownloadImportTemplate(ctx *gin.Context) {
 }
 
 func (c *LocationsController) ExportLocationsToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportLocationsToExcel()
+	fileBytes, response := c.Service.ExportLocationsToExcel(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "ExportLocationsToExcel", "export_locations_to_excel", response)
 		return
@@ -214,4 +220,10 @@ func (c *LocationsController) ExportLocationsToExcel(ctx *gin.Context) {
 	ctx.Header("Content-Description", "File Transfer")
 	ctx.Header("Content-Disposition", `attachment; filename="locations.xlsx"`)
 	ctx.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileBytes)
+}
+
+// resolveTenantID — S3.5 W5.5 (HR-S3.5 C1): JWT-first, env fallback only.
+// The TenantID field stays as a non-JWT fallback (cron/admin/test paths only).
+func (c *LocationsController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
 }

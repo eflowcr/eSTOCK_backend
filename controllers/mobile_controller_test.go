@@ -612,7 +612,7 @@ func TestMobile_CompleteReceivingLine_UnknownLineID_400(t *testing.T) {
 // makeOperatorTestToken returns a JWT with role="operator" so the mobile list
 // handlers' role override path is exercised.
 func makeOperatorTestToken() string {
-	token, _ := tools.GenerateToken(testJWTSecret, "user-1", "testuser", "test@test.com", "operator")
+	token, _ := tools.GenerateToken(testJWTSecret, "user-1", "testuser", "test@test.com", "operator", "test-tenant", nil)
 	return "Bearer " + token
 }
 

@@ -53,6 +53,23 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterCategoriesRoutes(api, pool, config, rolesRepo)
 	RegisterStockSettingsRoutes(api, pool, config, rolesRepo)
 	RegisterNotificationsRoutes(api, db, config, notifSvc)
+	RegisterPurchaseOrdersRoutes(api, db, config, rolesRepo)
+
+	// S3-W2-B: Sales Orders
+	RegisterSalesOrdersRoutes(api, db, config, rolesRepo)
+
+	// S3-W3-A: Delivery Notes + Backorders
+	RegisterDeliveryNotesRoutes(api, db, config, rolesRepo)
+	RegisterBackordersRoutes(api, db, config, rolesRepo)
+
+	// S3-W5-B: Stripe Billing
+	RegisterBillingRoutes(api, db, config, notifSvc, rolesRepo)
+
+	// S3-W5-A: Public SaaS self-service signup (no auth required).
+	// Gated by ENABLE_SIGNUP env var — keep false in prod until S3.5 (articles tenant_id isolation).
+	if config.EnableSignup {
+		RegisterSignupRoutes(api, db, config, rolesRepo)
+	}
 
 	// Mobile companion app surface — keeps web /api/* untouched.
 	// W0.6: thread auditSvc + notifSvc since wire.NewPickingTask / NewReceivingTasks

@@ -7,22 +7,31 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createSerial = `-- name: CreateSerial :one
-INSERT INTO serials (serial_number, sku, status)
-VALUES ($1, $2, $3)
-RETURNING id, serial_number, sku, status, created_at, updated_at
+INSERT INTO serials (serial_number, sku, status, tenant_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, serial_number, sku, status, created_at, updated_at, tenant_id
 `
 
 type CreateSerialParams struct {
-	SerialNumber string `json:"serial_number"`
-	Sku          string `json:"sku"`
-	Status       string `json:"status"`
+	SerialNumber string      `json:"serial_number"`
+	Sku          string      `json:"sku"`
+	Status       string      `json:"status"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
+// S3.5 W2-A: tenant_id is required and provided by the controller layer.
 func (q *Queries) CreateSerial(ctx context.Context, arg CreateSerialParams) (Serial, error) {
-	row := q.db.QueryRow(ctx, createSerial, arg.SerialNumber, arg.Sku, arg.Status)
+	row := q.db.QueryRow(ctx, createSerial,
+		arg.SerialNumber,
+		arg.Sku,
+		arg.Status,
+		arg.TenantID,
+	)
 	var i Serial
 	err := row.Scan(
 		&i.ID,
@@ -31,31 +40,49 @@ func (q *Queries) CreateSerial(ctx context.Context, arg CreateSerialParams) (Ser
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
-const deleteSerial = `-- name: DeleteSerial :exec
-DELETE FROM serials WHERE id = $1
+const deleteSerialForTenant = `-- name: DeleteSerialForTenant :exec
+DELETE FROM serials WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) DeleteSerial(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteSerial, id)
+type DeleteSerialForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// S3.5 W2-A: tenant_id guard prevents cross-tenant delete.
+func (q *Queries) DeleteSerialForTenant(ctx context.Context, arg DeleteSerialForTenantParams) error {
+	_, err := q.db.Exec(ctx, deleteSerialForTenant, arg.ID, arg.TenantID)
 	return err
 }
 
-const getSerialByID = `-- name: GetSerialByID :one
+const getSerialByIDForTenant = `-- name: GetSerialByIDForTenant :one
 
-SELECT id, serial_number, sku, status, created_at, updated_at
+SELECT id, serial_number, sku, status, created_at, updated_at, tenant_id
 FROM serials
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 LIMIT 1
 `
 
+type GetSerialByIDForTenantParams struct {
+	ID       string      `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
 // Serials CRUD for sqlc
-// Schema: db/migrations (serials table)
-func (q *Queries) GetSerialByID(ctx context.Context, id string) (Serial, error) {
-	row := q.db.QueryRow(ctx, getSerialByID, id)
+// Schema: db/migrations (serials table; tenant_id added in 000033).
+// All HTTP-facing endpoints MUST filter by tenant_id (S3.5 W2-A).
+//
+// NOTE: ListSerialsBySku (no tenant filter) is defined in db/query/articles/articles.sql
+// and used internally by article-update warning logic. That query is NOT for HTTP responses.
+// Use ListSerialsBySkuForTenant for tenant-scoped HTTP endpoints.
+// S3.5 W2-A: tenant_id guard prevents cross-tenant id lookup.
+func (q *Queries) GetSerialByIDForTenant(ctx context.Context, arg GetSerialByIDForTenantParams) (Serial, error) {
+	row := q.db.QueryRow(ctx, getSerialByIDForTenant, arg.ID, arg.TenantID)
 	var i Serial
 	err := row.Scan(
 		&i.ID,
@@ -64,34 +91,79 @@ func (q *Queries) GetSerialByID(ctx context.Context, id string) (Serial, error) 
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
-const updateSerial = `-- name: UpdateSerial :one
+const listSerialsBySkuForTenant = `-- name: ListSerialsBySkuForTenant :many
+SELECT id, serial_number, sku, status, created_at, updated_at, tenant_id
+FROM serials
+WHERE sku = $1 AND tenant_id = $2
+ORDER BY created_at DESC
+`
+
+type ListSerialsBySkuForTenantParams struct {
+	Sku      string      `json:"sku"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// S3.5 W2-A: tenant_id guard. Replaces global ListSerialsBySku for HTTP responses.
+func (q *Queries) ListSerialsBySkuForTenant(ctx context.Context, arg ListSerialsBySkuForTenantParams) ([]Serial, error) {
+	rows, err := q.db.Query(ctx, listSerialsBySkuForTenant, arg.Sku, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Serial{}
+	for rows.Next() {
+		var i Serial
+		if err := rows.Scan(
+			&i.ID,
+			&i.SerialNumber,
+			&i.Sku,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateSerialForTenant = `-- name: UpdateSerialForTenant :one
 UPDATE serials
 SET
     serial_number = $2,
     sku = $3,
     status = $4,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
-RETURNING id, serial_number, sku, status, created_at, updated_at
+WHERE id = $1 AND tenant_id = $5
+RETURNING id, serial_number, sku, status, created_at, updated_at, tenant_id
 `
 
-type UpdateSerialParams struct {
-	ID           string `json:"id"`
-	SerialNumber string `json:"serial_number"`
-	Sku          string `json:"sku"`
-	Status       string `json:"status"`
+type UpdateSerialForTenantParams struct {
+	ID           string      `json:"id"`
+	SerialNumber string      `json:"serial_number"`
+	Sku          string      `json:"sku"`
+	Status       string      `json:"status"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Serial, error) {
-	row := q.db.QueryRow(ctx, updateSerial,
+// S3.5 W2-A: tenant_id guard prevents cross-tenant update.
+func (q *Queries) UpdateSerialForTenant(ctx context.Context, arg UpdateSerialForTenantParams) (Serial, error) {
+	row := q.db.QueryRow(ctx, updateSerialForTenant,
 		arg.ID,
 		arg.SerialNumber,
 		arg.Sku,
 		arg.Status,
+		arg.TenantID,
 	)
 	var i Serial
 	err := row.Scan(
@@ -101,6 +173,7 @@ func (q *Queries) UpdateSerial(ctx context.Context, arg UpdateSerialParams) (Ser
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }

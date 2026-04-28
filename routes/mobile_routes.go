@@ -35,7 +35,9 @@ func RegisterMobileRoutes(
 ) {
 	// Build services (reuse existing wire helpers; one allocation per request lifecycle is fine).
 	// W0.6: dev sprint-s2 made auditSvc/notifSvc required deps for picking + receiving.
-	_, pickingSvc := wire.NewPickingTask(db, auditSvc, notifSvc)
+	// Post-merge: NewPickingTask gained SOPickedQtyUpdater (SO3 cross-domain link) — pass via NewSalesOrders.
+	soRepo, _ := wire.NewSalesOrders(db, config)
+	_, pickingSvc := wire.NewPickingTask(db, auditSvc, notifSvc, soRepo)
 	_, receivingSvc := wire.NewReceivingTasks(db, notifSvc)
 	_, inventorySvc := wire.NewInventory(db, pool)
 	_, movementsSvc := wire.NewInventoryMovements(db)
@@ -48,7 +50,7 @@ func RegisterMobileRoutes(
 			if db != nil {
 				locRepo, _ := wire.NewLocations(db, pool)
 				if locRepo != nil {
-					transfersSvc = services.NewStockTransfersServiceWithExecute(transferRepo, locRepo, db)
+					transfersSvc = services.NewStockTransfersServiceWithExecute(transferRepo, locRepo, db, config.TenantID)
 				}
 			}
 			if transfersSvc == nil {

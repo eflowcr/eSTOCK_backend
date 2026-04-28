@@ -57,7 +57,16 @@ func EnsureDefaultAdmin(db *gorm.DB, config configuration.Config) {
 
 	name := strings.Split(email, "@")[0]
 	now := time.Now()
+	// S3.5 W5.5 (HR-S3.5 C2): users.tenant_id is NOT NULL post-000035. Source it from
+	// Config.TenantID — the seeded admin belongs to whichever tenant the pod was started
+	// for (single-tenant pilot pattern; multi-tenant signups go through SignupRepository
+	// which stamps the freshly-created tenant UUID instead).
+	tenantID := config.TenantID
+	if tenantID == "" {
+		tenantID = "00000000-0000-0000-0000-000000000001"
+	}
 	user := database.User{
+		TenantID:  tenantID,
 		Name:      name,
 		Email:     email,
 		FirstName: name,

@@ -25,21 +25,28 @@ func (s *PickingTaskService) WithClientsService(cs clientLookup) *PickingTaskSer
 	return s
 }
 
+// GetAllPickingTasks returns all picking tasks (no tenant filter).
+// internal use only — bypass tenant. Prefer ListByTenant in HTTP handlers.
 func (s *PickingTaskService) GetAllPickingTasks() ([]responses.PickingTaskView, *responses.InternalResponse) {
 	return s.Repository.GetAllPickingTasks()
+}
+
+// ListByTenant returns picking tasks scoped to a specific tenant (S2.5 M3.1).
+func (s *PickingTaskService) ListByTenant(tenantID string) ([]responses.PickingTaskView, *responses.InternalResponse) {
+	return s.Repository.GetAllForTenant(tenantID)
 }
 
 func (s *PickingTaskService) GetPickingTaskByID(id string) (*database.PickingTask, *responses.InternalResponse) {
 	return s.Repository.GetPickingTaskByID(id)
 }
 
-func (s *PickingTaskService) CreatePickingTask(userId string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
+func (s *PickingTaskService) CreatePickingTask(userId string, tenantID string, task *requests.CreatePickingTaskRequest) *responses.InternalResponse {
 	if task.CustomerID != nil && *task.CustomerID != "" {
 		if resp := s.validateCustomer(*task.CustomerID); resp != nil {
 			return resp
 		}
 	}
-	return s.Repository.CreatePickingTask(userId, task)
+	return s.Repository.CreatePickingTask(userId, tenantID, task)
 }
 
 func (s *PickingTaskService) StartPickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {
@@ -50,12 +57,12 @@ func (s *PickingTaskService) UpdatePickingTask(ctx context.Context, id string, d
 	return s.Repository.UpdatePickingTask(ctx, id, data, userId)
 }
 
-func (s *PickingTaskService) ImportPickingTaskFromExcel(userID string, fileBytes []byte) *responses.InternalResponse {
-	return s.Repository.ImportPickingTaskFromExcel(userID, fileBytes)
+func (s *PickingTaskService) ImportPickingTaskFromExcel(userID string, tenantID string, fileBytes []byte) *responses.InternalResponse {
+	return s.Repository.ImportPickingTaskFromExcel(userID, tenantID, fileBytes)
 }
 
-func (s *PickingTaskService) ExportPickingTasksToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportPickingTasksToExcel()
+func (s *PickingTaskService) ExportPickingTasksToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportPickingTasksToExcel(tenantID)
 }
 
 func (s *PickingTaskService) CompletePickingTask(ctx context.Context, id, userId string) *responses.InternalResponse {

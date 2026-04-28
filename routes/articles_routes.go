@@ -19,7 +19,7 @@ var _ ports.ArticlesRepository = (*repositories.ArticlesRepositorySQLC)(nil)
 func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, auditSvc *services.AuditService, rolesRepo ports.RolesRepository) {
 	_, articlesService := wire.NewArticlesWithDeps(db, pool)
 	userPrefsRepo := wire.NewUserPreferences(pool)
-	articlesController := controllers.NewArticlesController(*articlesService, auditSvc, userPrefsRepo)
+	articlesController := controllers.NewArticlesController(*articlesService, auditSvc, userPrefsRepo, config.TenantID)
 
 	route := router.Group("/articles")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))
@@ -31,7 +31,9 @@ func RegisterArticlesRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.
 
 		route.GET("/", read, articlesController.GetAllArticles)
 		if pool != nil {
-			cfg := tools.ArticlesTableConfig()
+			// S3.5 W1 — tenant-scoped DefaultWhere prevents cross-tenant data exposure
+			// in the generic table/export handlers (HR-S3-W5 C2 fix).
+			cfg := tools.ArticlesTableConfigForTenant(config.TenantID)
 			route.GET("/table", read, tools.GenericListHandler(pool, cfg))
 			route.GET("/table/export", read, tools.GenericExportHandler(pool, cfg, "articles.csv"))
 		}
