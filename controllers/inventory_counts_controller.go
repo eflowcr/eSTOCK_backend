@@ -1,11 +1,38 @@
 package controllers
 
 import (
+	"strings"
+
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
 )
+
+// looksLikeUUID returns true when s matches the canonical 8-4-4-4-12 hex
+// layout. Used to disambiguate a real UUID from a scanned location code in the
+// ScanCountLine body. We deliberately keep the check shape-only (no parse
+// against the locations table) so the resolver path is only entered for
+// strings that cannot be a UUID, preserving back-compat for existing clients
+// that send a real UUID.
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 type InventoryCountsController struct {
 	Service   services.InventoryCountsService
@@ -114,6 +141,20 @@ func (c *InventoryCountsController) ScanLine(ctx *gin.Context) {
 	if errs := tools.ValidateStruct(&body); errs != nil {
 		tools.ResponseValidationError(ctx, "ScanCountLine", "scan_count_line", errs)
 		return
+	}
+	// W7 N1-A: mobile sends the scanned location code (printed on the bin label),
+	// not the row UUID. inventory_count_lines.location_id is a FK to locations.id
+	// (UUID), so when body.LocationID does not look like a UUID we resolve it
+	// via the unique location_code index. Real UUIDs flow through unchanged for
+	// back-compat with admin/web clients.
+	rawLoc := strings.TrimSpace(body.LocationID)
+	if rawLoc != "" && !looksLikeUUID(rawLoc) {
+		resolvedID, resolveResp := c.Service.ResolveLocationIDByCode(rawLoc)
+		if resolveResp != nil {
+			writeErrorResponse(ctx, "ScanCountLine", "scan_count_line", resolveResp)
+			return
+		}
+		body.LocationID = resolvedID
 	}
 	line, resp := c.Service.ScanLine(id, userID, &body)
 	if resp != nil {

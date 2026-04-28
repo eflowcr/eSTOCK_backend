@@ -86,6 +86,14 @@ func GetEmail(secret string, tokenString string) (string, error) {
 	return claims.Email, nil
 }
 
+// IsOperatorRole returns true when the role string corresponds to a warehouse
+// operator. Comparison is case-insensitive and trim-tolerant. Used by mobile
+// list handlers to force assigned_to_me=true so an operator never sees tasks
+// assigned to another operator (W7 N2-1: cross-operator data leak fix).
+func IsOperatorRole(role string) bool {
+	return strings.EqualFold(strings.TrimSpace(role), "operator")
+}
+
 func GetRole(secret string, tokenString string) (string, error) {
 	tokenString = tokenString[7:]
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {

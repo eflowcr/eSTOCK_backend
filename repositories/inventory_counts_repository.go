@@ -449,3 +449,31 @@ func (r *InventoryCountsRepository) GetLocationCodeByID(locationID string) (stri
 	}
 	return code, nil
 }
+
+// GetLocationIDByCode is the inverse of GetLocationCodeByID — given a printed
+// location barcode (the human-readable code), return the row UUID needed for
+// inventory_count_lines.location_id FK. The locations.location_code column has a
+// UNIQUE index (migration 000002), so the lookup is a single indexed read.
+//
+// W7 N1-A: mobile clients scan the barcode and send the code as `location_id`
+// (because the printed code is the only thing on the bin label). Without this
+// resolver the count's first scan in production fails with FK violation.
+func (r *InventoryCountsRepository) GetLocationIDByCode(locationCode string) (string, *responses.InternalResponse) {
+	code := strings.TrimSpace(locationCode)
+	if code == "" {
+		return "", &responses.InternalResponse{Message: "Código de ubicación vacío", Handled: true, StatusCode: responses.StatusBadRequest}
+	}
+	var id string
+	err := r.DB.Table("locations").Select("id").Where("location_code = ?", code).Limit(1).Scan(&id).Error
+	if err != nil {
+		return "", &responses.InternalResponse{Error: err, Message: "Error al resolver ubicación", Handled: false}
+	}
+	if id == "" {
+		return "", &responses.InternalResponse{
+			Message:    "Ubicación no encontrada con código " + code,
+			Handled:    true,
+			StatusCode: responses.StatusNotFound,
+		}
+	}
+	return id, nil
+}

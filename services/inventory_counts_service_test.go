@@ -145,6 +145,12 @@ func (m *mockCountsRepo) GetLocationCodeByID(locationID string) (string, *respon
 	}
 	return m.locationCode, nil
 }
+func (m *mockCountsRepo) GetLocationIDByCode(code string) (string, *responses.InternalResponse) {
+	// W7 N1-A: stub for inverse resolver. Tests that exercise the controller
+	// path use the controller-level stub; service-level tests don't need this
+	// path so a permissive default is fine.
+	return code, nil
+}
 
 // ─── mock AdjustmentsRepository (existing port surface, unchanged) ───────────
 

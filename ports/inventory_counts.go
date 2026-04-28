@@ -33,6 +33,11 @@ type InventoryCountsRepository interface {
 	ResolveSKUByBarcode(barcode string) (string, *responses.InternalResponse)
 	GetExpectedQty(sku, locationCode, lot string) (float64, *responses.InternalResponse)
 	GetLocationCodeByID(locationID string) (string, *responses.InternalResponse)
+	// GetLocationIDByCode is the inverse resolver of GetLocationCodeByID. Used by
+	// the mobile scan-line path because mobile scans a printed location barcode
+	// which encodes the human-readable location code, NOT the row UUID, but the
+	// inventory_count_lines.location_id FK requires the UUID. W7 N1-A.
+	GetLocationIDByCode(locationCode string) (string, *responses.InternalResponse)
 }
 
 // InventoryAdjustmentsCreator is the narrow surface that the inventory-counts

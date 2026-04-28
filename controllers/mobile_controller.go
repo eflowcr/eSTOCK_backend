@@ -30,6 +30,12 @@ import (
 // contract the backend recovers ExpectedQty per line and rejects pick-overs.
 const mobilePickingOverTolerance = 1.05
 
+// W7 N1-B fix: mirror the picking tolerance for receiving. Same constant value
+// keeps the operator UX consistent across modules — when this needs to diverge
+// per-tenant, split into mobilePickingOverTolerance / mobileReceivingOverTolerance
+// and wire from configuration.
+const mobileReceivingOverTolerance = 1.05
+
 type MobileController struct {
 	Picking            *services.PickingTaskService
 	Receiving          *services.ReceivingTasksService
@@ -107,9 +113,18 @@ func (c *MobileController) ListPickingTasks(ctx *gin.Context) {
 	assignedToMe := strings.EqualFold(ctx.Query("assigned_to_me"), "true")
 	statusFilter := parseCSVFilter(ctx.Query("status"))
 
+	// W7 N2-1: operators are forced to assigned_to_me=true regardless of the
+	// query param to prevent a cross-operator data leak (operator A could
+	// previously list every task in the warehouse including those assigned to
+	// operator B). Admin/warehouse roles can still opt out by omitting the flag.
+	token := ctx.Request.Header.Get("Authorization")
+	role, _ := tools.GetRole(c.Config.JWTSecret, token)
+	if !assignedToMe && tools.IsOperatorRole(role) {
+		assignedToMe = true
+	}
+
 	var userID string
 	if assignedToMe {
-		token := ctx.Request.Header.Get("Authorization")
 		uid, err := tools.GetUserId(c.Config.JWTSecret, token)
 		if err != nil {
 			tools.ResponseUnauthorized(ctx, "MobileListPickingTasks", "Token inválido", "mobile_list_picking_tasks")
@@ -488,9 +503,15 @@ func (c *MobileController) ListReceivingTasks(ctx *gin.Context) {
 	assignedToMe := strings.EqualFold(ctx.Query("assigned_to_me"), "true")
 	statusFilter := parseCSVFilter(ctx.Query("status"))
 
+	// W7 N2-1: operators forced to assigned_to_me=true. See ListPickingTasks.
+	token := ctx.Request.Header.Get("Authorization")
+	role, _ := tools.GetRole(c.Config.JWTSecret, token)
+	if !assignedToMe && tools.IsOperatorRole(role) {
+		assignedToMe = true
+	}
+
 	var userID string
 	if assignedToMe {
-		token := ctx.Request.Header.Get("Authorization")
 		uid, err := tools.GetUserId(c.Config.JWTSecret, token)
 		if err != nil {
 			tools.ResponseUnauthorized(ctx, "MobileListReceivingTasks", "Token inválido", "mobile_list_receiving_tasks")
@@ -522,6 +543,12 @@ func (c *MobileController) ListReceivingTasks(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "MobileListReceivingTasks", "Tareas de recepción obtenidas", "mobile_list_receiving_tasks", out, false, "")
 }
 
+// GetReceivingTask returns the trimmed MobileReceivingTaskDetailDto with flat lines.
+//
+// W7 N1-B fix: mirrors W0.7's picking contract. Previously the endpoint
+// returned database.ReceivingTask raw with the `items` jsonb shape exposed —
+// the mobile client could not echo a stable line_id and the backend had no
+// way to recover ExpectedQuantity for tolerance validation.
 func (c *MobileController) GetReceivingTask(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileGetReceivingTask", "mobile_get_receiving_task", "ID de tarea inválido")
 	if !ok {
@@ -536,9 +563,135 @@ func (c *MobileController) GetReceivingTask(ctx *gin.Context) {
 		tools.ResponseNotFound(ctx, "MobileGetReceivingTask", "Tarea no encontrada", "mobile_get_receiving_task")
 		return
 	}
-	tools.ResponseOK(ctx, "MobileGetReceivingTask", "Tarea obtenida", "mobile_get_receiving_task", task, false, "")
+	dto, err := buildMobileReceivingTaskDetail(task)
+	if err != nil {
+		tools.ResponseInternal(ctx, "MobileGetReceivingTask", "Error parseando items: "+err.Error(), "mobile_get_receiving_task")
+		return
+	}
+	tools.ResponseOK(ctx, "MobileGetReceivingTask", "Tarea obtenida", "mobile_get_receiving_task", dto, false, "")
 }
 
+// buildMobileReceivingTaskDetail flattens a database.ReceivingTask into the
+// mobile-facing detail DTO. Mirrors buildMobilePickingTaskDetail (W0.7) — see
+// that function for the rationale on flattening + LineID determinism.
+//
+// Receiving items have a single Location field (no allocations array) so the
+// surface is simpler than picking — no multi-allocation TODO needed here.
+func buildMobileReceivingTaskDetail(task *database.ReceivingTask) (*responses.MobileReceivingTaskDetailDto, error) {
+	dto := &responses.MobileReceivingTaskDetailDto{
+		ID:          task.ID,
+		TaskID:      task.TaskID,
+		OrderNumber: task.InboundNumber,
+		Status:      task.Status,
+		Priority:    task.Priority,
+		AssignedTo:  task.AssignedTo,
+		CompletedAt: task.CompletedAt,
+		Lines:       []responses.MobileReceivingLineDto{},
+	}
+	if !task.CreatedAt.IsZero() {
+		ca := task.CreatedAt
+		dto.CreatedAt = &ca
+	}
+	if len(task.Items) == 0 {
+		return dto, nil
+	}
+	var items []database.ReceivingTaskItem
+	if err := json.Unmarshal(task.Items, &items); err != nil {
+		return nil, err
+	}
+	dto.Lines = make([]responses.MobileReceivingLineDto, 0, len(items))
+	for _, it := range items {
+		dto.Lines = append(dto.Lines, mapReceivingItemToMobileLine(it))
+	}
+	return dto, nil
+}
+
+// mapReceivingItemToMobileLine projects one ReceivingTaskItem to the mobile
+// flat shape. ReceivedQty is derived: prefer accepted_qty (S2 R1 explicit
+// split), fall back to received_qty pointer for legacy data.
+func mapReceivingItemToMobileLine(it database.ReceivingTaskItem) responses.MobileReceivingLineDto {
+	receivedQty := it.AcceptedQty
+	if receivedQty == 0 && it.ReceivedQuantity != nil {
+		receivedQty = *it.ReceivedQuantity
+	}
+	lot := ""
+	if len(it.LotNumbers) > 0 {
+		lot = it.LotNumbers[0].LotNumber
+	}
+	serial := ""
+	if len(it.SerialNumbers) > 0 {
+		serial = it.SerialNumbers[0].SerialNumber
+	}
+	status := "pending"
+	if it.ExpectedQuantity > 0 && receivedQty >= it.ExpectedQuantity {
+		status = "done"
+	} else if receivedQty > 0 {
+		status = "partial"
+	}
+	return responses.MobileReceivingLineDto{
+		LineID:      computePickingLineID(it.SKU, lot, serial, it.Location),
+		SKU:         it.SKU,
+		ExpectedQty: it.ExpectedQuantity,
+		ReceivedQty: receivedQty,
+		Status:      status,
+		Location:    it.Location,
+		Lot:         lot,
+		Serial:      serial,
+	}
+}
+
+// findReceivingItemForRequest mirrors findPickingItemForRequest (W0.7). Returns
+// the matching ReceivingTaskItem so the caller can recover the persisted
+// ExpectedQuantity for tolerance validation. Match order:
+//  1. body.LineID against computePickingLineID(sku, lot, serial, location)
+//  2. fallback: (sku, lot, serial) tuple match (case-insensitive on sku)
+//
+// LineID supplied + no match → explicit miss (caller 400s; never silently fall
+// back, that would mask client/server contract drift).
+func findReceivingItemForRequest(task *database.ReceivingTask, body responses.MobileCompleteLineRequest) (database.ReceivingTaskItem, bool) {
+	if len(task.Items) == 0 {
+		return database.ReceivingTaskItem{}, false
+	}
+	var items []database.ReceivingTaskItem
+	if err := json.Unmarshal(task.Items, &items); err != nil {
+		return database.ReceivingTaskItem{}, false
+	}
+	for _, it := range items {
+		line := mapReceivingItemToMobileLine(it)
+		if body.LineID != "" && line.LineID == body.LineID {
+			return it, true
+		}
+	}
+	if body.LineID != "" {
+		return database.ReceivingTaskItem{}, false
+	}
+	for _, it := range items {
+		if !strings.EqualFold(it.SKU, body.SKU) {
+			continue
+		}
+		itemLot := ""
+		if len(it.LotNumbers) > 0 {
+			itemLot = it.LotNumbers[0].LotNumber
+		}
+		itemSerial := ""
+		if len(it.SerialNumbers) > 0 {
+			itemSerial = it.SerialNumbers[0].SerialNumber
+		}
+		if itemLot == body.Lot && itemSerial == body.Serial {
+			return it, true
+		}
+	}
+	return database.ReceivingTaskItem{}, false
+}
+
+// CompleteReceivingLine validates the request against the persisted task and
+// delegates to the receiving service.
+//
+// W7 N1-B fix: mirrors W0.7 picking. Pre-W7 the controller synthesized
+// ExpectedQuantity = int(body.PickedQty), so any client could over-receive at
+// will and tolerance validation was impossible server-side. Now the backend
+// recovers the real ExpectedQuantity per line via findReceivingItemForRequest
+// and rejects PickedQty > expected_qty * mobileReceivingOverTolerance.
 func (c *MobileController) CompleteReceivingLine(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompleteReceivingLine", "mobile_complete_receiving_line", "ID de tarea inválido")
 	if !ok {
@@ -559,13 +712,48 @@ func (c *MobileController) CompleteReceivingLine(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingLine", "location_scanned es requerido", "mobile_complete_receiving_line")
 		return
 	}
+	if strings.TrimSpace(body.SKU) == "" {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingLine", "sku es requerido", "mobile_complete_receiving_line")
+		return
+	}
+	if body.PickedQty <= 0 {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingLine", "received_qty debe ser mayor a 0", "mobile_complete_receiving_line")
+		return
+	}
+
+	// W7 N1-B: load the task to recover the real ExpectedQuantity for the line.
+	task, resp := c.Receiving.GetReceivingTaskByID(id)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileCompleteReceivingLine", "mobile_complete_receiving_line", resp)
+		return
+	}
+	if task == nil {
+		tools.ResponseNotFound(ctx, "MobileCompleteReceivingLine", "Tarea no encontrada", "mobile_complete_receiving_line")
+		return
+	}
+	persisted, found := findReceivingItemForRequest(task, body)
+	if !found {
+		tools.ResponseBadRequest(ctx, "MobileCompleteReceivingLine", "Línea no encontrada en la tarea", "mobile_complete_receiving_line_unknown")
+		return
+	}
+	expectedQty := persisted.ExpectedQuantity
+	if expectedQty > 0 && body.PickedQty > expectedQty*mobileReceivingOverTolerance {
+		tools.ResponseBadRequest(
+			ctx,
+			"MobileCompleteReceivingLine",
+			"received_qty excede la tolerancia permitida (5% sobre la cantidad esperada)",
+			"mobile_complete_receiving_line_tolerance",
+		)
+		return
+	}
+
 	item := requests.ReceivingTaskItemRequest{
-		SKU:      body.SKU,
-		Location: body.LocationScanned,
+		SKU:              body.SKU,
+		ExpectedQuantity: int(expectedQty),
+		Location:         body.LocationScanned,
 	}
-	if body.PickedQty > 0 {
-		item.ExpectedQuantity = int(body.PickedQty)
-	}
+	receivedInt := int(body.PickedQty)
+	item.ReceivedQuantity = &receivedInt
 	if body.Lot != "" {
 		item.LotNumbers = []requests.CreateLotRequest{{
 			LotNumber: body.Lot,
@@ -576,7 +764,7 @@ func (c *MobileController) CompleteReceivingLine(ctx *gin.Context) {
 	if body.Serial != "" {
 		item.SerialNumbers = []database.Serial{{SerialNumber: body.Serial, SKU: body.SKU}}
 	}
-	resp := c.Receiving.CompleteReceivingLine(id, body.LocationScanned, userID, item)
+	resp = c.Receiving.CompleteReceivingLine(id, body.LocationScanned, userID, item)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileCompleteReceivingLine", "mobile_complete_receiving_line", resp)
 		return
@@ -635,9 +823,14 @@ func (c *MobileController) ListStockTransfers(ctx *gin.Context) {
 	}
 
 	assignedToMe := strings.EqualFold(ctx.Query("assigned_to_me"), "true")
+	// W7 N2-1: operators forced to assigned_to_me=true. See ListPickingTasks.
+	token := ctx.Request.Header.Get("Authorization")
+	role, _ := tools.GetRole(c.Config.JWTSecret, token)
+	if !assignedToMe && tools.IsOperatorRole(role) {
+		assignedToMe = true
+	}
 	var userID string
 	if assignedToMe {
-		token := ctx.Request.Header.Get("Authorization")
 		uid, err := tools.GetUserId(c.Config.JWTSecret, token)
 		if err != nil {
 			tools.ResponseUnauthorized(ctx, "MobileListStockTransfers", "Token inválido", "mobile_list_stock_transfers")
