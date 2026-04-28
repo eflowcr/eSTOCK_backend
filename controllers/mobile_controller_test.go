@@ -21,10 +21,37 @@ import (
 // reuse mockPickingTaskRepoCtrl from picking_task_controller_test.go (same package).
 // reuse mockReceivingTasksRepoCtrl from receiving_tasks_controller_test.go.
 
+// buildTaskItemsJSON returns the jsonb encoding of one or more items, panicking
+// on marshaling errors (test code only).
+func buildTaskItemsJSON(items ...requests.PickingTaskItemRequest) []byte {
+	b, err := json.Marshal(items)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// sampleTaskWithItem returns a PickingTask with a single item (SKU-1, expected 10,
+// at LOC-A) for use in the picking-line tests. Mirrors the W0.7 contract: items
+// is a jsonb of []PickingTaskItemRequest with allocations[0].location set.
+func sampleTaskWithItem() *database.PickingTask {
+	items := buildTaskItemsJSON(requests.PickingTaskItemRequest{
+		SKU:              "SKU-1",
+		ExpectedQuantity: 10,
+		Allocations:      []database.LocationAllocation{{Location: "LOC-A", Quantity: 10}},
+	})
+	return &database.PickingTask{
+		ID:     "pt-1",
+		TaskID: "T1",
+		Status: "in_progress",
+		Items:  items,
+	}
+}
+
 func newTestMobileController() *MobileController {
 	pickRepo := &mockPickingTaskRepoCtrl{
 		tasks: []responses.PickingTaskView{{ID: "pt-1", TaskID: "T1", OrderNumber: "O1", Status: "in_progress"}},
-		byID:  map[string]*database.PickingTask{"pt-1": {ID: "pt-1", TaskID: "T1", Status: "in_progress"}},
+		byID:  map[string]*database.PickingTask{"pt-1": sampleTaskWithItem()},
 	}
 	pickSvc := services.NewPickingTaskService(pickRepo)
 	recvRepo := &mockReceivingTasksRepoCtrl{
@@ -121,6 +148,118 @@ func TestMobileController_CompletePickingLine_Success(t *testing.T) {
 	body := responses.MobileCompleteLineRequest{SKU: "SKU-1", PickedQty: 1, LocationScanned: "LOC-A"}
 	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/api/mobile/picking-tasks/pt-1/complete-line",
 		body, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// W0.7 N1-2: backend now validates picked_qty <= expected_qty * 1.05 server-side.
+// Sample task line is expected=10, so picked=11 (>10.5) MUST 400.
+func TestMobile_CompletePickingLine_RejectsBeyondTolerance(t *testing.T) {
+	ctrl := newTestMobileController()
+	body := responses.MobileCompleteLineRequest{SKU: "SKU-1", PickedQty: 11, LocationScanned: "LOC-A"}
+	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/api/mobile/picking-tasks/pt-1/complete-line",
+		body, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// W0.7 N1-2: at the tolerance boundary (10 * 1.05 = 10.5) the request passes;
+// guards the boundary check against off-by-one regressions.
+func TestMobile_CompletePickingLine_AcceptsAtToleranceBoundary(t *testing.T) {
+	ctrl := newTestMobileController()
+	body := responses.MobileCompleteLineRequest{SKU: "SKU-1", PickedQty: 10.5, LocationScanned: "LOC-A"}
+	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/api/mobile/picking-tasks/pt-1/complete-line",
+		body, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// W0.7 N1-2: zero / negative picked_qty must 400 with the dedicated error
+// rather than silently passing through to the service layer.
+func TestMobile_CompletePickingLine_RejectsZeroQty(t *testing.T) {
+	ctrl := newTestMobileController()
+	body := responses.MobileCompleteLineRequest{SKU: "SKU-1", PickedQty: 0, LocationScanned: "LOC-A"}
+	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/api/mobile/picking-tasks/pt-1/complete-line",
+		body, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// W0.7 N1-2: an unknown line_id must 400 — backend will not silently fall back
+// to the (sku, lot, serial) tuple when an explicit identifier is supplied
+// because that would mask a real client/server contract drift.
+func TestMobile_CompletePickingLine_UnknownLineID_400(t *testing.T) {
+	ctrl := newTestMobileController()
+	body := responses.MobileCompleteLineRequest{
+		LineID:          "deadbeefcafe",
+		SKU:             "SKU-1",
+		PickedQty:       1,
+		LocationScanned: "LOC-A",
+	}
+	w := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/api/mobile/picking-tasks/pt-1/complete-line",
+		body, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// W0.7 N1-1: GetPickingTask now returns MobilePickingTaskDetailDto with flat
+// lines. Each line MUST carry a non-empty line_id and (when allocations
+// existed on the source item) a non-empty location.
+func TestMobile_GetPickingTask_ReturnsDetailDto_WithLineIDAndLocation(t *testing.T) {
+	ctrl := newTestMobileController()
+	w := performRequestWithHeader(ctrl.GetPickingTask, "GET", "/api/mobile/picking-tasks/pt-1",
+		nil, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var env responses.APIResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+
+	dataMap, ok := env.Data.(map[string]interface{})
+	require.True(t, ok, "data should be an object")
+	assert.Equal(t, "pt-1", dataMap["id"])
+	assert.Equal(t, "T1", dataMap["task_id"])
+	linesAny, ok := dataMap["lines"].([]interface{})
+	require.True(t, ok, "lines should be an array")
+	require.Len(t, linesAny, 1, "sample task has one item")
+
+	line, ok := linesAny[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "SKU-1", line["sku"])
+	assert.Equal(t, "LOC-A", line["location"], "location must resolve from allocations[0].location")
+	if lineID, _ := line["line_id"].(string); lineID == "" {
+		t.Fatalf("line_id must be non-empty (got empty)")
+	}
+	assert.Equal(t, float64(10), line["expected_qty"])
+	assert.Equal(t, "pending", line["status"])
+}
+
+// W0.7 N1-1: line_id round-trips deterministically — the LineID emitted by
+// GET MUST match what CompletePickingLine recomputes from the same task,
+// which is what makes the contract usable without persistence.
+func TestMobile_GetPickingTask_LineID_RoundTripsToCompleteLine(t *testing.T) {
+	ctrl := newTestMobileController()
+	w := performRequestWithHeader(ctrl.GetPickingTask, "GET", "/api/mobile/picking-tasks/pt-1",
+		nil, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	require.Equal(t, http.StatusOK, w.Code)
+	var env responses.APIResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	dataMap := env.Data.(map[string]interface{})
+	line := dataMap["lines"].([]interface{})[0].(map[string]interface{})
+	lineID := line["line_id"].(string)
+	require.NotEmpty(t, lineID)
+
+	body := responses.MobileCompleteLineRequest{
+		LineID:          lineID,
+		SKU:             "SKU-1",
+		PickedQty:       5,
+		LocationScanned: "LOC-A",
+	}
+	w2 := performRequestWithHeader(ctrl.CompletePickingLine, "PATCH", "/api/mobile/picking-tasks/pt-1/complete-line",
+		body, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
+	assert.Equal(t, http.StatusOK, w2.Code)
+}
+
+// W0.7 Fix D: CompletePickingTask must accept an empty body (post-W0.6 the
+// service does not consume location_scanned anymore).
+func TestMobile_CompletePickingTask_AcceptsEmptyBody(t *testing.T) {
+	ctrl := newTestMobileController()
+	w := performRequestWithHeader(ctrl.CompletePickingTask, "PATCH", "/api/mobile/picking-tasks/pt-1/complete",
+		nil, gin.Params{{Key: "id", Value: "pt-1"}}, map[string]string{"Authorization": makeTestToken()})
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 

@@ -8,6 +8,9 @@
 package controllers
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +23,12 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
 )
+
+// W0.7 N1-2 fix: backend-enforced over-pick tolerance (5%). Mobile used to
+// hardcode this client-side as theater because backend never saw the real
+// expected qty. With the new MobilePickingTaskDetailDto / MobileCompleteLineRequest
+// contract the backend recovers ExpectedQty per line and rejects pick-overs.
+const mobilePickingOverTolerance = 1.05
 
 type MobileController struct {
 	Picking            *services.PickingTaskService
@@ -132,7 +141,14 @@ func (c *MobileController) ListPickingTasks(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "MobileListPickingTasks", "Tareas de picking obtenidas", "mobile_list_picking_tasks", out, false, "")
 }
 
-// GetPickingTask returns the full record (header + items jsonb) so mobile can render lines.
+// GetPickingTask returns the trimmed MobilePickingTaskDetailDto with flat lines.
+//
+// W0.7 N1-1 fix: previously the controller returned database.PickingTask raw,
+// whose items jsonb shape is []PickingTaskItem with nested Allocations. Mobile
+// modeled `location` as a flat string per-line that was permanently empty. The
+// detail DTO now flattens each item to a single MobilePickingLineDto with the
+// location resolved from allocations[0].location, plus a deterministic LineID
+// the client echoes back into CompletePickingLine for tolerance validation.
 func (c *MobileController) GetPickingTask(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileGetPickingTask", "mobile_get_picking_task", "ID de tarea inválido")
 	if !ok {
@@ -147,7 +163,164 @@ func (c *MobileController) GetPickingTask(ctx *gin.Context) {
 		tools.ResponseNotFound(ctx, "MobileGetPickingTask", "Tarea no encontrada", "mobile_get_picking_task")
 		return
 	}
-	tools.ResponseOK(ctx, "MobileGetPickingTask", "Tarea obtenida", "mobile_get_picking_task", task, false, "")
+	dto, err := buildMobilePickingTaskDetail(task)
+	if err != nil {
+		tools.ResponseInternal(ctx, "MobileGetPickingTask", "Error parseando items: "+err.Error(), "mobile_get_picking_task")
+		return
+	}
+	tools.ResponseOK(ctx, "MobileGetPickingTask", "Tarea obtenida", "mobile_get_picking_task", dto, false, "")
+}
+
+// buildMobilePickingTaskDetail flattens a database.PickingTask into the
+// mobile-facing detail DTO. Items are decoded from the jsonb column and each
+// item becomes one MobilePickingLineDto with the first allocation's location
+// resolved + sum of picked_qty across allocations.
+//
+// TODO: multi-allocation (split picking) currently surfaces only the first
+// allocation's location to the mobile UI. When the W2/W3 wave needs split-pick
+// UX, change this to emit one line per allocation (with the same SKU but
+// different location/line_id) so the operator confirms each pick separately.
+func buildMobilePickingTaskDetail(task *database.PickingTask) (*responses.MobilePickingTaskDetailDto, error) {
+	dto := &responses.MobilePickingTaskDetailDto{
+		ID:          task.ID,
+		TaskID:      task.TaskID,
+		OrderNumber: task.OrderNumber,
+		Status:      task.Status,
+		Priority:    task.Priority,
+		AssignedTo:  task.AssignedTo,
+		CompletedAt: task.CompletedAt,
+		Lines:       []responses.MobilePickingLineDto{},
+	}
+	if !task.CreatedAt.IsZero() {
+		ca := task.CreatedAt
+		dto.CreatedAt = &ca
+	}
+
+	if len(task.Items) == 0 {
+		return dto, nil
+	}
+	var items []requests.PickingTaskItemRequest
+	if err := json.Unmarshal(task.Items, &items); err != nil {
+		return nil, err
+	}
+	dto.Lines = make([]responses.MobilePickingLineDto, 0, len(items))
+	for _, it := range items {
+		dto.Lines = append(dto.Lines, mapItemToMobileLine(it))
+	}
+	return dto, nil
+}
+
+// mapItemToMobileLine projects a single PickingTaskItemRequest to the mobile
+// flat line shape. PickedQty is summed across allocations (covers both the
+// single-allocation case and the future multi-alloc case correctly). When
+// allocations is empty (legacy data) location stays "" — the operator will be
+// prompted to scan the location at confirm time, but the empty-state used to
+// be silent in the UI per W1 hostile review.
+func mapItemToMobileLine(it requests.PickingTaskItemRequest) responses.MobilePickingLineDto {
+	location := ""
+	if len(it.Allocations) > 0 {
+		location = it.Allocations[0].Location
+	}
+	pickedQty := sumAllocationPicked(it)
+	lot := ""
+	if len(it.LotNumbers) > 0 {
+		lot = it.LotNumbers[0].LotNumber
+	}
+	serial := ""
+	if len(it.SerialNumbers) > 0 {
+		serial = it.SerialNumbers[0].SerialNumber
+	}
+	status := "pending"
+	if pickedQty >= it.ExpectedQuantity && it.ExpectedQuantity > 0 {
+		status = "done"
+	} else if pickedQty > 0 {
+		status = "partial"
+	}
+	return responses.MobilePickingLineDto{
+		LineID:      computePickingLineID(it.SKU, lot, serial, location),
+		SKU:         it.SKU,
+		ExpectedQty: it.ExpectedQuantity,
+		PickedQty:   pickedQty,
+		Status:      status,
+		Location:    location,
+		Lot:         lot,
+		Serial:      serial,
+	}
+}
+
+// sumAllocationPicked returns the total picked qty across all allocations of an
+// item. If no allocation has a PickedQty pointer set we fall back to the
+// item-level PickedQty (legacy non-split flow); when neither is populated it
+// returns 0.
+func sumAllocationPicked(it requests.PickingTaskItemRequest) float64 {
+	total := 0.0
+	any := false
+	for _, a := range it.Allocations {
+		if a.PickedQty != nil {
+			total += *a.PickedQty
+			any = true
+		}
+	}
+	if any {
+		return total
+	}
+	if it.PickedQty != nil {
+		return *it.PickedQty
+	}
+	return 0
+}
+
+// computePickingLineID returns a stable 12-char hex hash of the line's
+// identifying tuple. Determinism guarantees that GET → POST round-trip works
+// without needing to persist a line_id column on the picking_task_items jsonb.
+func computePickingLineID(sku, lot, serial, location string) string {
+	h := sha1.Sum([]byte(strings.ToLower(sku) + "|" + lot + "|" + serial + "|" + location))
+	return hex.EncodeToString(h[:6])
+}
+
+// findPickingItemForRequest returns the matching PickingTaskItemRequest from
+// the task's items jsonb for a CompletePickingLine request. Match order:
+//  1. body.LineID against computePickingLineID(sku, lot, serial, allocations[0].location)
+//  2. fallback: (sku, lot, serial) tuple match (case-insensitive on sku)
+//
+// Returns ok=false when nothing matches. Note that two items with the same
+// (sku, lot, serial) tuple is permitted by the schema (different locations);
+// the LineID disambiguates that case. Without LineID we take the first match.
+func findPickingItemForRequest(task *database.PickingTask, body responses.MobileCompleteLineRequest) (requests.PickingTaskItemRequest, bool) {
+	var items []requests.PickingTaskItemRequest
+	if len(task.Items) == 0 {
+		return requests.PickingTaskItemRequest{}, false
+	}
+	if err := json.Unmarshal(task.Items, &items); err != nil {
+		return requests.PickingTaskItemRequest{}, false
+	}
+	for _, it := range items {
+		line := mapItemToMobileLine(it)
+		if body.LineID != "" && line.LineID == body.LineID {
+			return it, true
+		}
+	}
+	if body.LineID != "" {
+		// LineID supplied but no match — explicit miss, do not fall back.
+		return requests.PickingTaskItemRequest{}, false
+	}
+	for _, it := range items {
+		if !strings.EqualFold(it.SKU, body.SKU) {
+			continue
+		}
+		itemLot := ""
+		if len(it.LotNumbers) > 0 {
+			itemLot = it.LotNumbers[0].LotNumber
+		}
+		itemSerial := ""
+		if len(it.SerialNumbers) > 0 {
+			itemSerial = it.SerialNumbers[0].SerialNumber
+		}
+		if itemLot == body.Lot && itemSerial == body.Serial {
+			return it, true
+		}
+	}
+	return requests.PickingTaskItemRequest{}, false
 }
 
 func (c *MobileController) StartPickingTask(ctx *gin.Context) {
@@ -170,8 +343,14 @@ func (c *MobileController) StartPickingTask(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "MobileStartPickingTask", "Tarea iniciada", "mobile_start_picking_task", nil, false, "")
 }
 
-// CompletePickingLine accepts JSON body {line_id, picked_qty, location_scanned, lot, serial}
-// and forwards to the existing CompletePickingLine service (reuses the URL-param shape internally).
+// CompletePickingLine accepts JSON body {line_id, sku, picked_qty, location_scanned, lot, serial}
+// and forwards to the existing CompletePickingLine service.
+//
+// W0.7 N1-2 fix: backend recovers the real ExpectedQuantity from the persisted
+// task (matching by line_id, falling back to (sku, lot, serial) tuple) and
+// validates picked_qty <= expected_qty * 1.05 server-side. Pre-W0.7 the
+// controller synthesized ExpectedQuantity = picked_qty so any client could
+// over-pick at will and the 5% tolerance was client-only theater.
 func (c *MobileController) CompletePickingLine(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompletePickingLine", "mobile_complete_picking_line", "ID de tarea inválido")
 	if !ok {
@@ -193,14 +372,50 @@ func (c *MobileController) CompletePickingLine(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "MobileCompletePickingLine", "location_scanned es requerido", "mobile_complete_picking_line")
 		return
 	}
+	if strings.TrimSpace(body.SKU) == "" {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingLine", "sku es requerido", "mobile_complete_picking_line")
+		return
+	}
+	if body.PickedQty <= 0 {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingLine", "picked_qty debe ser mayor a 0", "mobile_complete_picking_line")
+		return
+	}
+
+	// W0.7: load the task to recover the real ExpectedQuantity for the line.
+	task, resp := c.Picking.GetPickingTaskByID(id)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileCompletePickingLine", "mobile_complete_picking_line", resp)
+		return
+	}
+	if task == nil {
+		tools.ResponseNotFound(ctx, "MobileCompletePickingLine", "Tarea no encontrada", "mobile_complete_picking_line")
+		return
+	}
+	persisted, found := findPickingItemForRequest(task, body)
+	if !found {
+		tools.ResponseBadRequest(ctx, "MobileCompletePickingLine", "Línea no encontrada en la tarea", "mobile_complete_picking_line_unknown")
+		return
+	}
+	expectedQty := persisted.ExpectedQuantity
+	if expectedQty > 0 && body.PickedQty > expectedQty*mobilePickingOverTolerance {
+		tools.ResponseBadRequest(
+			ctx,
+			"MobileCompletePickingLine",
+			"picked_qty excede la tolerancia permitida (5% sobre la cantidad esperada)",
+			"mobile_complete_picking_line_tolerance",
+		)
+		return
+	}
 
 	// W0.6: dev sprint-s2 (S1 A1 cross-location) replaced PickingTaskItemRequest.Location
 	// with []LocationAllocation. For mobile single-location pick we synthesize a single
-	// allocation matching LocationScanned + PickedQty. ExpectedQuantity is float64.
+	// allocation matching LocationScanned + PickedQty.
+	// W0.7: ExpectedQuantity now uses the real persisted value (not the synthesized
+	// = picked_qty hack) so downstream validation sees the right anchor.
 	pickedQty := body.PickedQty
 	item := requests.PickingTaskItemRequest{
 		SKU:              body.SKU,
-		ExpectedQuantity: pickedQty,
+		ExpectedQuantity: expectedQty,
 		Allocations: []database.LocationAllocation{{
 			Location:  body.LocationScanned,
 			Quantity:  pickedQty,
@@ -221,7 +436,7 @@ func (c *MobileController) CompletePickingLine(ctx *gin.Context) {
 
 	// W0.6: CompletePickingLine signature is (ctx, id, userId, item). location_scanned
 	// is now embedded in item.Allocations.
-	resp := c.Picking.CompletePickingLine(ctx.Request.Context(), id, userID, item)
+	resp = c.Picking.CompletePickingLine(ctx.Request.Context(), id, userID, item)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileCompletePickingLine", "mobile_complete_picking_line", resp)
 		return
@@ -229,7 +444,14 @@ func (c *MobileController) CompletePickingLine(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "MobileCompletePickingLine", "Línea completada", "mobile_complete_picking_line", nil, false, "")
 }
 
-// CompletePickingTask body: {location_scanned}
+// CompletePickingTask requires no body. The W0.6 PickingTaskService signature
+// dropped location_scanned (lines complete with their own per-allocation
+// location validation), so the mobile endpoint accepts an empty body.
+//
+// W0.7 Fix D: previously the handler 400'd when location_scanned was missing,
+// even though it was discarded server-side. Mobile clients can now POST
+// {} or no body at all. The MobileCompleteTaskRequest field is preserved
+// (omitempty) for backward compatibility with older clients still sending it.
 func (c *MobileController) CompletePickingTask(ctx *gin.Context) {
 	id, ok := tools.ParseRequiredParam(ctx, "id", "MobileCompletePickingTask", "mobile_complete_picking_task", "ID de tarea inválido")
 	if !ok {
@@ -241,17 +463,11 @@ func (c *MobileController) CompletePickingTask(ctx *gin.Context) {
 		tools.ResponseUnauthorized(ctx, "MobileCompletePickingTask", "Token inválido", "invalid_token")
 		return
 	}
+	// Body is optional; ignore parse errors when empty.
 	var body responses.MobileCompleteTaskRequest
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		tools.ResponseBadRequest(ctx, "MobileCompletePickingTask", "Cuerpo inválido", "mobile_complete_picking_task")
-		return
-	}
-	if strings.TrimSpace(body.LocationScanned) == "" {
-		tools.ResponseBadRequest(ctx, "MobileCompletePickingTask", "location_scanned es requerido", "mobile_complete_picking_task")
-		return
-	}
-	// W0.6: CompletePickingTask signature is (ctx, id, userId) — no location_scanned.
-	_ = body.LocationScanned
+	_ = ctx.ShouldBindJSON(&body)
+	_ = body.LocationScanned // accepted for backward-compat but not consumed
+
 	resp := c.Picking.CompletePickingTask(ctx.Request.Context(), id, userID)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileCompletePickingTask", "mobile_complete_picking_task", resp)
