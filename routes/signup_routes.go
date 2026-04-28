@@ -34,6 +34,9 @@ func RegisterSignupRoutes(router *gin.RouterGroup, db *gorm.DB, config configura
 		DB:          db,
 		Config:      config,
 		EmailSender: wire.EmailSenderForConfig(config),
+		// S3.8 — when supplied, the issued JWT includes the admin role's permissions
+		// blob so the post-verify session bypasses the per-request DB lookup.
+		RolesRepository: rolesRepo,
 	}
 	svc := services.NewSignupService(repo, rolesRepo)
 	ctrl := controllers.NewSignupController(svc)

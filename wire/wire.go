@@ -88,24 +88,28 @@ func NewAuthentication(db *gorm.DB, config configuration.Config) (ports.Authenti
 }
 
 // NewAuthenticationWithRoles builds the auth service with roles repo so login response includes permissions.
+// S3.8: also threads rolesRepo into the repository so the issued JWT embeds the permissions claim.
 func NewAuthenticationWithRoles(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository) (ports.AuthenticationRepository, *services.AuthenticationService) {
 	r := &repositories.AuthenticationRepository{
-		DB:          db,
-		JWTSecret:   config.JWTSecret,
-		Config:      config,
-		EmailSender: EmailSenderForConfig(config),
+		DB:              db,
+		JWTSecret:       config.JWTSecret,
+		Config:          config,
+		EmailSender:     EmailSenderForConfig(config),
+		RolesRepository: rolesRepo,
 	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
 // NewAuthenticationWithAudit builds the auth service with roles repo and audit service.
+// S3.8: also threads rolesRepo into the repository so the issued JWT embeds the permissions claim.
 func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesRepo ports.RolesRepository, auditSvc *services.AuditService) (ports.AuthenticationRepository, *services.AuthenticationService) {
 	r := &repositories.AuthenticationRepository{
-		DB:           db,
-		JWTSecret:    config.JWTSecret,
-		Config:       config,
-		EmailSender:  EmailSenderForConfig(config),
-		AuditService: auditSvc,
+		DB:              db,
+		JWTSecret:       config.JWTSecret,
+		Config:          config,
+		EmailSender:     EmailSenderForConfig(config),
+		AuditService:    auditSvc,
+		RolesRepository: rolesRepo,
 	}
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }

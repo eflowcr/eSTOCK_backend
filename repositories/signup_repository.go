@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -12,6 +13,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/ports"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -25,6 +27,10 @@ type SignupRepository struct {
 	DB          *gorm.DB
 	Config      configuration.Config
 	EmailSender tools.EmailSender
+	// RolesRepository is optional. When set (S3.8+), VerifySignup embeds the admin role's
+	// permissions blob into the freshly-issued JWT so the post-verify auto-login lands on
+	// a session that bypasses the per-request DB lookup. Mirrors AuthenticationRepository.
+	RolesRepository ports.RolesRepository
 }
 
 // InitiateSignup validates uniqueness, creates a pending signup token, and sends a verification email.
@@ -271,7 +277,18 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 		// 6. Generate JWT for immediate login. S3.5 W3 — embed the freshly-created tenant's
 		// UUID as the tenant_id claim so this admin's subsequent requests scope to their own
 		// tenant (NOT the pod's TENANT_ID env var).
-		jwtToken, err := tools.GenerateToken(r.Config.JWTSecret, adminID, adminName, st.Email, roleID, tenantID)
+		// S3.8 — also embed the admin role's permissions blob so the post-verify auto-login
+		// avoids the per-request DB lookup. Failure to load permissions is non-fatal: we issue
+		// a permissions-less token (legacy shape) and RequirePermission falls back to DB lookup.
+		var permsClaim json.RawMessage
+		if r.RolesRepository != nil && roleID != "" {
+			if perms, permErr := r.RolesRepository.GetRolePermissions(ctx, roleID); permErr == nil && len(perms) > 0 {
+				permsClaim = perms
+			} else if permErr != nil {
+				log.Warn().Err(permErr).Str("role_id", roleID).Msg("signup verify: failed to load role permissions for JWT — issuing token without permissions claim (DB fallback will apply)")
+			}
+		}
+		jwtToken, err := tools.GenerateToken(r.Config.JWTSecret, adminID, adminName, st.Email, roleID, tenantID, permsClaim)
 		if err != nil {
 			return fmt.Errorf("generate jwt: %w", err)
 		}

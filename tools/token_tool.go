@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,12 +18,20 @@ import (
 // a single pod can serve multiple tenants safely. Tokens issued before W3 do not carry
 // this claim and will be rejected by RequirePermission (forces re-login). Acceptable since
 // v0.2.1 is a hotfix deploy with very few active users.
+//
+// S3.8: Added Permissions to embed the role's permissions JSONB inside the signed JWT,
+// allowing RequirePermission to authorize requests without a per-request DB lookup. Tokens
+// issued before S3.8 lack this claim — RequirePermission falls back to the DB lookup so
+// pre-S3.8 tokens keep working until they expire (backwards compat). Permissions are
+// snapshot at login/verify time; role updates take effect at next token issuance (or sooner
+// once the cache TTL elapses if the fallback path is exercised, e.g. permissions claim absent).
 type Claims struct {
-	UserId   string `json:"user_id"`
-	UserName string `json:"user_name"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
-	TenantID string `json:"tenant_id"`
+	UserId      string          `json:"user_id"`
+	UserName    string          `json:"user_name"`
+	Email       string          `json:"email"`
+	Role        string          `json:"role"`
+	TenantID    string          `json:"tenant_id"`
+	Permissions json.RawMessage `json:"permissions,omitempty"` // S3.8 — optional; missing → DB fallback
 	jwt.RegisteredClaims
 }
 
@@ -31,7 +40,13 @@ type Claims struct {
 //   - login: Config.TenantID (single-tenant pilot) or user.TenantID once users have a
 //     tenant column (future wave).
 //   - signup verify: the freshly created tenant's UUID.
-func GenerateToken(secret string, userId, userName, email, role, tenantID string) (string, error) {
+//
+// permissions is OPTIONAL (S3.8): when non-nil + non-empty it is embedded in the signed
+// claims so RequirePermission middleware can authorize without a DB roundtrip. Pass nil
+// (or empty) to mint a legacy-shape token; RequirePermission will then fall back to the
+// DB lookup. Callers that have the role's permissions in scope (login, signup verify)
+// should pass them; system/test paths that don't can pass nil.
+func GenerateToken(secret string, userId, userName, email, role, tenantID string, permissions json.RawMessage) (string, error) {
 	claims := Claims{
 		UserId:   userId,
 		UserName: userName,
@@ -45,6 +60,11 @@ func GenerateToken(secret string, userId, userName, email, role, tenantID string
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 2400)),
 			Issuer:    "EWIKI-API",
 		},
+	}
+	// Only embed when caller actually supplied a non-empty blob. Empty slice would still
+	// serialize (json:"omitempty" skips zero-length json.RawMessage), but be explicit.
+	if len(permissions) > 0 {
+		claims.Permissions = permissions
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -69,6 +89,25 @@ func TenantIDFromContext(c *gin.Context) string {
 		return ""
 	}
 	return s
+}
+
+// PermissionsFromContext returns the permissions JSON blob that JWTAuthMiddleware
+// placed on the gin.Context after decoding the JWT. Returns nil if the claim was
+// absent (legacy/pre-S3.8 token) or wasn't a json.RawMessage. RequirePermission uses
+// this to decide between JWT-cache authorization and the DB-lookup fallback.
+func PermissionsFromContext(c *gin.Context) json.RawMessage {
+	v, ok := c.Get(ContextKeyPermissions)
+	if !ok {
+		return nil
+	}
+	raw, ok := v.(json.RawMessage)
+	if !ok {
+		return nil
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
 }
 
 // ResolveTenantID returns the tenant for this request: JWT claim first, fallback only
