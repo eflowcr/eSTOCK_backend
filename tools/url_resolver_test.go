@@ -58,3 +58,37 @@ func TestResolveFrontendURL_EmptyAllowedOrigins_FallsBack(t *testing.T) {
 		t.Fatalf("expected fallback when origin not in default allowlist, got %q", got)
 	}
 }
+
+func TestResolveFrontendURL_SuffixBypassAttack_ReturnsFallback(t *testing.T) {
+	// Attack vector: suffix-match bypass. An attacker crafts an Origin whose value
+	// ends with an allowlisted hostname (e.g. "estock.eflowsuite.com.evil.com").
+	// The map-key lookup is exact — there is no strings.Contains or HasPrefix —
+	// so this must always return the fallback, never the spoofed origin.
+	resetAllowedOriginsForTest()
+	t.Setenv("ALLOWED_ORIGINS", "https://estock.eflowsuite.com")
+
+	got := ResolveFrontendURL("https://estock.eflowsuite.com.evil.com", "http://fallback.example.com")
+	if got != "http://fallback.example.com" {
+		t.Fatalf("suffix-bypass attack: expected fallback, got %q", got)
+	}
+}
+
+func TestResolveFrontendURL_OriginWithTrailingSlashOrPath_ReturnsFallback(t *testing.T) {
+	// Attack vector / spec edge-case: browsers send Origin as "scheme://host" with no
+	// trailing slash or path per RFC 6454. However, a misconfigured client or proxy
+	// might send "https://estock.eflowsuite.com/" or "https://estock.eflowsuite.com/some-path".
+	// The exact map lookup rejects both. This test documents and protects that guarantee.
+	resetAllowedOriginsForTest()
+	t.Setenv("ALLOWED_ORIGINS", "https://estock.eflowsuite.com")
+
+	cases := []string{
+		"https://estock.eflowsuite.com/",
+		"https://estock.eflowsuite.com/some-path",
+	}
+	for _, origin := range cases {
+		got := ResolveFrontendURL(origin, "http://fallback.example.com")
+		if got != "http://fallback.example.com" {
+			t.Fatalf("trailing-slash/path origin %q: expected fallback, got %q", origin, got)
+		}
+	}
+}
