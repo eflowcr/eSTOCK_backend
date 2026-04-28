@@ -7,7 +7,12 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net/http"
+	"net/smtp"
+	"net/textproto"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -112,6 +117,110 @@ func (r *ResendEmailSender) SendPasswordReset(toEmail, userName, resetLink strin
 	htmlBody := renderResetEmailHTML(userName, resetLink, r.AppName)
 	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.", userName, r.AppName, resetLink)
 	return r.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", r.AppName), htmlBody, text)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SMTPEmailSender — generic SMTP/STARTTLS sender (Brevo, Mailgun, Postmark…)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// SMTPEmailSender sends transactional emails via any standard SMTP relay with
+// STARTTLS + PLAIN auth (compatible with Brevo smtp-relay.brevo.com:587,
+// Mailgun, Postmark SMTP, etc.).
+type SMTPEmailSender struct {
+	Host     string // e.g. "smtp-relay.brevo.com"
+	Port     int    // e.g. 587
+	Username string
+	Password string
+	FromAddr string // e.g. "noreply@eflowsuite.com"
+	AppName  string // e.g. "eSTOCK"
+}
+
+// Send delivers a multipart/alternative email (HTML + plain text) via STARTTLS.
+// It honours ctx cancellation: if the context is already done before dialing,
+// Send returns ctx.Err() immediately without touching the network.
+func (s *SMTPEmailSender) Send(ctx context.Context, to, subject, htmlBody, textBody string) error {
+	// Honour context cancellation before any network I/O.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	from := fmt.Sprintf("%s <%s>", s.AppName, s.FromAddr)
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	auth := smtp.PlainAuth("", s.Username, s.Password, s.Host)
+
+	raw, err := buildMIMEMessage(from, to, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("smtp: build MIME: %w", err)
+	}
+
+	if err := smtp.SendMail(addr, auth, s.FromAddr, []string{to}, raw); err != nil {
+		return fmt.Errorf("smtp: send: %w", err)
+	}
+	return nil
+}
+
+// SendPasswordReset sends the standard password-reset email using the SMTP transport.
+func (s *SMTPEmailSender) SendPasswordReset(toEmail, userName, resetLink string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	htmlBody := renderResetEmailHTML(userName, resetLink, s.AppName)
+	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.", userName, s.AppName, resetLink)
+	return s.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", s.AppName), htmlBody, text)
+}
+
+// buildMIMEMessage constructs a multipart/alternative MIME message with plain
+// text and HTML parts using quoted-printable encoding for the HTML part.
+func buildMIMEMessage(from, to, subject, htmlBody, textBody string) ([]byte, error) {
+	var buf bytes.Buffer
+
+	// RFC 5322 headers.
+	buf.WriteString("From: " + from + "\r\n")
+	buf.WriteString("To: " + to + "\r\n")
+	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("MIME-Version: 1.0\r\n")
+
+	mw := multipart.NewWriter(&buf)
+	buf.WriteString("Content-Type: multipart/alternative; boundary=\"" + mw.Boundary() + "\"\r\n")
+	buf.WriteString("\r\n")
+
+	// Plain-text part.
+	th := make(textproto.MIMEHeader)
+	th.Set("Content-Type", "text/plain; charset=UTF-8")
+	th.Set("Content-Transfer-Encoding", "quoted-printable")
+	pw, err := mw.CreatePart(th)
+	if err != nil {
+		return nil, err
+	}
+	qpw := quotedprintable.NewWriter(pw)
+	if _, err := strings.NewReader(textBody).WriteTo(qpw); err != nil {
+		return nil, err
+	}
+	if err := qpw.Close(); err != nil {
+		return nil, err
+	}
+
+	// HTML part.
+	hh := make(textproto.MIMEHeader)
+	hh.Set("Content-Type", "text/html; charset=UTF-8")
+	hh.Set("Content-Transfer-Encoding", "quoted-printable")
+	hw, err := mw.CreatePart(hh)
+	if err != nil {
+		return nil, err
+	}
+	qph := quotedprintable.NewWriter(hw)
+	if _, err := strings.NewReader(htmlBody).WriteTo(qph); err != nil {
+		return nil, err
+	}
+	if err := qph.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

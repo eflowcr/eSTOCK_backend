@@ -114,10 +114,14 @@ func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesR
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
-// EmailSenderForConfig returns the appropriate EmailSender for the current environment.
-// In production with RESEND_API_KEY set, returns ResendEmailSender. Otherwise returns LoggerEmailSender.
+// EmailSenderForConfig returns the appropriate EmailSender based on available credentials.
+//
+// Priority order:
+//  1. RESEND_API_KEY set → ResendEmailSender (Resend API)
+//  2. SMTP_HOST set      → SMTPEmailSender (generic SMTP/STARTTLS — Brevo, Mailgun, etc.)
+//  3. Neither set        → LoggerEmailSender (dev/test fallback; logs to stdout)
 func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
-	if config.Environment == "production" && config.ResendAPIKey != "" {
+	if config.ResendAPIKey != "" {
 		fromAddr := config.ResendFromAddress
 		if fromAddr == "" {
 			fromAddr = "noreply@estock.app"
@@ -126,6 +130,16 @@ func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
 			APIKey:   config.ResendAPIKey,
 			FromAddr: fromAddr,
 			AppName:  "eSTOCK",
+		}
+	}
+	if config.SMTPHost != "" {
+		return &tools.SMTPEmailSender{
+			Host:     config.SMTPHost,
+			Port:     config.SMTPPort,
+			Username: config.SMTPUsername,
+			Password: config.SMTPPassword,
+			FromAddr: config.EmailFrom,
+			AppName:  config.EmailFromName,
 		}
 	}
 	return &tools.LoggerEmailSender{}
