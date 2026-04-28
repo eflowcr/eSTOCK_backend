@@ -35,7 +35,9 @@ func (m *mockSignupRepoCtrl) VerifySignup(_ context.Context, _ string) (*respons
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func newSignupController(repo *mockSignupRepoCtrl) *SignupController {
-	svc := services.NewSignupService(repo)
+	// rolesRepo nil → controller tests stay focused on HTTP shape; service-layer
+	// enrichment is covered by services/signup_service_test.go.
+	svc := services.NewSignupService(repo, nil)
 	return NewSignupController(svc)
 }
 
