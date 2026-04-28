@@ -134,6 +134,48 @@ type Inventory struct {
 	ReservedQty  pgtype.Numeric   `json:"reserved_qty"`
 }
 
+// Cycle/physical count sheets (mobile-driven). variance_qty on each line drives auto-adjustment on submit.
+type InventoryCount struct {
+	ID           string           `json:"id"`
+	Code         string           `json:"code"`
+	Name         string           `json:"name"`
+	Description  pgtype.Text      `json:"description"`
+	Status       string           `json:"status"`
+	ScheduledFor pgtype.Timestamp `json:"scheduled_for"`
+	StartedAt    pgtype.Timestamp `json:"started_at"`
+	CompletedAt  pgtype.Timestamp `json:"completed_at"`
+	SubmittedAt  pgtype.Timestamp `json:"submitted_at"`
+	SubmittedBy  pgtype.Text      `json:"submitted_by"`
+	AdjustmentID pgtype.Text      `json:"adjustment_id"`
+	CreatedBy    string           `json:"created_by"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+type InventoryCountLine struct {
+	ID          string         `json:"id"`
+	CountID     string         `json:"count_id"`
+	LocationID  string         `json:"location_id"`
+	Sku         string         `json:"sku"`
+	Lot         pgtype.Text    `json:"lot"`
+	Serial      pgtype.Text    `json:"serial"`
+	ExpectedQty pgtype.Numeric `json:"expected_qty"`
+	ScannedQty  pgtype.Numeric `json:"scanned_qty"`
+	// scanned_qty - expected_qty; positive = stock found extra, negative = stock missing.
+	VarianceQty pgtype.Numeric   `json:"variance_qty"`
+	Note        pgtype.Text      `json:"note"`
+	ScannedBy   string           `json:"scanned_by"`
+	ScannedAt   pgtype.Timestamp `json:"scanned_at"`
+}
+
+type InventoryCountLocation struct {
+	ID         string      `json:"id"`
+	CountID    string      `json:"count_id"`
+	LocationID string      `json:"location_id"`
+	Status     string      `json:"status"`
+	AssignedTo pgtype.Text `json:"assigned_to"`
+}
+
 type InventoryLot struct {
 	ID          string           `json:"id"`
 	InventoryID string           `json:"inventory_id"`
