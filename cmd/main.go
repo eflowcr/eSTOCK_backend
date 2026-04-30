@@ -170,7 +170,7 @@ func main() {
 		// (not via in-app notifications) since trial tenants may not have user accounts yet.
 		// Fire-and-forget: errors are logged but never block the cron.
 		var trialSendFn func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error
-		if emailSender := wire.EmailSenderForConfig(config); emailSender != nil {
+		if emailSender != nil {
 			trialSendFn = func(ctx context.Context, toEmail, tenantName, templateType string, daysLeft int) error {
 				subject, htmlBody, textBody := tools.RenderTrialEmail(templateType, tenantName, daysLeft)
 				if err := emailSender.Send(ctx, toEmail, subject, htmlBody, textBody); err != nil {

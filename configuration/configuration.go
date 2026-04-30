@@ -98,9 +98,12 @@ type Config struct {
 	// VPS Manager email gateway (S-EM2).
 	// When VPSManagerBaseURL and VPSManagerAPIKey are both set, transactional emails
 	// are routed through VPS Manager → Brevo instead of being sent directly.
-	VPSManagerBaseURL  string // env: VPS_MANAGER_BASE_URL, e.g. "https://vps-manager-api.eflowsuite.com/api/v1"
-	VPSManagerAPIKey   string // env: VPS_MANAGER_API_KEY (service key configured in VPS Manager)
-	VPSManagerFromAddr string // env: VPS_MANAGER_FROM_ADDR, e.g. "noreply@eflowsuite.com"
+	// Set EMAIL_GATEWAY_DISABLED=true to force-skip the gateway even when the other
+	// vars are present (incident kill-switch — allows rollback without removing secrets).
+	VPSManagerBaseURL      string // env: VPS_MANAGER_BASE_URL, must include /api/v1 prefix
+	VPSManagerAPIKey       string // env: VPS_MANAGER_API_KEY (service key configured in VPS Manager)
+	VPSManagerFromAddr     string // env: VPS_MANAGER_FROM_ADDR, e.g. "noreply@eflowsuite.com"
+	EmailGatewayDisabled   bool   // env: EMAIL_GATEWAY_DISABLED=true — skips gateway tier; falls through to next sender
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -147,6 +150,7 @@ func LoadConfig() (Config, error) {
 		VPSManagerBaseURL:     os.Getenv("VPS_MANAGER_BASE_URL"),
 		VPSManagerAPIKey:      os.Getenv("VPS_MANAGER_API_KEY"),
 		VPSManagerFromAddr:    os.Getenv("VPS_MANAGER_FROM_ADDR"),
+		EmailGatewayDisabled:  os.Getenv("EMAIL_GATEWAY_DISABLED") == "true",
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"

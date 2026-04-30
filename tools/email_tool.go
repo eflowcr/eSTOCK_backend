@@ -174,10 +174,25 @@ func (g *GatewayEmailSender) Send(ctx context.Context, to, subject, htmlBody, te
 		return fmt.Errorf("gateway: http: %w", err)
 	}
 	defer resp.Body.Close()
-	// 201 = sent immediately, 202 = accepted/queued for retry — both success for caller
-	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
-		// Drain to allow connection reuse (keep-alive).
+	if resp.StatusCode == http.StatusCreated {
 		io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	// 202 = provider failed but row persisted for retry — treat as success for caller
+	// but log WARN so operators can detect Brevo outages before retry exhaustion.
+	if resp.StatusCode == http.StatusAccepted {
+		var queued struct {
+			Error string `json:"error"`
+			Send  struct {
+				ID string `json:"id"`
+			} `json:"send"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&queued); err == nil && queued.Error != "" {
+			log.Warn().Str("send_id", queued.Send.ID).Str("provider_error", queued.Error).
+				Msg("gateway: email queued for retry — provider reported error")
+		} else {
+			io.Copy(io.Discard, resp.Body)
+		}
 		return nil
 	}
 	// Sanitize: do NOT echo upstream body in returned error — may leak internal

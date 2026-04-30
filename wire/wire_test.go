@@ -9,6 +9,47 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestEmailSenderForConfig_GatewayKillSwitch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("gateway selected when vars set and kill switch off", func(t *testing.T) {
+		t.Parallel()
+		cfg := configuration.Config{
+			VPSManagerBaseURL:    "http://vps-manager:8080/api/v1",
+			VPSManagerAPIKey:     "key",
+			EmailGatewayDisabled: false,
+		}
+		sender := wire.EmailSenderForConfig(cfg)
+		_, ok := sender.(*tools.GatewayEmailSender)
+		assert.True(t, ok, "expected GatewayEmailSender when vars set and kill switch off")
+	})
+
+	t.Run("kill switch bypasses gateway even when vars set", func(t *testing.T) {
+		t.Parallel()
+		cfg := configuration.Config{
+			VPSManagerBaseURL:    "http://vps-manager:8080/api/v1",
+			VPSManagerAPIKey:     "key",
+			EmailGatewayDisabled: true,
+			ResendAPIKey:         "re_fallback",
+		}
+		sender := wire.EmailSenderForConfig(cfg)
+		_, ok := sender.(*tools.ResendEmailSender)
+		assert.True(t, ok, "expected ResendEmailSender fallback when EMAIL_GATEWAY_DISABLED=true")
+	})
+
+	t.Run("kill switch with only logger available", func(t *testing.T) {
+		t.Parallel()
+		cfg := configuration.Config{
+			VPSManagerBaseURL:    "http://vps-manager:8080/api/v1",
+			VPSManagerAPIKey:     "key",
+			EmailGatewayDisabled: true,
+		}
+		sender := wire.EmailSenderForConfig(cfg)
+		_, ok := sender.(*tools.LoggerEmailSender)
+		assert.True(t, ok, "expected LoggerEmailSender when gateway disabled and no fallback configured")
+	})
+}
+
 // TestEmailSenderForConfig_SMTPPriorityOrder verifies the three-tier selection:
 //  1. RESEND_API_KEY set → ResendEmailSender
 //  2. SMTP_HOST set (no Resend key) → SMTPEmailSender

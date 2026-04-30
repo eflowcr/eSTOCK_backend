@@ -117,12 +117,17 @@ func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesR
 // EmailSenderForConfig returns the appropriate EmailSender for the current environment.
 //
 // Priority order:
-//  1. VPS_MANAGER_BASE_URL + VPS_MANAGER_API_KEY → GatewayEmailSender (routes via VPS Manager → Brevo)
+//  1. VPS_MANAGER_BASE_URL + VPS_MANAGER_API_KEY (and !EMAIL_GATEWAY_DISABLED) → GatewayEmailSender
 //  2. RESEND_API_KEY set                         → ResendEmailSender (legacy Resend API)
 //  3. SMTP_HOST set                              → SMTPEmailSender (generic SMTP/STARTTLS)
 //  4. None set                                   → LoggerEmailSender (dev/test fallback)
+//
+// Startup log: see cmd/main.go — the chosen sender is logged at INFO on process start.
+// Kill switch: set EMAIL_GATEWAY_DISABLED=true to bypass the gateway tier without removing
+// other env vars (useful during incidents to fall back to Resend/SMTP without downtime).
+// Startup warning when all real senders are absent: see cmd/main.go.
 func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
-	if config.VPSManagerBaseURL != "" && config.VPSManagerAPIKey != "" {
+	if !config.EmailGatewayDisabled && config.VPSManagerBaseURL != "" && config.VPSManagerAPIKey != "" {
 		fromAddr := config.VPSManagerFromAddr
 		if fromAddr == "" {
 			fromAddr = "noreply@eflowsuite.com"
