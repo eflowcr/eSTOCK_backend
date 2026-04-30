@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -56,6 +57,22 @@ type Config struct {
 	// ResendFromAddress is the "from" address for transactional emails (env: RESEND_FROM_ADDRESS).
 	// Example: "noreply@estock.app". Defaults to "noreply@estock.app" if unset.
 	ResendFromAddress string
+
+	// SMTP configuration — generic SMTP/STARTTLS sender (env: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD).
+	// Used when RESEND_API_KEY is unset. Compatible with Brevo, Mailgun SMTP, Postmark SMTP, etc.
+	// SMTPPort defaults to 587 (STARTTLS) if unset.
+	SMTPHost     string // SMTP_HOST
+	SMTPPort     int    // SMTP_PORT (default 587)
+	SMTPUsername string // SMTP_USERNAME
+	SMTPPassword string // SMTP_PASSWORD
+
+	// EmailFrom is the "from" address used by the SMTP sender (env: EMAIL_FROM).
+	// Defaults to "noreply@eflowsuite.com" if unset.
+	EmailFrom string // EMAIL_FROM
+
+	// EmailFromName is the display name used by the SMTP sender (env: EMAIL_FROM_NAME).
+	// Defaults to "eSTOCK" if unset.
+	EmailFromName string // EMAIL_FROM_NAME
 
 	// TenantID is the UUID of the current tenant (env: TENANT_ID).
 	// Single-tenant mode: defaults to a fixed UUID if unset.
@@ -116,6 +133,11 @@ func LoadConfig() (Config, error) {
 		AppURL:               os.Getenv("APP_URL"),
 		ResendAPIKey:         os.Getenv("RESEND_API_KEY"),
 		ResendFromAddress:    os.Getenv("RESEND_FROM_ADDRESS"),
+		SMTPHost:             os.Getenv("SMTP_HOST"),
+		SMTPUsername:         os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:         os.Getenv("SMTP_PASSWORD"),
+		EmailFrom:            os.Getenv("EMAIL_FROM"),
+		EmailFromName:        os.Getenv("EMAIL_FROM_NAME"),
 		TenantID:             os.Getenv("TENANT_ID"),
 		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
@@ -128,6 +150,24 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"
+	}
+
+	// SMTP port: parse SMTP_PORT env var; default to 587 (STARTTLS).
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		if p, err := strconv.Atoi(raw); err == nil && p > 0 {
+			cfg.SMTPPort = p
+		}
+	}
+	if cfg.SMTPPort == 0 {
+		cfg.SMTPPort = 587
+	}
+
+	// SMTP from defaults.
+	if cfg.EmailFrom == "" {
+		cfg.EmailFrom = "noreply@eflowsuite.com"
+	}
+	if cfg.EmailFromName == "" {
+		cfg.EmailFromName = "eSTOCK"
 	}
 
 	// EnableSignup: explicit env var takes priority; defaults to true in development, false elsewhere.

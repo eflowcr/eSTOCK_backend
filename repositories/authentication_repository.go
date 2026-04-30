@@ -114,7 +114,7 @@ func (a *AuthenticationRepository) Login(login requests.Login) (*responses.Login
 	}, nil
 }
 
-func (r *AuthenticationRepository) RequestPasswordReset(ctx context.Context, email string) *responses.InternalResponse {
+func (r *AuthenticationRepository) RequestPasswordReset(ctx context.Context, email string, originURL string) *responses.InternalResponse {
 	// 1. Buscar usuario activo por email (case-insensitive)
 	var user database.User
 	err := r.DB.Where("LOWER(email) = LOWER(?) AND is_active = true", email).First(&user).Error
@@ -158,10 +158,7 @@ func (r *AuthenticationRepository) RequestPasswordReset(ctx context.Context, ema
 		}
 
 		// 4. Enviar email (no bloquear si falla — el token ya está creado)
-		appURL := r.Config.AppURL
-		if appURL == "" {
-			appURL = "http://localhost:4200"
-		}
+		appURL := tools.ResolveFrontendURL(originURL, r.Config.AppURL)
 		resetLink := fmt.Sprintf("%s/reset-password?token=%s", appURL, token)
 		userName := user.FirstName
 		if userName == "" {

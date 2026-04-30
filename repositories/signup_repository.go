@@ -39,7 +39,7 @@ type SignupRepository struct {
 // Add a CronDispatch cleanup job:
 //   DELETE FROM signup_tokens WHERE expires_at < NOW() - INTERVAL '7 days'
 // Deferred to S3.5; at current signup volume the table won't grow to problematic size in the near term.
-func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.SignupRequest) *responses.InternalResponse {
+func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.SignupRequest, originURL string) *responses.InternalResponse {
 	// Extra validation: slug pattern (validator tag handles min/max length but not regex).
 	if !slugRegexp.MatchString(req.TenantSlug) {
 		return &responses.InternalResponse{
@@ -133,10 +133,7 @@ func (r *SignupRepository) InitiateSignup(ctx context.Context, req requests.Sign
 	}
 
 	// Send verification email — non-blocking on failure (token already persisted).
-	appURL := r.Config.AppURL
-	if appURL == "" {
-		appURL = "http://localhost:4200"
-	}
+	appURL := tools.ResolveFrontendURL(originURL, r.Config.AppURL)
 	verifyLink := fmt.Sprintf("%s/verify-signup?token=%s", appURL, token)
 
 	// S3.5.2 N2 (Part C): "SMTP/email skipped" decision — when the configured sender
@@ -346,9 +343,11 @@ func (r *SignupRepository) VerifySignup(ctx context.Context, token string) (*res
 
 func renderSignupVerifyEmail(adminName, companyName, verifyLink string) (htmlBody, textBody string) {
 	// C3 fix: escape user-controlled fields before injecting into HTML to prevent XSS.
-	// verifyLink is a server-constructed URL (not user input), so no escaping needed there.
+	// verifyLink derives from the request Origin header (allowlist-validated).
+	// Defense-in-depth: still HTML-escape in case allowlist is misconfigured.
 	safeAdminName := html.EscapeString(adminName)
 	safeCompanyName := html.EscapeString(companyName)
+	safeVerifyLink := html.EscapeString(verifyLink)
 
 	text := fmt.Sprintf(
 		"Hola %s,\n\nGracias por registrar %s en eSTOCK.\n\nVerifica tu cuenta aquí: %s\n\nEl enlace expira en 24 horas.\n\neSTOCK Team",
@@ -366,6 +365,6 @@ func renderSignupVerifyEmail(adminName, companyName, verifyLink string) (htmlBod
     <a href="%s" style="display:inline-block;background:#203173;color:#e8d833;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;">Verificar cuenta</a>
     <p style="color:#94A3B8;font-size:12px;margin-top:32px;">Si no solicitaste este registro, puedes ignorar este correo.</p>
   </div>
-</body></html>`, safeAdminName, safeCompanyName, verifyLink)
+</body></html>`, safeAdminName, safeCompanyName, safeVerifyLink)
 	return htmlStr, text
 }

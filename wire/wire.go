@@ -115,7 +115,12 @@ func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesR
 }
 
 // EmailSenderForConfig returns the appropriate EmailSender for the current environment.
-// Priority: VPS Manager gateway > Resend (legacy) > LoggerEmailSender.
+//
+// Priority order:
+//  1. VPS_MANAGER_BASE_URL + VPS_MANAGER_API_KEY → GatewayEmailSender (routes via VPS Manager → Brevo)
+//  2. RESEND_API_KEY set                         → ResendEmailSender (legacy Resend API)
+//  3. SMTP_HOST set                              → SMTPEmailSender (generic SMTP/STARTTLS)
+//  4. None set                                   → LoggerEmailSender (dev/test fallback)
 func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
 	if config.VPSManagerBaseURL != "" && config.VPSManagerAPIKey != "" {
 		fromAddr := config.VPSManagerFromAddr
@@ -124,12 +129,22 @@ func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
 		}
 		return tools.NewGatewayEmailSender(config.VPSManagerBaseURL, config.VPSManagerAPIKey, fromAddr, "eSTOCK")
 	}
-	if config.Environment == "production" && config.ResendAPIKey != "" {
+	if config.ResendAPIKey != "" {
 		fromAddr := config.ResendFromAddress
 		if fromAddr == "" {
 			fromAddr = "noreply@estock.app"
 		}
 		return &tools.ResendEmailSender{APIKey: config.ResendAPIKey, FromAddr: fromAddr, AppName: "eSTOCK"}
+	}
+	if config.SMTPHost != "" {
+		return &tools.SMTPEmailSender{
+			Host:     config.SMTPHost,
+			Port:     config.SMTPPort,
+			Username: config.SMTPUsername,
+			Password: config.SMTPPassword,
+			FromAddr: config.EmailFrom,
+			AppName:  config.EmailFromName,
+		}
 	}
 	return &tools.LoggerEmailSender{}
 }

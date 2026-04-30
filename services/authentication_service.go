@@ -22,8 +22,8 @@ func NewAuthenticationService(repo ports.AuthenticationRepository, rolesRepo por
 	}
 }
 
-func (s *AuthenticationService) RequestPasswordReset(ctx context.Context, email string) *responses.InternalResponse {
-	return s.Repository.RequestPasswordReset(ctx, email)
+func (s *AuthenticationService) RequestPasswordReset(ctx context.Context, email string, originURL string) *responses.InternalResponse {
+	return s.Repository.RequestPasswordReset(ctx, email, originURL)
 }
 
 func (s *AuthenticationService) ResetPassword(ctx context.Context, token, newPassword string) *responses.InternalResponse {

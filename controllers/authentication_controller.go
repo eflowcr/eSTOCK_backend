@@ -55,11 +55,12 @@ func (c *AuthenticationController) ForgotPassword(ctx *gin.Context) {
 
 	// Dispatch in background — prevents timing-based user enumeration and avoids blocking the response.
 	// Use context.Background() so the job is not cancelled when the HTTP response is written.
-	go func(email string) {
-		if resp := c.Service.RequestPasswordReset(context.Background(), email); resp != nil && resp.Error != nil {
+	origin := ctx.GetHeader("Origin")
+	go func(email, originURL string) {
+		if resp := c.Service.RequestPasswordReset(context.Background(), email, originURL); resp != nil && resp.Error != nil {
 			log.Error().Err(resp.Error).Str("email", email).Msg("forgot password background error")
 		}
-	}(req.Email)
+	}(req.Email, origin)
 
 	tools.ResponseOK(ctx, "ForgotPassword",
 		"Si el email existe, recibirás un enlace en los próximos minutos",

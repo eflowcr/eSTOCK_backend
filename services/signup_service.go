@@ -29,8 +29,10 @@ func NewSignupService(repo ports.SignupRepository, rolesRepo ports.RolesReposito
 }
 
 // InitiateSignup validates the request and starts the email verification flow.
-func (s *SignupService) InitiateSignup(ctx context.Context, req requests.SignupRequest) *responses.InternalResponse {
-	return s.Repository.InitiateSignup(ctx, req)
+// originURL is forwarded to the repository so the verification email link can
+// be built from the caller's actual frontend hostname when safe to do so.
+func (s *SignupService) InitiateSignup(ctx context.Context, req requests.SignupRequest, originURL string) *responses.InternalResponse {
+	return s.Repository.InitiateSignup(ctx, req, originURL)
 }
 
 // VerifySignup completes the signup: creates tenant, admin user, demo data.

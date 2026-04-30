@@ -33,7 +33,8 @@ func (c *SignupController) InitiateSignup(ctx *gin.Context) {
 		return
 	}
 
-	if resp := c.Service.InitiateSignup(ctx.Request.Context(), req); resp != nil {
+	origin := ctx.GetHeader("Origin")
+	if resp := c.Service.InitiateSignup(ctx.Request.Context(), req, origin); resp != nil {
 		writeErrorResponse(ctx, "InitiateSignup", "signup", resp)
 		return
 	}
