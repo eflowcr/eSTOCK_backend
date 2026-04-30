@@ -122,8 +122,9 @@ func main() {
 					return nil
 				}
 				ctx := context.Background()
+				tenantNotifSvc := notifSvc.WithTenant(tenantID)
 				for _, uid := range adminIDs {
-					if err := notifSvc.Send(ctx, uid, eventType, title, body, "lot", ""); err != nil {
+					if err := tenantNotifSvc.Send(ctx, uid, eventType, title, body, "lot", ""); err != nil {
 						log.Warn().Err(err).Str("tenant_id", tenantID).Str("user_id", uid).Msg("cron: lot expiration notify send failed")
 					}
 				}
@@ -145,8 +146,9 @@ func main() {
 				}
 				title := "Alerta: stock bajo — " + sku
 				ctx := context.Background()
+				tenantNotifSvc := notifSvc.WithTenant(tenantID)
 				for _, uid := range adminIDs {
-					if err := notifSvc.Send(ctx, uid, "low_stock", title, message, "stock_alert", sku); err != nil {
+					if err := tenantNotifSvc.Send(ctx, uid, "low_stock", title, message, "stock_alert", sku); err != nil {
 						log.Warn().Err(err).Str("tenant_id", tenantID).Str("sku", sku).Str("user_id", uid).Msg("cron: low_stock notify send failed")
 					}
 				}

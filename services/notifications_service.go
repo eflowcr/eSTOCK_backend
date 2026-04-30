@@ -127,3 +127,14 @@ func (s *NotificationsService) UpsertPreference(pref *database.NotificationPrefe
 	}
 	return nil
 }
+
+// WithTenant returns a shallow copy of the service scoped to the given tenantID.
+// Use in cron callbacks that iterate per-tenant to avoid pod-level tenantID
+// leaking into notification rows for other tenants.
+func (s *NotificationsService) WithTenant(tenantID string) *NotificationsService {
+	return &NotificationsService{
+		repo:        s.repo,
+		emailSender: s.emailSender,
+		tenantID:    tenantID,
+	}
+}
