@@ -8,6 +8,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -112,6 +113,74 @@ func (r *ResendEmailSender) SendPasswordReset(toEmail, userName, resetLink strin
 	htmlBody := renderResetEmailHTML(userName, resetLink, r.AppName)
 	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.", userName, r.AppName, resetLink)
 	return r.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", r.AppName), htmlBody, text)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GatewayEmailSender — routes transactional emails via VPS Manager API (S-EM2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+type GatewayEmailSender struct {
+	BaseURL  string
+	APIKey   string
+	FromAddr string
+	AppName  string
+	client   *http.Client
+}
+
+type gatewayEmailRequest struct {
+	To       string `json:"to"`
+	Subject  string `json:"subject"`
+	BodyHTML string `json:"body_html,omitempty"`
+	BodyText string `json:"body_text,omitempty"`
+}
+
+func NewGatewayEmailSender(baseURL, apiKey, fromAddr, appName string) *GatewayEmailSender {
+	return &GatewayEmailSender{
+		BaseURL:  baseURL,
+		APIKey:   apiKey,
+		FromAddr: fromAddr,
+		AppName:  appName,
+		client:   &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+func (g *GatewayEmailSender) Send(ctx context.Context, to, subject, htmlBody, textBody string) error {
+	payload := gatewayEmailRequest{
+		To:       to,
+		Subject:  subject,
+		BodyHTML: htmlBody,
+		BodyText: textBody,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("gateway: marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.BaseURL+"/emails/send", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("gateway: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+g.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("gateway: http: %w", err)
+	}
+	defer resp.Body.Close()
+	// 201 = sent immediately, 202 = accepted/queued for retry — both success for caller
+	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
+		return nil
+	}
+	b, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("gateway: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+}
+
+func (g *GatewayEmailSender) SendPasswordReset(toEmail, userName, resetLink string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	htmlBody := renderResetEmailHTML(userName, resetLink, g.AppName)
+	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.",
+		userName, g.AppName, resetLink)
+	return g.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", g.AppName), htmlBody, text)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -115,18 +115,21 @@ func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesR
 }
 
 // EmailSenderForConfig returns the appropriate EmailSender for the current environment.
-// In production with RESEND_API_KEY set, returns ResendEmailSender. Otherwise returns LoggerEmailSender.
+// Priority: VPS Manager gateway > Resend (legacy) > LoggerEmailSender.
 func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
+	if config.VPSManagerBaseURL != "" && config.VPSManagerAPIKey != "" {
+		fromAddr := config.VPSManagerFromAddr
+		if fromAddr == "" {
+			fromAddr = "noreply@eflowsuite.com"
+		}
+		return tools.NewGatewayEmailSender(config.VPSManagerBaseURL, config.VPSManagerAPIKey, fromAddr, "eSTOCK")
+	}
 	if config.Environment == "production" && config.ResendAPIKey != "" {
 		fromAddr := config.ResendFromAddress
 		if fromAddr == "" {
 			fromAddr = "noreply@estock.app"
 		}
-		return &tools.ResendEmailSender{
-			APIKey:   config.ResendAPIKey,
-			FromAddr: fromAddr,
-			AppName:  "eSTOCK",
-		}
+		return &tools.ResendEmailSender{APIKey: config.ResendAPIKey, FromAddr: fromAddr, AppName: "eSTOCK"}
 	}
 	return &tools.LoggerEmailSender{}
 }
