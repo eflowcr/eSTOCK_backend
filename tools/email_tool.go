@@ -120,6 +120,82 @@ func (r *ResendEmailSender) SendPasswordReset(toEmail, userName, resetLink strin
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GatewayEmailSender — routes transactional emails via VPS Manager API (S-EM2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+type GatewayEmailSender struct {
+	BaseURL  string
+	APIKey   string
+	FromAddr string
+	AppName  string
+	client   *http.Client
+}
+
+type gatewayEmailRequest struct {
+	To       string `json:"to"`
+	Subject  string `json:"subject"`
+	BodyHTML string `json:"body_html,omitempty"`
+	BodyText string `json:"body_text,omitempty"`
+}
+
+// NewGatewayEmailSender constructs a sender that posts to {baseURL}/emails/send.
+// Trailing slashes on baseURL are normalized so callers can pass either
+// "https://host/api/v1" or "https://host/api/v1/" without producing a double slash
+// in the request URL (HR-W3-B7 M5).
+func NewGatewayEmailSender(baseURL, apiKey, fromAddr, appName string) *GatewayEmailSender {
+	return &GatewayEmailSender{
+		BaseURL:  strings.TrimRight(baseURL, "/"),
+		APIKey:   apiKey,
+		FromAddr: fromAddr,
+		AppName:  appName,
+		client:   &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+func (g *GatewayEmailSender) Send(ctx context.Context, to, subject, htmlBody, textBody string) error {
+	payload := gatewayEmailRequest{
+		To:       to,
+		Subject:  subject,
+		BodyHTML: htmlBody,
+		BodyText: textBody,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("gateway: marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.BaseURL+"/emails/send", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("gateway: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+g.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("gateway: http: %w", err)
+	}
+	defer resp.Body.Close()
+	// 201 = sent immediately, 202 = accepted/queued for retry — both success for caller
+	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
+		// Drain to allow connection reuse (keep-alive).
+		io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	// Sanitize: do NOT echo upstream body in returned error — may leak internal
+	// details (stack traces, DB messages) to caller logs (HR-W3-B7 M6).
+	io.Copy(io.Discard, resp.Body)
+	return fmt.Errorf("gateway: HTTP %d", resp.StatusCode)
+}
+
+func (g *GatewayEmailSender) SendPasswordReset(toEmail, userName, resetLink string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	htmlBody := renderResetEmailHTML(userName, resetLink, g.AppName)
+	text := fmt.Sprintf("Hola %s,\n\nRestablece tu contraseña de %s: %s\n\nEl enlace expira en 1 hora.",
+		userName, g.AppName, resetLink)
+	return g.Send(ctx, toEmail, fmt.Sprintf("Restablece tu contraseña de %s", g.AppName), htmlBody, text)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SMTPEmailSender — generic SMTP/STARTTLS sender (Brevo, Mailgun, Postmark…)
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -43,8 +43,8 @@ func main() {
 	// loud at startup so ops sees it on first log read instead of debugging a stuck
 	// signup hours later. We treat either RESEND_API_KEY or SMTP_HOST as "email
 	// configured"; only warn if both are empty.
-	if os.Getenv("SMTP_HOST") == "" && config.ResendAPIKey == "" {
-		log.Warn().Msg("SMTP_HOST and RESEND_API_KEY both unset — signup verify emails will be skipped. Tokens will be logged to stdout for ops debugging.")
+	if os.Getenv("SMTP_HOST") == "" && config.ResendAPIKey == "" && config.VPSManagerAPIKey == "" {
+		log.Warn().Msg("SMTP_HOST, RESEND_API_KEY, and VPS_MANAGER_API_KEY all unset — signup verify emails will be skipped. Tokens will be logged to stdout for ops debugging.")
 	}
 
 	dbURL := configuration.DatabaseURL(config)
@@ -72,6 +72,16 @@ func main() {
 
 	// Build shared email sender and notifications service.
 	emailSender := wire.EmailSenderForConfig(config)
+	// HR-W3-B7 M7: log which sender was wired so ops can confirm at startup
+	// whether transactional email goes through the gateway, Resend, or stdout.
+	switch emailSender.(type) {
+	case *tools.GatewayEmailSender:
+		log.Info().Str("email_sender", "vps_manager_gateway").Msg("email sender wired")
+	case *tools.ResendEmailSender:
+		log.Info().Str("email_sender", "resend").Msg("email sender wired")
+	default:
+		log.Info().Str("email_sender", "logger_stdout").Msg("email sender wired (no real emails — dev mode)")
+	}
 	var notifSvc *services.NotificationsService
 	if db != nil {
 		_, notifSvc = wire.NewNotifications(db, emailSender, config.TenantID)
@@ -122,8 +132,9 @@ func main() {
 					return nil
 				}
 				ctx := context.Background()
+				tenantNotifSvc := notifSvc.WithTenant(tenantID)
 				for _, uid := range adminIDs {
-					if err := notifSvc.Send(ctx, uid, eventType, title, body, "lot", ""); err != nil {
+					if err := tenantNotifSvc.Send(ctx, uid, eventType, title, body, "lot", ""); err != nil {
 						log.Warn().Err(err).Str("tenant_id", tenantID).Str("user_id", uid).Msg("cron: lot expiration notify send failed")
 					}
 				}
@@ -145,8 +156,9 @@ func main() {
 				}
 				title := "Alerta: stock bajo — " + sku
 				ctx := context.Background()
+				tenantNotifSvc := notifSvc.WithTenant(tenantID)
 				for _, uid := range adminIDs {
-					if err := notifSvc.Send(ctx, uid, "low_stock", title, message, "stock_alert", sku); err != nil {
+					if err := tenantNotifSvc.Send(ctx, uid, "low_stock", title, message, "stock_alert", sku); err != nil {
 						log.Warn().Err(err).Str("tenant_id", tenantID).Str("sku", sku).Str("user_id", uid).Msg("cron: low_stock notify send failed")
 					}
 				}

@@ -94,6 +94,13 @@ type Config struct {
 	StripePricePro string
 	// StripePriceEnterprise is the Stripe Price ID for the Enterprise plan (env: STRIPE_PRICE_ENTERPRISE).
 	StripePriceEnterprise string
+
+	// VPS Manager email gateway (S-EM2).
+	// When VPSManagerBaseURL and VPSManagerAPIKey are both set, transactional emails
+	// are routed through VPS Manager → Brevo instead of being sent directly.
+	VPSManagerBaseURL  string // env: VPS_MANAGER_BASE_URL, e.g. "https://vps-manager-api.eflowsuite.com/api/v1"
+	VPSManagerAPIKey   string // env: VPS_MANAGER_API_KEY (service key configured in VPS Manager)
+	VPSManagerFromAddr string // env: VPS_MANAGER_FROM_ADDR, e.g. "noreply@eflowsuite.com"
 }
 
 // LoadConfig loads configuration from environment variables, optionally from a .env file if present.
@@ -137,6 +144,9 @@ func LoadConfig() (Config, error) {
 		StripePriceStarter:   os.Getenv("STRIPE_PRICE_STARTER"),
 		StripePricePro:       os.Getenv("STRIPE_PRICE_PRO"),
 		StripePriceEnterprise: os.Getenv("STRIPE_PRICE_ENTERPRISE"),
+		VPSManagerBaseURL:     os.Getenv("VPS_MANAGER_BASE_URL"),
+		VPSManagerAPIKey:      os.Getenv("VPS_MANAGER_API_KEY"),
+		VPSManagerFromAddr:    os.Getenv("VPS_MANAGER_FROM_ADDR"),
 	}
 	if cfg.TenantID == "" {
 		cfg.TenantID = "00000000-0000-0000-0000-000000000001"

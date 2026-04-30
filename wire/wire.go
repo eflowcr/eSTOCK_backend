@@ -114,23 +114,27 @@ func NewAuthenticationWithAudit(db *gorm.DB, config configuration.Config, rolesR
 	return r, services.NewAuthenticationService(r, rolesRepo)
 }
 
-// EmailSenderForConfig returns the appropriate EmailSender based on available credentials.
+// EmailSenderForConfig returns the appropriate EmailSender for the current environment.
 //
 // Priority order:
-//  1. RESEND_API_KEY set → ResendEmailSender (Resend API)
-//  2. SMTP_HOST set      → SMTPEmailSender (generic SMTP/STARTTLS — Brevo, Mailgun, etc.)
-//  3. Neither set        → LoggerEmailSender (dev/test fallback; logs to stdout)
+//  1. VPS_MANAGER_BASE_URL + VPS_MANAGER_API_KEY → GatewayEmailSender (routes via VPS Manager → Brevo)
+//  2. RESEND_API_KEY set                         → ResendEmailSender (legacy Resend API)
+//  3. SMTP_HOST set                              → SMTPEmailSender (generic SMTP/STARTTLS)
+//  4. None set                                   → LoggerEmailSender (dev/test fallback)
 func EmailSenderForConfig(config configuration.Config) tools.EmailSender {
+	if config.VPSManagerBaseURL != "" && config.VPSManagerAPIKey != "" {
+		fromAddr := config.VPSManagerFromAddr
+		if fromAddr == "" {
+			fromAddr = "noreply@eflowsuite.com"
+		}
+		return tools.NewGatewayEmailSender(config.VPSManagerBaseURL, config.VPSManagerAPIKey, fromAddr, "eSTOCK")
+	}
 	if config.ResendAPIKey != "" {
 		fromAddr := config.ResendFromAddress
 		if fromAddr == "" {
 			fromAddr = "noreply@estock.app"
 		}
-		return &tools.ResendEmailSender{
-			APIKey:   config.ResendAPIKey,
-			FromAddr: fromAddr,
-			AppName:  "eSTOCK",
-		}
+		return &tools.ResendEmailSender{APIKey: config.ResendAPIKey, FromAddr: fromAddr, AppName: "eSTOCK"}
 	}
 	if config.SMTPHost != "" {
 		return &tools.SMTPEmailSender{
