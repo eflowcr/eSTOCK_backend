@@ -72,6 +72,16 @@ func main() {
 
 	// Build shared email sender and notifications service.
 	emailSender := wire.EmailSenderForConfig(config)
+	// HR-W3-B7 M7: log which sender was wired so ops can confirm at startup
+	// whether transactional email goes through the gateway, Resend, or stdout.
+	switch emailSender.(type) {
+	case *tools.GatewayEmailSender:
+		log.Info().Str("email_sender", "vps_manager_gateway").Msg("email sender wired")
+	case *tools.ResendEmailSender:
+		log.Info().Str("email_sender", "resend").Msg("email sender wired")
+	default:
+		log.Info().Str("email_sender", "logger_stdout").Msg("email sender wired (no real emails — dev mode)")
+	}
 	var notifSvc *services.NotificationsService
 	if db != nil {
 		_, notifSvc = wire.NewNotifications(db, emailSender, config.TenantID)

@@ -134,9 +134,13 @@ type gatewayEmailRequest struct {
 	BodyText string `json:"body_text,omitempty"`
 }
 
+// NewGatewayEmailSender constructs a sender that posts to {baseURL}/emails/send.
+// Trailing slashes on baseURL are normalized so callers can pass either
+// "https://host/api/v1" or "https://host/api/v1/" without producing a double slash
+// in the request URL (HR-W3-B7 M5).
 func NewGatewayEmailSender(baseURL, apiKey, fromAddr, appName string) *GatewayEmailSender {
 	return &GatewayEmailSender{
-		BaseURL:  baseURL,
+		BaseURL:  strings.TrimRight(baseURL, "/"),
 		APIKey:   apiKey,
 		FromAddr: fromAddr,
 		AppName:  appName,
@@ -168,10 +172,14 @@ func (g *GatewayEmailSender) Send(ctx context.Context, to, subject, htmlBody, te
 	defer resp.Body.Close()
 	// 201 = sent immediately, 202 = accepted/queued for retry — both success for caller
 	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
+		// Drain to allow connection reuse (keep-alive).
+		io.Copy(io.Discard, resp.Body)
 		return nil
 	}
-	b, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("gateway: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	// Sanitize: do NOT echo upstream body in returned error — may leak internal
+	// details (stack traces, DB messages) to caller logs (HR-W3-B7 M6).
+	io.Copy(io.Discard, resp.Body)
+	return fmt.Errorf("gateway: HTTP %d", resp.StatusCode)
 }
 
 func (g *GatewayEmailSender) SendPasswordReset(toEmail, userName, resetLink string) error {
