@@ -462,5 +462,28 @@ func CronDispatch(db *gorm.DB, analyzer func(tenantID string) error, lotNotifyFn
 	if err := RunTrialExpirationCheck(db, trialSendFn); err != nil {
 		log.Error().Err(err).Msg("cron: trial expiration check failed")
 	}
+	// S7.2 W0 — Mobile Idempotency-Key dedup sweep. 7-day TTL on cached
+	// response rows; cron removes expired entries each tick so the table
+	// stays bounded.
+	if err := RunIdempotencyKeysSweep(db); err != nil {
+		log.Error().Err(err).Msg("cron: idempotency keys sweep failed")
+	}
+}
+
+// RunIdempotencyKeysSweep deletes idempotency_keys rows whose expires_at is
+// in the past. Bounded operation: scales with the number of EXPIRED rows,
+// not the table size, thanks to the idx_idempotency_keys_expires_at index.
+func RunIdempotencyKeysSweep(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+	res := db.Exec("DELETE FROM idempotency_keys WHERE expires_at < NOW()")
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		log.Info().Int64("rows_swept", res.RowsAffected).Msg("cron: idempotency keys swept")
+	}
+	return nil
 }
 

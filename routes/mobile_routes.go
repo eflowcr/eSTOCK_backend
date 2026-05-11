@@ -4,6 +4,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/configuration"
 	"github.com/eflowcr/eSTOCK_backend/controllers"
 	"github.com/eflowcr/eSTOCK_backend/ports"
+	"github.com/eflowcr/eSTOCK_backend/repositories"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/eflowcr/eSTOCK_backend/wire"
@@ -65,11 +66,22 @@ func RegisterMobileRoutes(
 	_, countsSvc := wire.NewInventoryCounts(db, pool)
 	countsCtrl := controllers.NewInventoryCountsController(*countsSvc, config.JWTSecret)
 
+	// S7.2 W0 — Idempotency-Key middleware for mobile write paths. Wraps the
+	// 5 mutation endpoints that mobile can replay from its offline outbox.
+	// Repo may be nil when db is nil (test mode) — middleware handles that.
+	var idempotencyRepo ports.IdempotencyKeysRepository
+	if db != nil {
+		idempotencyRepo = &repositories.IdempotencyKeysRepository{DB: db}
+	}
+
 	mobile := router.Group("/mobile")
 	mobile.Use(tools.JWTAuthMiddleware(config.JWTSecret))
 	{
 		readInventory := tools.RequirePermission(rolesRepo, "inventory", "read")
 		updateInventory := tools.RequirePermission(rolesRepo, "inventory", "update")
+		// Mount AFTER auth + permission so we never cache 401/403 responses
+		// (those depend on the token, not the request body).
+		dedupeMutation := tools.IdempotencyMiddleware(idempotencyRepo)
 
 		// Health (no permission check — just JWT validation).
 		mobile.GET("/health", mobileCtrl.Health)
@@ -78,19 +90,19 @@ func RegisterMobileRoutes(
 		mobile.GET("/picking-tasks", readInventory, mobileCtrl.ListPickingTasks)
 		mobile.GET("/picking-tasks/:id", readInventory, mobileCtrl.GetPickingTask)
 		mobile.PATCH("/picking-tasks/:id/start", updateInventory, mobileCtrl.StartPickingTask)
-		mobile.PATCH("/picking-tasks/:id/complete-line", updateInventory, mobileCtrl.CompletePickingLine)
+		mobile.PATCH("/picking-tasks/:id/complete-line", updateInventory, dedupeMutation, mobileCtrl.CompletePickingLine)
 		mobile.PATCH("/picking-tasks/:id/complete", updateInventory, mobileCtrl.CompletePickingTask)
 
 		// Receiving
 		mobile.GET("/receiving-tasks", readInventory, mobileCtrl.ListReceivingTasks)
 		mobile.GET("/receiving-tasks/:id", readInventory, mobileCtrl.GetReceivingTask)
-		mobile.PATCH("/receiving-tasks/:id/complete-line", updateInventory, mobileCtrl.CompleteReceivingLine)
+		mobile.PATCH("/receiving-tasks/:id/complete-line", updateInventory, dedupeMutation, mobileCtrl.CompleteReceivingLine)
 		mobile.PATCH("/receiving-tasks/:id/complete", updateInventory, mobileCtrl.CompleteReceivingTask)
 
 		// Stock Transfers
 		mobile.GET("/stock-transfers", readInventory, mobileCtrl.ListStockTransfers)
 		mobile.GET("/stock-transfers/:id", readInventory, mobileCtrl.GetStockTransfer)
-		mobile.POST("/stock-transfers/:id/execute", updateInventory, mobileCtrl.ExecuteStockTransfer)
+		mobile.POST("/stock-transfers/:id/execute", updateInventory, dedupeMutation, mobileCtrl.ExecuteStockTransfer)
 
 		// Inventory query
 		mobile.GET("/inventory", readInventory, mobileCtrl.QueryInventory)
@@ -107,8 +119,8 @@ func RegisterMobileRoutes(
 			counts.GET("/:id", readInventory, countsCtrl.GetDetail)
 			counts.POST("", updateInventory, countsCtrl.Create)
 			counts.PATCH("/:id/start", updateInventory, countsCtrl.Start)
-			counts.POST("/:id/scan-line", updateInventory, countsCtrl.ScanLine)
-			counts.POST("/:id/submit", updateInventory, countsCtrl.Submit)
+			counts.POST("/:id/scan-line", updateInventory, dedupeMutation, countsCtrl.ScanLine)
+			counts.POST("/:id/submit", updateInventory, dedupeMutation, countsCtrl.Submit)
 			counts.PATCH("/:id/cancel", updateInventory, countsCtrl.Cancel)
 		}
 	}
