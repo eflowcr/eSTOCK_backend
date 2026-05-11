@@ -183,6 +183,17 @@ type DemoDataSeed struct {
 	Metadata []byte      `json:"metadata"`
 }
 
+type IdempotencyKey struct {
+	Key            string           `json:"key"`
+	UserID         string           `json:"user_id"`
+	Endpoint       string           `json:"endpoint"`
+	Method         string           `json:"method"`
+	ResponseStatus int32            `json:"response_status"`
+	ResponseBody   json.RawMessage  `json:"response_body"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	ExpiresAt      pgtype.Timestamp `json:"expires_at"`
+}
+
 type Inventory struct {
 	ID           string           `json:"id"`
 	Sku          string           `json:"sku"`
