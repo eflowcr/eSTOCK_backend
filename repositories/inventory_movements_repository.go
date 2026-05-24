@@ -77,3 +77,45 @@ func (r *InventoryMovementsRepository) ListMovements(f ports.MovementsFilter) ([
 	}
 	return movements, nil
 }
+
+// ListRecentMovements returns the newest movements across the whole tenant.
+//
+// inventory_movements has no tenant_id column (migration 000019 only added it to
+// picking_tasks/receiving_tasks/adjustments; movements were not retrofitted). To
+// keep this mobile-only feed tenant-isolated we join against articles, which IS
+// tenant-scoped (migration 000029, unique on (tenant_id, sku)). A movement whose
+// sku does not belong to the requesting tenant is excluded. When tenantID is
+// empty (single-tenant / test fallback) we skip the join and return movements
+// directly so behaviour matches the legacy single-tenant deployments.
+func (r *InventoryMovementsRepository) ListRecentMovements(tenantID string, limit int) ([]database.InventoryMovement, *responses.InternalResponse) {
+	var movements []database.InventoryMovement
+
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	q := r.DB.
+		Table("inventory_movements AS m").
+		Select("m.*").
+		Order("m.created_at DESC").
+		Limit(limit)
+
+	if tenantID != "" {
+		q = q.
+			Joins("JOIN articles a ON a.sku = m.sku").
+			Where("a.tenant_id = ?", tenantID)
+	}
+
+	if err := q.Find(&movements).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener los movimientos recientes",
+			Handled: false,
+		}
+	}
+
+	return movements, nil
+}

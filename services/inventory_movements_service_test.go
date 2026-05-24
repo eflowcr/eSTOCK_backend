@@ -25,6 +25,10 @@ func (m *mockInventoryMovementsRepo) ListMovements(_ ports.MovementsFilter) ([]d
 	return m.movements, m.err
 }
 
+func (m *mockInventoryMovementsRepo) ListRecentMovements(_ string, _ int) ([]database.InventoryMovement, *responses.InternalResponse) {
+	return m.movements, m.err
+}
+
 func TestInventoryMovementsService_GetAllInventoryMovements_Success(t *testing.T) {
 	reason := "Receiving task"
 	movements := []database.InventoryMovement{

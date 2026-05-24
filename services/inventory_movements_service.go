@@ -23,3 +23,9 @@ func (s *InventoryMovementsService) GetAllInventoryMovements(sku string) ([]data
 func (s *InventoryMovementsService) ListMovements(f ports.MovementsFilter) ([]database.InventoryMovement, *responses.InternalResponse) {
 	return s.Repository.ListMovements(f)
 }
+
+// ListRecentMovements returns the most recent tenant-wide movements (no SKU
+// filter), newest first, capped at limit. Backs the mobile Historial feed.
+func (s *InventoryMovementsService) ListRecentMovements(tenantID string, limit int) ([]database.InventoryMovement, *responses.InternalResponse) {
+	return s.Repository.ListRecentMovements(tenantID, limit)
+}

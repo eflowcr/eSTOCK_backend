@@ -118,6 +118,9 @@ func RegisterMobileRoutes(
 		mobile.GET("/inventory/sku/:sku/lots", readInventory, mobileCtrl.GetLotsBySKU)
 		mobile.GET("/inventory/sku/:sku/movements", readInventory, mobileCtrl.GetMovementsBySKU)
 
+		// Recent activity feed (Historial tab) — tenant-wide, newest first.
+		mobile.GET("/movements", readInventory, mobileCtrl.GetRecentMovements)
+
 		// Stock alerts (read-only)
 		mobile.GET("/stock-alerts", readInventory, mobileCtrl.ListStockAlerts)
 

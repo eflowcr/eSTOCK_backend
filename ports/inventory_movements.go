@@ -23,4 +23,11 @@ type MovementsFilter struct {
 type InventoryMovementsRepository interface {
 	GetAllInventoryMovements(sku string) ([]database.InventoryMovement, *responses.InternalResponse)
 	ListMovements(f MovementsFilter) ([]database.InventoryMovement, *responses.InternalResponse)
+	// ListRecentMovements returns the most recent movements tenant-wide (no SKU
+	// filter), newest first, capped at limit. inventory_movements has no
+	// tenant_id column of its own (only operational tables got one in
+	// migration 000019), so tenant scoping is achieved by joining against
+	// articles (tenant-isolated since migration 000029) on sku. This is the
+	// recent-all feed the mobile Historial tab consumes.
+	ListRecentMovements(tenantID string, limit int) ([]database.InventoryMovement, *responses.InternalResponse)
 }

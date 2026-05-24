@@ -1199,6 +1199,125 @@ func (c *MobileController) GetMovementsBySKU(ctx *gin.Context) {
 	tools.ResponseOK(ctx, "MobileGetMovementsBySKU", "OK", "mobile_get_movements_by_sku", movs, false, "")
 }
 
+// GetRecentMovements backs the mobile "Historial" tab: the tenant-wide recent
+// inventory-movements feed (no SKU filter), newest first. Default limit 30,
+// hard-capped at 200. It is mobile-only — the web Stock Ledger uses
+// /api/inventory_movements/* which this never touches.
+//
+// inventory_movements has no tenant_id of its own; the repository scopes by
+// joining against the tenant-isolated articles table on sku (see
+// ListRecentMovements). The handler then trims each row to MobileMovementDto,
+// resolving SKU → product name and created_by → user display name via the same
+// batch-cache patterns the transfers/detail endpoints use, and computes a
+// signed qty delta so the client can color/arrow the row without re-deriving
+// direction.
+func (c *MobileController) GetRecentMovements(ctx *gin.Context) {
+	if c.InventoryMovements == nil {
+		// Test/degraded mode — return an empty feed rather than 500.
+		tools.ResponseOK(ctx, "MobileGetRecentMovements", "OK", "mobile_get_recent_movements", []responses.MobileMovementDto{}, false, "")
+		return
+	}
+
+	limit := 30
+	if ls := ctx.Query("limit"); ls != "" {
+		if parsed, err := strconv.Atoi(ls); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	tenantID := tools.TenantIDFromContext(ctx)
+	movs, resp := c.InventoryMovements.ListRecentMovements(tenantID, limit)
+	if resp != nil {
+		writeErrorResponse(ctx, "MobileGetRecentMovements", "mobile_get_recent_movements", resp)
+		return
+	}
+
+	resolveName := c.articleNameResolver(ctx)
+
+	// Batch user-name lookup (created_by / user_id → display name). One query
+	// per request, nil-safe in test mode (mirrors the transfers list pattern).
+	userName := map[string]string{}
+	if c.Users != nil {
+		if users, uerr := c.Users.GetAllUsers(); uerr == nil {
+			for _, u := range users {
+				userName[u.ID] = u.Name
+			}
+		}
+	}
+
+	out := make([]responses.MobileMovementDto, 0, len(movs))
+	for _, m := range movs {
+		dto := responses.MobileMovementDto{
+			ID:           m.ID,
+			MovementType: m.MovementType,
+			SKU:          m.SKU,
+			Name:         resolveName(m.SKU),
+			Quantity:     m.Quantity,
+			QtyDelta:     mobileSignedQtyDelta(m),
+			Location:     m.Location,
+			Reference:    mobileMovementReference(m),
+			CreatedAt:    m.CreatedAt,
+		}
+		if m.Reason != nil {
+			dto.Reason = *m.Reason
+		}
+		// who: prefer the explicit user_id, fall back to created_by.
+		who := m.CreatedBy
+		if m.UserID != nil && *m.UserID != "" {
+			who = *m.UserID
+		}
+		if n, ok := userName[who]; ok && n != "" {
+			dto.CreatedBy = n
+		} else {
+			dto.CreatedBy = who
+		}
+		out = append(out, dto)
+	}
+
+	tools.ResponseOK(ctx, "MobileGetRecentMovements", "OK", "mobile_get_recent_movements", out, false, "")
+}
+
+// mobileSignedQtyDelta returns the signed quantity change for a movement so the
+// mobile client can render "+N" (green ↑) / "-N" (red ↓) without re-deriving
+// direction. Resolution order, most→least reliable:
+//  1. before_qty + after_qty present → after - before (exact, handles
+//     adjustments that may raise or lower stock).
+//  2. stored quantity already carries a sign (transfers write -qty for the
+//     outbound leg) → use it as-is.
+//  3. fall back to movement_type heuristic: outbound/pick/issue/sale ⇒ negative,
+//     everything else (inbound/receiving/return/adjust-up) ⇒ positive magnitude.
+func mobileSignedQtyDelta(m database.InventoryMovement) float64 {
+	if m.BeforeQty != nil && m.AfterQty != nil {
+		return *m.AfterQty - *m.BeforeQty
+	}
+	if m.Quantity < 0 {
+		return m.Quantity
+	}
+	mt := strings.ToLower(strings.TrimSpace(m.MovementType))
+	if strings.Contains(mt, "out") || strings.Contains(mt, "pick") ||
+		strings.Contains(mt, "issue") || strings.Contains(mt, "sale") ||
+		strings.Contains(mt, "ship") {
+		return -m.Quantity
+	}
+	return m.Quantity
+}
+
+// mobileMovementReference returns a human-friendly reference string for the
+// movement row. Prefers the concrete reference_id (REC-/PICK-/TRF-/ADJ-...),
+// falling back to the reference_type label when only the type is recorded.
+func mobileMovementReference(m database.InventoryMovement) string {
+	if m.ReferenceID != nil && strings.TrimSpace(*m.ReferenceID) != "" {
+		return strings.TrimSpace(*m.ReferenceID)
+	}
+	if m.ReferenceType != nil {
+		return strings.TrimSpace(*m.ReferenceType)
+	}
+	return ""
+}
+
 // ─── Stock Alerts ────────────────────────────────────────────────────────────
 
 func (c *MobileController) ListStockAlerts(ctx *gin.Context) {

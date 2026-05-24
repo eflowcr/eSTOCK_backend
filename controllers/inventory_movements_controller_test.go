@@ -33,6 +33,13 @@ func (m *mockInventoryMovementsRepoCtrl) ListMovements(_ ports.MovementsFilter) 
 	return m.movements, nil
 }
 
+func (m *mockInventoryMovementsRepoCtrl) ListRecentMovements(_ string, _ int) ([]database.InventoryMovement, *responses.InternalResponse) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.movements, nil
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func newInventoryMovementsController(repo *mockInventoryMovementsRepoCtrl) *InventoryMovementsController {

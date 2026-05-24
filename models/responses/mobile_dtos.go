@@ -194,3 +194,31 @@ type MobilePickingLineDto struct {
 	Lot         string  `json:"lot,omitempty"`
 	Serial      string  `json:"serial,omitempty"`
 }
+
+// MobileMovementDto is a trimmed inventory-movement shape for the mobile
+// Historial (recent activity) feed. It drops the heavy traceability columns
+// (unit_cost, before/after qty, remaining_stock) the audit log keeps and
+// surfaces only what the operator card renders.
+//
+// QtyDelta is the SIGNED quantity: positive for inbound/adjustment-up,
+// negative for outbound/adjustment-down. The backend computes the sign from
+// movement_type so the client renders "+50 uds" (green ↑) / "-12 uds" (red ↓)
+// without re-deriving direction. Quantity is the raw absolute magnitude as
+// stored.
+//
+// Reference is the human reference string (REC-/PICK-/TRF-/ADJ- etc.) resolved
+// from reference_id when present, else the reference_type. CreatedBy is the
+// resolved user display name when available, else the raw id/empty.
+type MobileMovementDto struct {
+	ID           string    `json:"id"`
+	MovementType string    `json:"movement_type"`
+	SKU          string    `json:"sku"`
+	Name         string    `json:"name,omitempty"`
+	Quantity     float64   `json:"quantity"`
+	QtyDelta     float64   `json:"qty_delta"`
+	Location     string    `json:"location,omitempty"`
+	Reference    string    `json:"reference,omitempty"`
+	Reason       string    `json:"reason,omitempty"`
+	CreatedBy    string    `json:"created_by,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}

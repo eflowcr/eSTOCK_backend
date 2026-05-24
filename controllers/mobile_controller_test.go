@@ -647,3 +647,53 @@ func TestListPickingTasks_OperatorRoleForcesAssignedToMe(t *testing.T) {
 	first := arr[0].(map[string]interface{})
 	assert.Equal(t, "pt-1", first["id"])
 }
+
+// ─── /api/mobile/movements (Historial recent feed) ───────────────────────────
+
+func mobileCtrlWithMovements(movs []database.InventoryMovement) *MobileController {
+	movRepo := &mockInventoryMovementsRepoCtrl{movements: movs}
+	movSvc := services.NewInventoryMovementsService(movRepo)
+	cfg := configuration.Config{JWTSecret: testJWTSecret, Version: "test"}
+	// Articles/Users left nil → resolvers degrade gracefully (no enrichment).
+	return NewMobileController(nil, nil, nil, nil, movSvc, nil, nil, nil, nil, cfg)
+}
+
+func TestMobile_GetRecentMovements_NilService_ReturnsEmpty(t *testing.T) {
+	ctrl := newTestMobileController() // InventoryMovements is nil
+	w := performRequestWithHeader(ctrl.GetRecentMovements, "GET", "/api/mobile/movements",
+		nil, nil, map[string]string{"Authorization": makeTestToken()})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var env responses.APIResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	arr, ok := env.Data.([]interface{})
+	require.True(t, ok)
+	assert.Len(t, arr, 0)
+}
+
+func TestMobile_GetRecentMovements_SignedDelta(t *testing.T) {
+	before := 100.0
+	after := 88.0
+	movs := []database.InventoryMovement{
+		{ID: "m1", SKU: "SKU-A", MovementType: "inbound", Quantity: 50, Location: "LOC-1"},
+		{ID: "m2", SKU: "SKU-B", MovementType: "outbound", Quantity: 12, Location: "LOC-2"},
+		{ID: "m3", SKU: "SKU-C", MovementType: "adjustment", Quantity: 12, BeforeQty: &before, AfterQty: &after},
+	}
+	ctrl := mobileCtrlWithMovements(movs)
+	w := performRequestWithHeader(ctrl.GetRecentMovements, "GET", "/api/mobile/movements?limit=10",
+		nil, nil, map[string]string{"Authorization": makeTestToken()})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var env responses.APIResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	arr, ok := env.Data.([]interface{})
+	require.True(t, ok)
+	require.Len(t, arr, 3)
+
+	r0 := arr[0].(map[string]interface{})
+	assert.Equal(t, 50.0, r0["qty_delta"], "inbound → positive delta")
+	r1 := arr[1].(map[string]interface{})
+	assert.Equal(t, -12.0, r1["qty_delta"], "outbound → negative delta")
+	r2 := arr[2].(map[string]interface{})
+	assert.Equal(t, -12.0, r2["qty_delta"], "adjustment down → after-before delta")
+}
