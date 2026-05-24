@@ -996,7 +996,7 @@ func (c *MobileController) ListStockTransfers(ctx *gin.Context) {
 		if assignedToMe && (t.AssignedTo == nil || *t.AssignedTo != userID) {
 			continue
 		}
-		if len(statusFilter) > 1 && !statusFilter[strings.ToLower(t.Status)] {
+		if len(statusFilter) > 0 && !statusFilter[strings.ToLower(t.Status)] {
 			continue
 		}
 		var assigneeName *string

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
+	"github.com/eflowcr/eSTOCK_backend/models/responses"
 	"github.com/eflowcr/eSTOCK_backend/services"
 	"github.com/eflowcr/eSTOCK_backend/tools"
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,10 @@ func looksLikeUUID(s string) bool {
 type InventoryCountsController struct {
 	Service   services.InventoryCountsService
 	JWTSecret string
+	// Articles is an optional read-only dep used to resolve SKU → product name
+	// for the detail line cards (Halo fidelity). Nil-safe: when absent (tests),
+	// the enriched name degrades to "" and the mobile UI falls back to lot/serial.
+	Articles *services.ArticlesService
 }
 
 func NewInventoryCountsController(service services.InventoryCountsService, jwtSecret string) *InventoryCountsController {
@@ -64,7 +69,54 @@ func (c *InventoryCountsController) GetDetail(ctx *gin.Context) {
 		writeErrorResponse(ctx, "GetInventoryCount", "get_inventory_count", resp)
 		return
 	}
-	tools.ResponseOK(ctx, "GetInventoryCount", "Conteo obtenido", "get_inventory_count", detail, false, "")
+	tools.ResponseOK(ctx, "GetInventoryCount", "Conteo obtenido", "get_inventory_count", c.enrichDetail(ctx, detail), false, "")
+}
+
+// enrichDetail resolves each line's SKU → product name and returns a mobile
+// detail envelope whose lines carry that name. Backed by a per-request memoized
+// lookup so repeated SKUs cost one DB hit. Nil-safe: when ArticlesService is
+// absent (tests) every name degrades to "" and the mobile UI falls back to
+// lot/serial. When detail is nil the original (nil) value is returned unchanged.
+func (c *InventoryCountsController) enrichDetail(ctx *gin.Context, detail *responses.InventoryCountDetail) any {
+	if detail == nil {
+		return detail
+	}
+	resolve := c.articleNameResolver(ctx)
+	lines := make([]responses.MobileInventoryCountLine, 0, len(detail.Lines))
+	for _, l := range detail.Lines {
+		lines = append(lines, responses.MobileInventoryCountLine{
+			InventoryCountLine: l,
+			Name:               resolve(l.SKU),
+		})
+	}
+	return responses.MobileInventoryCountDetail{
+		Count:     detail.Count,
+		Locations: detail.Locations,
+		Lines:     lines,
+	}
+}
+
+// articleNameResolver returns a per-request memoized SKU → product name lookup
+// backed by ArticlesService. Mirrors the MobileController resolver. Returns ""
+// for unknown SKUs or when the service is absent (test mode); the mobile UI
+// hides a blank name line and falls back to lot/serial.
+func (c *InventoryCountsController) articleNameResolver(ctx *gin.Context) func(string) string {
+	tenantID := tools.TenantIDFromContext(ctx)
+	cache := map[string]string{}
+	return func(sku string) string {
+		if sku == "" || c.Articles == nil {
+			return ""
+		}
+		if n, ok := cache[sku]; ok {
+			return n
+		}
+		name := ""
+		if art, resp := c.Articles.GetBySku(sku, tenantID); resp == nil && art != nil {
+			name = art.Name
+		}
+		cache[sku] = name
+		return name
+	}
 }
 
 func (c *InventoryCountsController) Create(ctx *gin.Context) {

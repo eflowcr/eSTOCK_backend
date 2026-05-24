@@ -71,6 +71,9 @@ func RegisterMobileRoutes(
 	// Counts service & controller (mobile-only).
 	_, countsSvc := wire.NewInventoryCounts(db, pool)
 	countsCtrl := controllers.NewInventoryCountsController(*countsSvc, config.JWTSecret)
+	// Halo v1: resolve detail-line SKU → product name (read-only, reuses the
+	// already-wired articlesSvc). Nil-safe in test mode.
+	countsCtrl.Articles = articlesSvc
 
 	// S7.2 W0 — Idempotency-Key middleware for mobile write paths. Wraps the
 	// 5 mutation endpoints that mobile can replay from its offline outbox.
