@@ -351,45 +351,78 @@ func findPickingItemForRequest(task *database.PickingTask, body responses.Mobile
 	return requests.PickingTaskItemRequest{}, false
 }
 
-// countPickingLines unmarshals the picking task `items` jsonb and returns
-// (total, completed) line counts using the same status rule as
-// mapItemToMobileLine (a line is "done" when picked >= expected). Returns
-// (0, 0) on empty/unparseable items — the summary degrades to no progress bar
-// rather than failing the whole list response.
-func countPickingLines(raw []byte) (total, completed int) {
+// summaryLine matches the SHAPE the list queries build via jsonb_agg, NOT the
+// detail/request shape. Both GetAllPickingTasks and GetAllReceivingTasks emit
+// items with TEXT-extracted quantities (item->>'x' → JSON string), so the
+// quantity fields are strings here, not numbers. Keys differ per module
+// (picking: required_qty/picked_qty; receiving: expected_qty/received_qty/
+// accepted_qty) — this struct is the union.
+type summaryLine struct {
+	SKU         string `json:"sku"`
+	Status      string `json:"status"`
+	RequiredQty string `json:"required_qty"` // picking
+	PickedQty   string `json:"picked_qty"`   // picking
+	ExpectedQty string `json:"expected_qty"` // receiving
+	ReceivedQty string `json:"received_qty"` // receiving
+	AcceptedQty string `json:"accepted_qty"` // receiving
+}
+
+func decodeSummaryLines(raw []byte) []summaryLine {
 	if len(raw) == 0 {
-		return 0, 0
+		return nil
 	}
-	var items []requests.PickingTaskItemRequest
+	var items []summaryLine
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return 0, 0
+		return nil
 	}
-	for _, it := range items {
+	return items
+}
+
+func parseQtyText(s string) float64 {
+	f, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	return f
+}
+
+// summaryLineDone classifies a list-summary line as complete. Prefers an
+// explicit terminal status token; otherwise falls back to done >= expected.
+func summaryLineDone(status string, expected, done float64) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "done", "picked", "received":
+		return true
+	}
+	return expected > 0 && done >= expected
+}
+
+// countPickingLines counts (total, completed) from the picking list-summary
+// items jsonb. Lines with an empty sku are skipped (jsonb_agg null-row
+// artifact from the LEFT JOIN when a task has no items). Degrades to (0, 0) on
+// unparseable items so one bad task never blanks the whole list.
+func countPickingLines(raw []byte) (total, completed int) {
+	for _, it := range decodeSummaryLines(raw) {
+		if strings.TrimSpace(it.SKU) == "" {
+			continue
+		}
 		total++
-		if it.ExpectedQuantity > 0 && sumAllocationPicked(it) >= it.ExpectedQuantity {
+		if summaryLineDone(it.Status, parseQtyText(it.RequiredQty), parseQtyText(it.PickedQty)) {
 			completed++
 		}
 	}
 	return total, completed
 }
 
-// countReceivingLines mirrors countPickingLines for receiving tasks. A line is
-// "done" when received (accepted, falling back to received_qty) >= expected.
+// countReceivingLines mirrors countPickingLines for receiving. "Done" qty is
+// accepted_qty, falling back to received_qty.
 func countReceivingLines(raw []byte) (total, completed int) {
-	if len(raw) == 0 {
-		return 0, 0
-	}
-	var items []database.ReceivingTaskItem
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return 0, 0
-	}
-	for _, it := range items {
-		total++
-		received := it.AcceptedQty
-		if received == 0 && it.ReceivedQuantity != nil {
-			received = *it.ReceivedQuantity
+	for _, it := range decodeSummaryLines(raw) {
+		if strings.TrimSpace(it.SKU) == "" {
+			continue
 		}
-		if it.ExpectedQuantity > 0 && received >= it.ExpectedQuantity {
+		total++
+		done := parseQtyText(it.AcceptedQty)
+		if done == 0 {
+			done = parseQtyText(it.ReceivedQty)
+		}
+		if summaryLineDone(it.Status, parseQtyText(it.ExpectedQty), done) {
 			completed++
 		}
 	}
