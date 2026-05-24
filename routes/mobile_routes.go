@@ -64,8 +64,9 @@ func RegisterMobileRoutes(
 	// code, assignee UUID → name). Web routes untouched.
 	_, locationsSvc := wire.NewLocations(db, pool)
 	_, usersSvc := wire.NewUsers(db, config, notifSvc)
+	_, articlesSvc := wire.NewArticles(db, pool)
 
-	mobileCtrl := controllers.NewMobileController(pickingSvc, receivingSvc, transfersSvc, inventorySvc, movementsSvc, alertsSvc, locationsSvc, usersSvc, config)
+	mobileCtrl := controllers.NewMobileController(pickingSvc, receivingSvc, transfersSvc, inventorySvc, movementsSvc, alertsSvc, locationsSvc, usersSvc, articlesSvc, config)
 
 	// Counts service & controller (mobile-only).
 	_, countsSvc := wire.NewInventoryCounts(db, pool)

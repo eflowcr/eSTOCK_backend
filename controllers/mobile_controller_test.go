@@ -89,7 +89,7 @@ func newTestMobileController() *MobileController {
 	}
 	recvSvc := services.NewReceivingTasksService(recvRepo)
 	cfg := configuration.Config{JWTSecret: testJWTSecret, Version: "test"}
-	return NewMobileController(pickSvc, recvSvc, nil, nil, nil, nil, nil, nil, cfg)
+	return NewMobileController(pickSvc, recvSvc, nil, nil, nil, nil, nil, nil, nil, cfg)
 }
 
 // ─── /api/mobile/health ──────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ func TestMobileController_ListPickingTasks_FilterAssignedToMe(t *testing.T) {
 	}
 	pickSvc := services.NewPickingTaskService(pickRepo)
 	cfg := configuration.Config{JWTSecret: testJWTSecret}
-	ctrl := NewMobileController(pickSvc, nil, nil, nil, nil, nil, nil, nil, cfg)
+	ctrl := NewMobileController(pickSvc, nil, nil, nil, nil, nil, nil, nil, nil, cfg)
 
 	w := performRequestWithHeader(ctrl.ListPickingTasks, "GET", "/api/mobile/picking-tasks?assigned_to_me=true", nil, nil, map[string]string{"Authorization": makeTestToken()})
 	require.Equal(t, http.StatusOK, w.Code)
@@ -632,7 +632,7 @@ func TestListPickingTasks_OperatorRoleForcesAssignedToMe(t *testing.T) {
 	}
 	pickSvc := services.NewPickingTaskService(pickRepo)
 	cfg := configuration.Config{JWTSecret: testJWTSecret}
-	ctrl := NewMobileController(pickSvc, nil, nil, nil, nil, nil, nil, nil, cfg)
+	ctrl := NewMobileController(pickSvc, nil, nil, nil, nil, nil, nil, nil, nil, cfg)
 
 	// Operator role + NO assigned_to_me flag → must be forced.
 	w := performRequestWithHeader(ctrl.ListPickingTasks, "GET", "/api/mobile/picking-tasks",

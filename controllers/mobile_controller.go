@@ -48,7 +48,10 @@ type MobileController struct {
 	// may be nil (test mode); list handlers nil-guard and skip enrichment.
 	Locations *services.LocationsService
 	Users     *services.UserService
-	Config    configuration.Config
+	// Articles resolves SKU → product name for detail line cards (the items
+	// jsonb only carries the SKU). Nil-guarded; resolver returns "" when absent.
+	Articles *services.ArticlesService
+	Config   configuration.Config
 }
 
 func NewMobileController(
@@ -60,6 +63,7 @@ func NewMobileController(
 	alerts *services.StockAlertsService,
 	locations *services.LocationsService,
 	users *services.UserService,
+	articles *services.ArticlesService,
 	config configuration.Config,
 ) *MobileController {
 	return &MobileController{
@@ -71,7 +75,31 @@ func NewMobileController(
 		StockAlerts:        alerts,
 		Locations:          locations,
 		Users:              users,
+		Articles:           articles,
 		Config:             config,
+	}
+}
+
+// articleNameResolver returns a per-request memoized SKU → product name lookup
+// backed by ArticlesService. Detail line cards need the product name but the
+// task items jsonb only stores the SKU. Returns "" for unknown SKUs or when the
+// service is absent (test mode) — the mobile UI hides a blank name line.
+func (c *MobileController) articleNameResolver(ctx *gin.Context) func(string) string {
+	tenantID := tools.TenantIDFromContext(ctx)
+	cache := map[string]string{}
+	return func(sku string) string {
+		if sku == "" || c.Articles == nil {
+			return ""
+		}
+		if n, ok := cache[sku]; ok {
+			return n
+		}
+		name := ""
+		if art, resp := c.Articles.GetBySku(sku, tenantID); resp == nil && art != nil {
+			name = art.Name
+		}
+		cache[sku] = name
+		return name
 	}
 }
 
@@ -191,7 +219,7 @@ func (c *MobileController) GetPickingTask(ctx *gin.Context) {
 		tools.ResponseNotFound(ctx, "MobileGetPickingTask", "Tarea no encontrada", "mobile_get_picking_task")
 		return
 	}
-	dto, err := buildMobilePickingTaskDetail(task)
+	dto, err := buildMobilePickingTaskDetail(task, c.articleNameResolver(ctx))
 	if err != nil {
 		tools.ResponseInternal(ctx, "MobileGetPickingTask", "Error parseando items: "+err.Error(), "mobile_get_picking_task")
 		return
@@ -208,7 +236,7 @@ func (c *MobileController) GetPickingTask(ctx *gin.Context) {
 // allocation's location to the mobile UI. When the W2/W3 wave needs split-pick
 // UX, change this to emit one line per allocation (with the same SKU but
 // different location/line_id) so the operator confirms each pick separately.
-func buildMobilePickingTaskDetail(task *database.PickingTask) (*responses.MobilePickingTaskDetailDto, error) {
+func buildMobilePickingTaskDetail(task *database.PickingTask, nameOf func(string) string) (*responses.MobilePickingTaskDetailDto, error) {
 	dto := &responses.MobilePickingTaskDetailDto{
 		ID:          task.ID,
 		TaskID:      task.TaskID,
@@ -233,7 +261,11 @@ func buildMobilePickingTaskDetail(task *database.PickingTask) (*responses.Mobile
 	}
 	dto.Lines = make([]responses.MobilePickingLineDto, 0, len(items))
 	for _, it := range items {
-		dto.Lines = append(dto.Lines, mapItemToMobileLine(it))
+		line := mapItemToMobileLine(it)
+		if nameOf != nil {
+			line.Name = nameOf(it.SKU)
+		}
+		dto.Lines = append(dto.Lines, line)
 	}
 	return dto, nil
 }
@@ -658,7 +690,7 @@ func (c *MobileController) GetReceivingTask(ctx *gin.Context) {
 		tools.ResponseNotFound(ctx, "MobileGetReceivingTask", "Tarea no encontrada", "mobile_get_receiving_task")
 		return
 	}
-	dto, err := buildMobileReceivingTaskDetail(task)
+	dto, err := buildMobileReceivingTaskDetail(task, c.articleNameResolver(ctx))
 	if err != nil {
 		tools.ResponseInternal(ctx, "MobileGetReceivingTask", "Error parseando items: "+err.Error(), "mobile_get_receiving_task")
 		return
@@ -672,7 +704,7 @@ func (c *MobileController) GetReceivingTask(ctx *gin.Context) {
 //
 // Receiving items have a single Location field (no allocations array) so the
 // surface is simpler than picking — no multi-allocation TODO needed here.
-func buildMobileReceivingTaskDetail(task *database.ReceivingTask) (*responses.MobileReceivingTaskDetailDto, error) {
+func buildMobileReceivingTaskDetail(task *database.ReceivingTask, nameOf func(string) string) (*responses.MobileReceivingTaskDetailDto, error) {
 	dto := &responses.MobileReceivingTaskDetailDto{
 		ID:          task.ID,
 		TaskID:      task.TaskID,
@@ -696,7 +728,11 @@ func buildMobileReceivingTaskDetail(task *database.ReceivingTask) (*responses.Mo
 	}
 	dto.Lines = make([]responses.MobileReceivingLineDto, 0, len(items))
 	for _, it := range items {
-		dto.Lines = append(dto.Lines, mapReceivingItemToMobileLine(it))
+		line := mapReceivingItemToMobileLine(it)
+		if nameOf != nil {
+			line.Name = nameOf(it.SKU)
+		}
+		dto.Lines = append(dto.Lines, line)
 	}
 	return dto, nil
 }
