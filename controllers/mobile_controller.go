@@ -43,7 +43,12 @@ type MobileController struct {
 	Inventory          *services.InventoryService
 	InventoryMovements *services.InventoryMovementsService
 	StockAlerts        *services.StockAlertsService
-	Config             configuration.Config
+	// Locations/Users are read-only enrichment deps used to resolve transfer
+	// location UUIDs → codes and assignee UUIDs → names in the list view. Both
+	// may be nil (test mode); list handlers nil-guard and skip enrichment.
+	Locations *services.LocationsService
+	Users     *services.UserService
+	Config    configuration.Config
 }
 
 func NewMobileController(
@@ -53,6 +58,8 @@ func NewMobileController(
 	inventory *services.InventoryService,
 	movements *services.InventoryMovementsService,
 	alerts *services.StockAlertsService,
+	locations *services.LocationsService,
+	users *services.UserService,
 	config configuration.Config,
 ) *MobileController {
 	return &MobileController{
@@ -62,6 +69,8 @@ func NewMobileController(
 		Inventory:          inventory,
 		InventoryMovements: movements,
 		StockAlerts:        alerts,
+		Locations:          locations,
+		Users:              users,
 		Config:             config,
 	}
 }
@@ -141,16 +150,20 @@ func (c *MobileController) ListPickingTasks(ctx *gin.Context) {
 		if len(statusFilter) > 0 && !statusFilter[strings.ToLower(t.Status)] {
 			continue
 		}
+		total, completed := countPickingLines(t.Items)
 		out = append(out, responses.MobilePickingTaskSummary{
-			ID:           t.ID,
-			TaskID:       t.TaskID,
-			OrderNumber:  t.OrderNumber,
-			Status:       t.Status,
-			Priority:     t.Priority,
-			AssignedTo:   t.AssignedTo,
-			AssigneeName: t.UserAssigneeName,
-			CreatedAt:    t.CreatedAt,
-			CompletedAt:  t.CompletedAt,
+			ID:             t.ID,
+			TaskID:         t.TaskID,
+			OrderNumber:    t.OrderNumber,
+			Status:         t.Status,
+			Priority:       t.Priority,
+			AssignedTo:     t.AssignedTo,
+			AssigneeName:   t.UserAssigneeName,
+			TotalLines:     total,
+			CompletedLines: completed,
+			CustomerName:   t.CustomerName,
+			CreatedAt:      t.CreatedAt,
+			CompletedAt:    t.CompletedAt,
 		})
 	}
 	tools.ResponseOK(ctx, "MobileListPickingTasks", "Tareas de picking obtenidas", "mobile_list_picking_tasks", out, false, "")
@@ -336,6 +349,51 @@ func findPickingItemForRequest(task *database.PickingTask, body responses.Mobile
 		}
 	}
 	return requests.PickingTaskItemRequest{}, false
+}
+
+// countPickingLines unmarshals the picking task `items` jsonb and returns
+// (total, completed) line counts using the same status rule as
+// mapItemToMobileLine (a line is "done" when picked >= expected). Returns
+// (0, 0) on empty/unparseable items — the summary degrades to no progress bar
+// rather than failing the whole list response.
+func countPickingLines(raw []byte) (total, completed int) {
+	if len(raw) == 0 {
+		return 0, 0
+	}
+	var items []requests.PickingTaskItemRequest
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0, 0
+	}
+	for _, it := range items {
+		total++
+		if it.ExpectedQuantity > 0 && sumAllocationPicked(it) >= it.ExpectedQuantity {
+			completed++
+		}
+	}
+	return total, completed
+}
+
+// countReceivingLines mirrors countPickingLines for receiving tasks. A line is
+// "done" when received (accepted, falling back to received_qty) >= expected.
+func countReceivingLines(raw []byte) (total, completed int) {
+	if len(raw) == 0 {
+		return 0, 0
+	}
+	var items []database.ReceivingTaskItem
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0, 0
+	}
+	for _, it := range items {
+		total++
+		received := it.AcceptedQty
+		if received == 0 && it.ReceivedQuantity != nil {
+			received = *it.ReceivedQuantity
+		}
+		if it.ExpectedQuantity > 0 && received >= it.ExpectedQuantity {
+			completed++
+		}
+	}
+	return total, completed
 }
 
 func (c *MobileController) StartPickingTask(ctx *gin.Context) {
@@ -528,16 +586,20 @@ func (c *MobileController) ListReceivingTasks(ctx *gin.Context) {
 		if len(statusFilter) > 0 && !statusFilter[strings.ToLower(t.Status)] {
 			continue
 		}
+		total, completed := countReceivingLines(t.Items)
 		out = append(out, responses.MobileReceivingTaskSummary{
-			ID:            t.ID,
-			TaskID:        t.TaskID,
-			InboundNumber: t.InboundNumber,
-			Status:        t.Status,
-			Priority:      t.Priority,
-			AssignedTo:    t.AssignedTo,
-			AssigneeName:  t.UserAssigneeName,
-			CreatedAt:     t.CreatedAt,
-			CompletedAt:   t.CompletedAt,
+			ID:             t.ID,
+			TaskID:         t.TaskID,
+			InboundNumber:  t.InboundNumber,
+			Status:         t.Status,
+			Priority:       t.Priority,
+			AssignedTo:     t.AssignedTo,
+			AssigneeName:   t.UserAssigneeName,
+			TotalLines:     total,
+			CompletedLines: completed,
+			SupplierName:   t.SupplierName,
+			CreatedAt:      t.CreatedAt,
+			CompletedAt:    t.CompletedAt,
 		})
 	}
 	tools.ResponseOK(ctx, "MobileListReceivingTasks", "Tareas de recepción obtenidas", "mobile_list_receiving_tasks", out, false, "")
@@ -839,6 +901,27 @@ func (c *MobileController) ListStockTransfers(ctx *gin.Context) {
 		userID = uid
 	}
 
+	// Halo v1: resolve location UUIDs → codes and assignee UUIDs → names via two
+	// batch lookups (one per map), built once before the loop. Both deps are
+	// nil-guarded (test mode) and a failed lookup degrades to raw UUIDs / no name
+	// rather than failing the list response.
+	locCode := map[string]string{}
+	if c.Locations != nil {
+		if locs, lerr := c.Locations.GetAllLocations(tools.TenantIDFromContext(ctx)); lerr == nil {
+			for _, l := range locs {
+				locCode[l.ID] = l.LocationCode
+			}
+		}
+	}
+	userName := map[string]string{}
+	if c.Users != nil {
+		if users, uerr := c.Users.GetAllUsers(); uerr == nil {
+			for _, u := range users {
+				userName[u.ID] = u.Name
+			}
+		}
+	}
+
 	out := make([]responses.MobileStockTransferSummary, 0, len(transfers))
 	for _, t := range transfers {
 		if assignedToMe && (t.AssignedTo == nil || *t.AssignedTo != userID) {
@@ -847,15 +930,24 @@ func (c *MobileController) ListStockTransfers(ctx *gin.Context) {
 		if len(statusFilter) > 1 && !statusFilter[strings.ToLower(t.Status)] {
 			continue
 		}
+		var assigneeName *string
+		if t.AssignedTo != nil {
+			if n, ok := userName[*t.AssignedTo]; ok && n != "" {
+				assigneeName = &n
+			}
+		}
 		out = append(out, responses.MobileStockTransferSummary{
-			ID:             t.ID,
-			TransferNumber: t.TransferNumber,
-			Status:         t.Status,
-			FromLocationID: t.FromLocationID,
-			ToLocationID:   t.ToLocationID,
-			AssignedTo:     t.AssignedTo,
-			CreatedAt:      t.CreatedAt,
-			CompletedAt:    t.CompletedAt,
+			ID:               t.ID,
+			TransferNumber:   t.TransferNumber,
+			Status:           t.Status,
+			FromLocationID:   t.FromLocationID,
+			ToLocationID:     t.ToLocationID,
+			FromLocationCode: locCode[t.FromLocationID],
+			ToLocationCode:   locCode[t.ToLocationID],
+			AssignedTo:       t.AssignedTo,
+			AssigneeName:     assigneeName,
+			CreatedAt:        t.CreatedAt,
+			CompletedAt:      t.CompletedAt,
 		})
 	}
 	tools.ResponseOK(ctx, "MobileListStockTransfers", "Traslados obtenidos", "mobile_list_stock_transfers", out, false, "")

@@ -60,7 +60,12 @@ func RegisterMobileRoutes(
 		}
 	}
 
-	mobileCtrl := controllers.NewMobileController(pickingSvc, receivingSvc, transfersSvc, inventorySvc, movementsSvc, alertsSvc, config)
+	// Halo v1: read-only enrichment deps for the transfers list (location UUID →
+	// code, assignee UUID → name). Web routes untouched.
+	_, locationsSvc := wire.NewLocations(db, pool)
+	_, usersSvc := wire.NewUsers(db, config, notifSvc)
+
+	mobileCtrl := controllers.NewMobileController(pickingSvc, receivingSvc, transfersSvc, inventorySvc, movementsSvc, alertsSvc, locationsSvc, usersSvc, config)
 
 	// Counts service & controller (mobile-only).
 	_, countsSvc := wire.NewInventoryCounts(db, pool)

@@ -15,42 +15,64 @@ type MobileHealthResponse struct {
 	Version    string    `json:"version"`
 }
 
-// MobilePickingTaskSummary is a trimmed shape used in the list view.
+// MobileStockTransferSummary is a trimmed transfer shape for the list view.
+//
+// Halo v1: TotalLines/CompletedLines + CustomerName/SupplierName enrich the
+// "Tareas de hoy" home feed (real X/Y progress + rich subtitle "Bodega · N
+// líneas · cliente"). Line counts derive from the already-loaded `items` jsonb
+// in the task view (zero extra queries). Customer/supplier names are already
+// resolved on PickingTaskView/ReceivingTasksView — only the mapping was missing.
 type MobilePickingTaskSummary struct {
-	ID            string     `json:"id"`
-	TaskID        string     `json:"task_id"`
-	OrderNumber   string     `json:"order_number"`
-	Status        string     `json:"status"`
-	Priority      string     `json:"priority"`
-	AssignedTo    *string    `json:"assigned_to,omitempty"`
-	AssigneeName  *string    `json:"assignee_name,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	ID             string     `json:"id"`
+	TaskID         string     `json:"task_id"`
+	OrderNumber    string     `json:"order_number"`
+	Status         string     `json:"status"`
+	Priority       string     `json:"priority"`
+	AssignedTo     *string    `json:"assigned_to,omitempty"`
+	AssigneeName   *string    `json:"assignee_name,omitempty"`
+	TotalLines     int        `json:"total_lines"`
+	CompletedLines int        `json:"completed_lines"`
+	CustomerName   *string    `json:"customer_name,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // MobileReceivingTaskSummary mirrors MobilePickingTaskSummary for receiving tasks.
 type MobileReceivingTaskSummary struct {
-	ID            string     `json:"id"`
-	TaskID        string     `json:"task_id"`
-	InboundNumber string     `json:"inbound_number"`
-	Status        string     `json:"status"`
-	Priority      string     `json:"priority"`
-	AssignedTo    *string    `json:"assigned_to,omitempty"`
-	AssigneeName  *string    `json:"assignee_name,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	ID             string     `json:"id"`
+	TaskID         string     `json:"task_id"`
+	InboundNumber  string     `json:"inbound_number"`
+	Status         string     `json:"status"`
+	Priority       string     `json:"priority"`
+	AssignedTo     *string    `json:"assigned_to,omitempty"`
+	AssigneeName   *string    `json:"assignee_name,omitempty"`
+	TotalLines     int        `json:"total_lines"`
+	CompletedLines int        `json:"completed_lines"`
+	SupplierName   *string    `json:"supplier_name,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // MobileStockTransferSummary is a trimmed transfer shape for the list view.
+//
+// Halo v1: FromLocationCode/ToLocationCode resolve the raw location UUIDs into
+// the human "LOC-A12 → LOC-C05" route the home card / list shows (resolved via a
+// single batch locations lookup per request). AssigneeName resolves AssignedTo
+// via a single batch users lookup. Line count is intentionally omitted here to
+// avoid an N+1 lines query per transfer — the route is the transfer's identity
+// on the card, not a line count.
 type MobileStockTransferSummary struct {
-	ID             string     `json:"id"`
-	TransferNumber string     `json:"transfer_number"`
-	Status         string     `json:"status"`
-	FromLocationID string     `json:"from_location_id"`
-	ToLocationID   string     `json:"to_location_id"`
-	AssignedTo     *string    `json:"assigned_to,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	ID               string     `json:"id"`
+	TransferNumber   string     `json:"transfer_number"`
+	Status           string     `json:"status"`
+	FromLocationID   string     `json:"from_location_id"`
+	ToLocationID     string     `json:"to_location_id"`
+	FromLocationCode string     `json:"from_location_code,omitempty"`
+	ToLocationCode   string     `json:"to_location_code,omitempty"`
+	AssignedTo       *string    `json:"assigned_to,omitempty"`
+	AssigneeName     *string    `json:"assignee_name,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 }
 
 // MobileCompleteLineRequest is the JSON body shape for mobile complete-line endpoints
