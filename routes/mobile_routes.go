@@ -68,6 +68,12 @@ func RegisterMobileRoutes(
 
 	mobileCtrl := controllers.NewMobileController(pickingSvc, receivingSvc, transfersSvc, inventorySvc, movementsSvc, alertsSvc, locationsSvc, usersSvc, articlesSvc, config)
 
+	// Users admin (mobile-only, admin-gated). Reuses the SAME UserService the web
+	// path uses so password hashing (tools.Encrypt) + validation are identical.
+	// rolesRepo backs the form's role picker; it is nil in sqlserver/test mode and
+	// the controller nil-guards it.
+	usersAdminCtrl := controllers.NewMobileUsersController(usersSvc, rolesRepo, config)
+
 	// Counts service & controller (mobile-only).
 	_, countsSvc := wire.NewInventoryCounts(db, pool)
 	countsCtrl := controllers.NewInventoryCountsController(*countsSvc, config.JWTSecret)
@@ -88,6 +94,11 @@ func RegisterMobileRoutes(
 	{
 		readInventory := tools.RequirePermission(rolesRepo, "inventory", "read")
 		updateInventory := tools.RequirePermission(rolesRepo, "inventory", "update")
+		// Users admin is ADMIN-gated, not inventory-gated: only roles with the
+		// "users" resource permission (or permissions.all → admin) may list/manage
+		// users. Mirrors the web /api/users + /api/roles permission resources.
+		readUsers := tools.RequirePermission(rolesRepo, "users", "read")
+		updateUsers := tools.RequirePermission(rolesRepo, "users", "update")
 		// Mount AFTER auth + permission so we never cache 401/403 responses
 		// (those depend on the token, not the request body).
 		dedupeMutation := tools.IdempotencyMiddleware(idempotencyRepo)
@@ -123,6 +134,13 @@ func RegisterMobileRoutes(
 
 		// Stock alerts (read-only)
 		mobile.GET("/stock-alerts", readInventory, mobileCtrl.ListStockAlerts)
+
+		// Users admin (mobile-only, admin-gated). Role list is read-gated (the form
+		// needs it). Web /api/users + /api/roles routes are untouched.
+		mobile.GET("/users", readUsers, usersAdminCtrl.ListUsers)
+		mobile.POST("/users", updateUsers, usersAdminCtrl.CreateUser)
+		mobile.PATCH("/users/:id", updateUsers, usersAdminCtrl.UpdateUser)
+		mobile.GET("/roles", readUsers, usersAdminCtrl.ListRoles)
 
 		// Counts (mobile-only module)
 		counts := mobile.Group("/counts")

@@ -222,3 +222,24 @@ type MobileMovementDto struct {
 	CreatedBy    string    `json:"created_by,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
+
+// ─── Users admin (mobile-only, admin-gated) ──────────────────────────────────
+
+// MobileUserDto is the trimmed user shape for the mobile Users admin list/detail.
+// It NEVER leaks the password hash or the tenant UUID — only what the operator
+// cards/forms render. RoleName is resolved from the preloaded Role relation when
+// available, else falls back to the raw role id.
+type MobileUserDto struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	RoleID   string `json:"role_id"`
+	RoleName string `json:"role_name,omitempty"`
+	IsActive bool   `json:"is_active"`
+}
+
+// MobileRoleDto is a minimal role shape for the form's role picker (id + name).
+type MobileRoleDto struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
