@@ -1041,7 +1041,30 @@ func (c *MobileController) GetStockTransfer(ctx *gin.Context) {
 		return
 	}
 	lines, _ := c.StockTransfers.ListStockTransferLines(id)
-	tools.ResponseOK(ctx, "MobileGetStockTransfer", "Traslado obtenido", "mobile_get_stock_transfer", gin.H{"transfer": tr, "lines": lines}, false, "")
+
+	// Resolve from/to location UUIDs → operator-friendly codes (the raw
+	// StockTransfer only stores the UUIDs). Embed the codes alongside the
+	// transfer so the mobile detail hero shows "BOD-C → BOD-A" instead of UUIDs,
+	// matching the list summary. Degrades to "" when Locations is absent.
+	fromCode, toCode := "", ""
+	if c.Locations != nil {
+		if locs, lerr := c.Locations.GetAllLocations(tools.TenantIDFromContext(ctx)); lerr == nil {
+			for _, l := range locs {
+				if l.ID == tr.FromLocationID {
+					fromCode = l.LocationCode
+				}
+				if l.ID == tr.ToLocationID {
+					toCode = l.LocationCode
+				}
+			}
+		}
+	}
+	header := struct {
+		*database.StockTransfer
+		FromLocationCode string `json:"from_location_code,omitempty"`
+		ToLocationCode   string `json:"to_location_code,omitempty"`
+	}{tr, fromCode, toCode}
+	tools.ResponseOK(ctx, "MobileGetStockTransfer", "Traslado obtenido", "mobile_get_stock_transfer", gin.H{"transfer": header, "lines": lines}, false, "")
 }
 
 func (c *MobileController) ExecuteStockTransfer(ctx *gin.Context) {
