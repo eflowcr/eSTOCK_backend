@@ -37,8 +37,10 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 		}
 	}
 
-	// If user stats do not exist, create a new record with default values
-	if userStat.ID == "" {
+	// If user stats do not exist, create a new record with default values.
+	// ID is an int4 auto-increment PK (matches the user_stats.id sequence), so
+	// GORM omits the zero value on insert and lets the sequence assign it.
+	if userStat.ID == 0 {
 		userStat = database.UserStat{
 			UserID:                  userId,
 			ReceivingTasksCompleted: 0,
@@ -47,13 +49,7 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 			AvgPickTime:             0,
 		}
 
-		// Omit("id"): user_stats.id is an int4 sequence column, but the model
-		// declares ID as string. Without Omit, GORM inserts id='' into the int4
-		// column → "invalid input syntax for integer" → 400 on the Performance
-		// page for every user without a stats row yet (e.g. fresh tenants). Omit
-		// lets the sequence default assign the id (the read path already converts
-		// int4→string fine).
-		if err := r.DB.Omit("id").Create(&userStat).Error; err != nil {
+		if err := r.DB.Create(&userStat).Error; err != nil {
 			return nil, &responses.InternalResponse{
 				Error:   err,
 				Message: "Error al crear las estadísticas del usuario",
@@ -176,7 +172,7 @@ func (s *GamificationRepository) CheckAndAwardBadges(userID string) ([]database.
 		return nil, err
 	}
 
-	userBadgeIDs := make(map[string]bool, len(userBadges))
+	userBadgeIDs := make(map[int]bool, len(userBadges))
 	for _, ub := range userBadges {
 		userBadgeIDs[ub.ID] = true
 	}
@@ -251,7 +247,7 @@ func (s *GamificationRepository) CheckAndAwardBadges(userID string) ([]database.
 	return newBadges, nil
 }
 
-func (r *GamificationRepository) AwardBadge(userId string, badgeId string) (*database.UserBadge, *responses.InternalResponse) {
+func (r *GamificationRepository) AwardBadge(userId string, badgeId int) (*database.UserBadge, *responses.InternalResponse) {
 	var userBadge database.UserBadge
 	userBadge.UserID = userId
 	userBadge.BadgeID = badgeId
