@@ -6,7 +6,7 @@ import (
 )
 
 type Badge struct {
-	ID          int             `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ID          string          `gorm:"column:id;primaryKey" json:"id"`
 	Name        string          `gorm:"column:name" json:"name"`
 	Description string          `gorm:"column:description" json:"description"`
 	Emoji       string          `gorm:"column:emoji" json:"emoji"`

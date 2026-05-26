@@ -7,6 +7,7 @@ import (
 	"github.com/eflowcr/eSTOCK_backend/models/database"
 	"github.com/eflowcr/eSTOCK_backend/models/requests"
 	"github.com/eflowcr/eSTOCK_backend/models/responses"
+	"github.com/eflowcr/eSTOCK_backend/tools"
 	"gorm.io/gorm"
 )
 
@@ -23,38 +24,43 @@ type GamificationRepository struct {
 }
 
 func (r *GamificationRepository) GamificationStats(userId string) (*database.UserStat, *responses.InternalResponse) {
-	// Get user stats from the database
+	// Get user stats from the database. Detect "exists" via the error (NOT via
+	// ID==""): a legacy row could have an empty id, and keying off that re-ran the
+	// Create below → unique/PK violation → 400 on every Performance page load.
 	var userStat database.UserStat
-	if err := r.DB.Where("user_id = ?", userId).First(&userStat).Error; err != nil {
-		// If record not found, stats would be created next, so ignore the error
-
-		if err != gorm.ErrRecordNotFound {
-			return nil, &responses.InternalResponse{
-				Error:   err,
-				Message: "Error al obtener las estadísticas del usuario",
-				Handled: false,
-			}
+	err := r.DB.Where("user_id = ?", userId).First(&userStat).Error
+	if err == nil {
+		return &userStat, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener las estadísticas del usuario",
+			Handled: false,
 		}
 	}
 
-	// If user stats do not exist, create a new record with default values.
-	// ID is an int4 auto-increment PK (matches the user_stats.id sequence), so
-	// GORM omits the zero value on insert and lets the sequence assign it.
-	if userStat.ID == 0 {
-		userStat = database.UserStat{
-			UserID:                  userId,
-			ReceivingTasksCompleted: 0,
-			PickingTasksCompleted:   0,
-			PickAccuracy:            100,
-			AvgPickTime:             0,
+	// No row yet → create with default values. The id column is text (nanoid
+	// convention, like the rest of the app); without a generated id GORM inserts
+	// '' which collides on the PK for the second user.
+	newID, idErr := tools.GenerateNanoid(r.DB)
+	if idErr != nil {
+		return nil, &responses.InternalResponse{
+			Error:   idErr,
+			Message: "Error al crear las estadísticas del usuario",
+			Handled: false,
 		}
-
-		if err := r.DB.Create(&userStat).Error; err != nil {
-			return nil, &responses.InternalResponse{
-				Error:   err,
-				Message: "Error al crear las estadísticas del usuario",
-				Handled: false,
-			}
+	}
+	userStat = database.UserStat{
+		ID:           newID,
+		UserID:       userId,
+		PickAccuracy: 100,
+	}
+	if err := r.DB.Create(&userStat).Error; err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al crear las estadísticas del usuario",
+			Handled: false,
 		}
 	}
 
@@ -172,7 +178,7 @@ func (s *GamificationRepository) CheckAndAwardBadges(userID string) ([]database.
 		return nil, err
 	}
 
-	userBadgeIDs := make(map[int]bool, len(userBadges))
+	userBadgeIDs := make(map[string]bool, len(userBadges))
 	for _, ub := range userBadges {
 		userBadgeIDs[ub.ID] = true
 	}
@@ -247,8 +253,15 @@ func (s *GamificationRepository) CheckAndAwardBadges(userID string) ([]database.
 	return newBadges, nil
 }
 
-func (r *GamificationRepository) AwardBadge(userId string, badgeId int) (*database.UserBadge, *responses.InternalResponse) {
+func (r *GamificationRepository) AwardBadge(userId string, badgeId string) (*database.UserBadge, *responses.InternalResponse) {
+	// id is a text PK (nanoid convention); generate one so concurrent/second
+	// awards don't collide on an empty-string id.
+	newID, idErr := tools.GenerateNanoid(r.DB)
+	if idErr != nil {
+		return nil, &responses.InternalResponse{Error: idErr, Message: "Failed to award badge", Handled: false}
+	}
 	var userBadge database.UserBadge
+	userBadge.ID = newID
 	userBadge.UserID = userId
 	userBadge.BadgeID = badgeId
 

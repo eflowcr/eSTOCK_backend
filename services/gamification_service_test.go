@@ -47,7 +47,7 @@ func (m *mockGamificationRepo) GetAllStats() ([]responses.UserStatsResponse, *re
 
 func TestGamificationService_GamificationStats_Success(t *testing.T) {
 	stat := &database.UserStat{
-		ID:                    1,
+		ID:                    "stat-1",
 		UserID:                "user-1",
 		PickingTasksCompleted: 10,
 	}
@@ -80,8 +80,8 @@ func TestGamificationService_GamificationStats_NotFound(t *testing.T) {
 
 func TestGamificationService_Badges_Success(t *testing.T) {
 	badges := []database.Badge{
-		{ID: 1, Name: "First Pick", RuleType: "picking"},
-		{ID: 2, Name: "Speed Demon", RuleType: "speed"},
+		{ID: "badge-1", Name: "First Pick", RuleType: "picking"},
+		{ID: "badge-2", Name: "Speed Demon", RuleType: "speed"},
 	}
 	repo := &mockGamificationRepo{badges: badges}
 	svc := NewGamificationService(repo)
@@ -89,7 +89,7 @@ func TestGamificationService_Badges_Success(t *testing.T) {
 	result, errResp := svc.Badges("user-1")
 	require.Nil(t, errResp)
 	require.Len(t, result, 2)
-	assert.Equal(t, 1, result[0].ID)
+	assert.Equal(t, "badge-1", result[0].ID)
 	assert.Equal(t, "Speed Demon", result[1].Name)
 }
 
@@ -111,9 +111,9 @@ func TestGamificationService_Badges_Error(t *testing.T) {
 
 func TestGamificationService_GetAllBadges_Success(t *testing.T) {
 	badges := []database.Badge{
-		{ID: 1, Name: "First Pick"},
-		{ID: 2, Name: "Speed Demon"},
-		{ID: 3, Name: "Master Receiver"},
+		{ID: "badge-1", Name: "First Pick"},
+		{ID: "badge-2", Name: "Speed Demon"},
+		{ID: "badge-3", Name: "Master Receiver"},
 	}
 	repo := &mockGamificationRepo{allBadges: badges}
 	svc := NewGamificationService(repo)
@@ -121,7 +121,7 @@ func TestGamificationService_GetAllBadges_Success(t *testing.T) {
 	result, errResp := svc.GetAllBadges()
 	require.Nil(t, errResp)
 	require.Len(t, result, 3)
-	assert.Equal(t, 3, result[2].ID)
+	assert.Equal(t, "badge-3", result[2].ID)
 }
 
 func TestGamificationService_GetAllBadges_Empty(t *testing.T) {
@@ -136,7 +136,7 @@ func TestGamificationService_GetAllBadges_Empty(t *testing.T) {
 func TestGamificationService_CompleteTasks_Success(t *testing.T) {
 	accuracy := 95
 	userBadges := []database.UserBadge{
-		{ID: 1, UserID: "user-1", BadgeID: 1},
+		{ID: "ub-1", UserID: "user-1", BadgeID: "badge-1"},
 	}
 	repo := &mockGamificationRepo{userBadges: userBadges}
 	svc := NewGamificationService(repo)
@@ -149,7 +149,7 @@ func TestGamificationService_CompleteTasks_Success(t *testing.T) {
 	result, errResp := svc.CompleteTasks("user-1", task)
 	require.Nil(t, errResp)
 	require.Len(t, result, 1)
-	assert.Equal(t, 1, result[0].BadgeID)
+	assert.Equal(t, "badge-1", result[0].BadgeID)
 }
 
 func TestGamificationService_CompleteTasks_Error(t *testing.T) {
