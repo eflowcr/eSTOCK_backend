@@ -10,17 +10,25 @@ import (
 )
 
 type UserController struct {
-	Service services.UserService
+	Service  services.UserService
+	TenantID string // configured single-tenant fallback; JWT tenant takes precedence
 }
 
-func NewUserController(service services.UserService) *UserController {
+func NewUserController(service services.UserService, tenantID string) *UserController {
 	return &UserController{
-		Service: service,
+		Service:  service,
+		TenantID: tenantID,
 	}
 }
 
+func (c *UserController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
+}
+
 func (c *UserController) GetAllUsers(ctx *gin.Context) {
-	users, response := c.Service.GetAllUsers()
+	// Tenant scope: only list users inside the caller's tenant (multi-tenant
+	// isolation). Previously this used the unscoped GetAllUsers → cross-tenant leak.
+	users, response := c.Service.GetUsersByTenant(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllUsers", "get_all_users", response)

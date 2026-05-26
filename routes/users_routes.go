@@ -16,7 +16,7 @@ var _ ports.UsersRepository = (*repositories.UsersRepository)(nil)
 
 func RegisterUserRoutes(router *gin.RouterGroup, db *gorm.DB, config configuration.Config, notifSvc *services.NotificationsService) {
 	_, userService := wire.NewUsers(db, config, notifSvc)
-	userController := controllers.NewUserController(*userService)
+	userController := controllers.NewUserController(*userService, config.TenantID)
 
 	protected := router.Group("/users")
 	protected.Use(tools.JWTAuthMiddleware(config.JWTSecret))

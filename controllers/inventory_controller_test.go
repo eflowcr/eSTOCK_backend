@@ -39,7 +39,7 @@ type mockInventoryRepoCtrl struct {
 	suggestErr   *responses.InternalResponse
 }
 
-func (m *mockInventoryRepoCtrl) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
+func (m *mockInventoryRepoCtrl) GetAllInventory(_ string) ([]*dto.EnhancedInventory, *responses.InternalResponse) {
 	return m.inventory, nil
 }
 
@@ -81,11 +81,11 @@ func (m *mockInventoryRepoCtrl) ImportInventoryFromJSON(userId string, rows []re
 	return imported, nil, nil
 }
 
-func (m *mockInventoryRepoCtrl) ValidateImportRows(rows []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
+func (m *mockInventoryRepoCtrl) ValidateImportRows(rows []requests.InventoryImportRow, _ string) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
 	return []responses.InventoryValidationResult{}, nil
 }
 
-func (m *mockInventoryRepoCtrl) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
+func (m *mockInventoryRepoCtrl) ExportInventoryToExcel(_ string) ([]byte, *responses.InternalResponse) {
 	return []byte("xlsx"), nil
 }
 
@@ -121,7 +121,7 @@ func (m *mockInventoryRepoCtrl) GenerateImportTemplate(language string) ([]byte,
 	return []byte("tpl"), nil
 }
 
-func (m *mockInventoryRepoCtrl) GetValuation(_ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+func (m *mockInventoryRepoCtrl) GetValuation(_ string, _ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
 	return nil, nil
 }
 
@@ -140,7 +140,7 @@ func generateInventoryTestToken(t *testing.T) string {
 
 func newInventoryController(repo *mockInventoryRepoCtrl) *InventoryController {
 	svc := services.NewInventoryService(repo, nil)
-	return NewInventoryController(*svc, inventoryTestJWTSecret)
+	return NewInventoryController(*svc, inventoryTestJWTSecret, "tenant-test")
 }
 
 func performInventoryRequestWithToken(handler gin.HandlerFunc, method, path string, body interface{}, params gin.Params, token string) *httptest.ResponseRecorder {

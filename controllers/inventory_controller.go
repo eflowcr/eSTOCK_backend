@@ -13,17 +13,24 @@ import (
 type InventoryController struct {
 	Service   services.InventoryService
 	JWTSecret string
+	TenantID  string // configured single-tenant fallback; JWT tenant takes precedence
 }
 
-func NewInventoryController(service services.InventoryService, jwtSecret string) *InventoryController {
+func NewInventoryController(service services.InventoryService, jwtSecret string, tenantID string) *InventoryController {
 	return &InventoryController{
 		Service:   service,
 		JWTSecret: jwtSecret,
+		TenantID:  tenantID,
 	}
 }
 
+func (c *InventoryController) resolveTenantID(ctx *gin.Context) string {
+	return tools.ResolveTenantID(ctx, c.TenantID)
+}
+
 func (c *InventoryController) GetAllInventory(ctx *gin.Context) {
-	inventory, response := c.Service.GetAllInventory()
+	// Tenant scope: only the caller's tenant inventory (prevents cross-tenant leak).
+	inventory, response := c.Service.GetAllInventory(c.resolveTenantID(ctx))
 
 	if response != nil {
 		writeErrorResponse(ctx, "GetAllInventory", "get_all_inventory", response)
@@ -197,7 +204,7 @@ func (c *InventoryController) ValidateImportRows(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "ValidateImportRows", "No se proporcionaron filas", "validate_inventory_import_rows")
 		return
 	}
-	results, resp := c.Service.ValidateImportRows(rows)
+	results, resp := c.Service.ValidateImportRows(rows, c.resolveTenantID(ctx))
 	if resp != nil {
 		writeErrorResponse(ctx, "ValidateImportRows", "validate_inventory_import_rows", resp)
 		return
@@ -251,7 +258,7 @@ func (c *InventoryController) DownloadImportTemplate(ctx *gin.Context) {
 }
 
 func (c *InventoryController) ExportInventoryToExcel(ctx *gin.Context) {
-	fileBytes, response := c.Service.ExportInventoryToExcel()
+	fileBytes, response := c.Service.ExportInventoryToExcel(c.resolveTenantID(ctx))
 	if response != nil {
 		writeErrorResponse(ctx, "ExportInventoryToExcel", "export_inventory_to_excel", response)
 		return
@@ -375,7 +382,7 @@ func (c *InventoryController) DeleteInventorySerial(ctx *gin.Context) {
 // GetInventoryValuation handles GET /api/inventory/valuation?group_by=article|location|category
 func (c *InventoryController) GetInventoryValuation(ctx *gin.Context) {
 	groupBy := ctx.DefaultQuery("group_by", "article")
-	result, errResp := c.Service.GetValuation(groupBy)
+	result, errResp := c.Service.GetValuation(groupBy, c.resolveTenantID(ctx))
 	if errResp != nil {
 		writeErrorResponse(ctx, "GetInventoryValuation", "get_inventory_valuation", errResp)
 		return

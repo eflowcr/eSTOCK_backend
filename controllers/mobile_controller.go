@@ -1120,7 +1120,7 @@ func (c *MobileController) QueryInventory(ctx *gin.Context) {
 		return
 	}
 
-	all, resp := c.Inventory.GetAllInventory()
+	all, resp := c.Inventory.GetAllInventory(tools.ResolveTenantID(ctx, c.Config.TenantID))
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileQueryInventory", "mobile_query_inventory", resp)
 		return
@@ -1151,7 +1151,7 @@ func (c *MobileController) GetLotsBySKU(ctx *gin.Context) {
 		tools.ResponseBadRequest(ctx, "MobileGetLotsBySKU", "SKU requerido", "mobile_get_lots_by_sku")
 		return
 	}
-	all, resp := c.Inventory.GetAllInventory()
+	all, resp := c.Inventory.GetAllInventory(tools.ResolveTenantID(ctx, c.Config.TenantID))
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileGetLotsBySKU", "mobile_get_lots_by_sku", resp)
 		return

@@ -29,9 +29,15 @@ type InventoryRepository struct {
 	TenantID string
 }
 
-func (r *InventoryRepository) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
+func (r *InventoryRepository) GetAllInventory(tenantID string) ([]*dto.EnhancedInventory, *responses.InternalResponse) {
 	var items []database.Inventory
+	// Tenant scope: the inventory table has no tenant_id column, so restrict to
+	// SKUs in the caller's tenant catalog (articles.tenant_id). SKUs are
+	// tenant-prefixed/unique, so this isolates each tenant's stock and closes
+	// the cross-tenant leak (web list + Excel export + mobile query).
+	tenantSKUs := r.DB.Model(&database.Article{}).Select("sku").Where("tenant_id = ?", tenantID)
 	err := r.DB.Where("quantity > 0").
+		Where("sku IN (?)", tenantSKUs).
 		Order("sku ASC").
 		Find(&items).Error
 
@@ -1055,7 +1061,7 @@ func (r *InventoryRepository) ImportInventoryFromJSON(userId string, rows []requ
 	return imported, skipped, nil
 }
 
-func (r *InventoryRepository) ValidateImportRows(rows []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
+func (r *InventoryRepository) ValidateImportRows(rows []requests.InventoryImportRow, tenantID string) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
 	results := make([]responses.InventoryValidationResult, 0, len(rows))
 	seenKeys := make(map[string]bool)
 
@@ -1112,8 +1118,8 @@ func (r *InventoryRepository) ValidateImportRows(rows []requests.InventoryImport
 			continue
 		}
 
-		// Same SKU at different location (similar)
-		all, _ := r.GetAllInventory()
+		// Same SKU at different location (similar) — scoped to the caller's tenant
+		all, _ := r.GetAllInventory(tenantID)
 		var similar []responses.InventoryValidationMatch
 		for _, inv := range all {
 			if strings.EqualFold(inv.SKU, sku) && !strings.EqualFold(inv.Location, location) {
@@ -1138,8 +1144,8 @@ func (r *InventoryRepository) ValidateImportRows(rows []requests.InventoryImport
 	return results, nil
 }
 
-func (r *InventoryRepository) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
-	inventory, errResp := r.GetAllInventory()
+func (r *InventoryRepository) ExportInventoryToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	inventory, errResp := r.GetAllInventory(tenantID)
 	if errResp != nil {
 		return nil, errResp
 	}
@@ -1533,7 +1539,10 @@ func (r *InventoryRepository) GenerateImportTemplate(language string) ([]byte, e
 
 // GetValuation returns AVCO-based inventory valuation grouped by article, location, or category.
 // AVCO unit_cost is computed from inventory_movements (weighted average of inbound/adjustment qty*cost).
-func (r *InventoryRepository) GetValuation(groupBy string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+func (r *InventoryRepository) GetValuation(groupBy string, tenantID string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+	// Tenant scope: each branch's WHERE restricts to the caller's tenant SKUs
+	// (`inv.sku IN (SELECT sku FROM articles WHERE tenant_id = ?)`) so valuation
+	// never aggregates other tenants' stock. tenantID is bound to each Raw query.
 	type breakdownRow struct {
 		Key   string
 		Label string
@@ -1563,10 +1572,10 @@ func (r *InventoryRepository) GetValuation(groupBy string) (*responses.Inventory
 			       COALESCE(SUM(inv.quantity * COALESCE(m.avco, 0)), 0) AS value
 			FROM inventory inv
 			LEFT JOIN (`+avcoSubquery+`) m ON m.sku = inv.sku
-			WHERE inv.quantity > 0
+			WHERE inv.quantity > 0 AND inv.sku IN (SELECT sku FROM articles WHERE tenant_id = ?)
 			GROUP BY inv.location
 			ORDER BY value DESC
-		`).Scan(&rows).Error
+		`, tenantID).Scan(&rows).Error
 	case "category":
 		err = r.DB.Raw(`
 			SELECT COALESCE(a.category_id, 'uncategorized') AS key,
@@ -1577,10 +1586,10 @@ func (r *InventoryRepository) GetValuation(groupBy string) (*responses.Inventory
 			JOIN articles a ON a.sku = inv.sku
 			LEFT JOIN categories c ON c.id = a.category_id
 			LEFT JOIN (`+avcoSubquery+`) m ON m.sku = inv.sku
-			WHERE inv.quantity > 0
+			WHERE inv.quantity > 0 AND inv.sku IN (SELECT sku FROM articles WHERE tenant_id = ?)
 			GROUP BY a.category_id, c.name
 			ORDER BY value DESC
-		`).Scan(&rows).Error
+		`, tenantID).Scan(&rows).Error
 	default: // article
 		groupBy = "article"
 		err = r.DB.Raw(`
@@ -1591,10 +1600,10 @@ func (r *InventoryRepository) GetValuation(groupBy string) (*responses.Inventory
 			FROM inventory inv
 			LEFT JOIN articles a ON a.sku = inv.sku
 			LEFT JOIN (`+avcoSubquery+`) m ON m.sku = inv.sku
-			WHERE inv.quantity > 0
+			WHERE inv.quantity > 0 AND inv.sku IN (SELECT sku FROM articles WHERE tenant_id = ?)
 			GROUP BY inv.sku, a.name
 			ORDER BY value DESC
-		`).Scan(&rows).Error
+		`, tenantID).Scan(&rows).Error
 	}
 
 	if err != nil {

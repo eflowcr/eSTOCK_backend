@@ -17,7 +17,7 @@ var _ ports.InventoryRepository = (*repositories.InventoryRepository)(nil)
 func RegisterInventoryRoutes(router *gin.RouterGroup, db *gorm.DB, pool *pgxpool.Pool, config configuration.Config, rolesRepo ports.RolesRepository) {
 	// S3.5 W2-A: pass config so InventoryRepository stamps tenant_id on inventory_lots inserts.
 	_, inventoryService := wire.NewInventoryWithConfig(db, pool, config)
-	inventoryController := controllers.NewInventoryController(*inventoryService, config.JWTSecret)
+	inventoryController := controllers.NewInventoryController(*inventoryService, config.JWTSecret, config.TenantID)
 
 	route := router.Group("/inventory")
 	route.Use(tools.JWTAuthMiddleware(config.JWTSecret))

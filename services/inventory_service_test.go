@@ -18,7 +18,7 @@ type mockInventoryRepo struct {
 	createErr  *responses.InternalResponse
 }
 
-func (m *mockInventoryRepo) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
+func (m *mockInventoryRepo) GetAllInventory(_ string) ([]*dto.EnhancedInventory, *responses.InternalResponse) {
 	return m.all, nil
 }
 func (m *mockInventoryRepo) GetPickSuggestionsBySKU(_ string, _ float64) (*dto.PickSuggestionResponse, *responses.InternalResponse) {
@@ -43,10 +43,10 @@ func (m *mockInventoryRepo) ImportInventoryFromExcel(_ string, _ []byte) ([]stri
 func (m *mockInventoryRepo) ImportInventoryFromJSON(_ string, _ []requests.InventoryImportRow) ([]string, []string, *responses.InternalResponse) {
 	return nil, nil, nil
 }
-func (m *mockInventoryRepo) ValidateImportRows(_ []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
+func (m *mockInventoryRepo) ValidateImportRows(_ []requests.InventoryImportRow, _ string) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
 	return nil, nil
 }
-func (m *mockInventoryRepo) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) { return nil, nil }
+func (m *mockInventoryRepo) ExportInventoryToExcel(_ string) ([]byte, *responses.InternalResponse) { return nil, nil }
 func (m *mockInventoryRepo) GetInventoryLots(_ string) ([]responses.InventoryLot, *responses.InternalResponse) { return nil, nil }
 func (m *mockInventoryRepo) GetInventorySerials(_ string) ([]responses.InventorySerialWithSerial, *responses.InternalResponse) { return nil, nil }
 func (m *mockInventoryRepo) CreateInventoryLot(_ string, _ *requests.CreateInventoryLotRequest) *responses.InternalResponse { return nil }
@@ -54,7 +54,7 @@ func (m *mockInventoryRepo) DeleteInventoryLot(_ string) *responses.InternalResp
 func (m *mockInventoryRepo) CreateInventorySerial(_ string, _ *requests.CreateInventorySerial) *responses.InternalResponse { return nil }
 func (m *mockInventoryRepo) DeleteInventorySerial(_ string) *responses.InternalResponse { return nil }
 func (m *mockInventoryRepo) GenerateImportTemplate(_ string) ([]byte, error) { return nil, nil }
-func (m *mockInventoryRepo) GetValuation(_ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+func (m *mockInventoryRepo) GetValuation(_ string, _ string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
 	return nil, nil
 }
 
@@ -62,7 +62,7 @@ func (m *mockInventoryRepo) GetValuation(_ string) (*responses.InventoryValuatio
 
 func TestInventoryService_GetAll_Empty(t *testing.T) {
 	svc := NewInventoryService(&mockInventoryRepo{}, nil)
-	list, err := svc.GetAllInventory()
+	list, err := svc.GetAllInventory("t")
 	assert.Nil(t, err)
 	assert.Empty(t, list)
 }
@@ -75,7 +75,7 @@ func TestInventoryService_GetAll_WithData(t *testing.T) {
 		},
 	}
 	svc := NewInventoryService(repo, nil)
-	list, err := svc.GetAllInventory()
+	list, err := svc.GetAllInventory("t")
 	require.Nil(t, err)
 	assert.Len(t, list, 2)
 	assert.Equal(t, "SKU-001", list[0].SKU)
@@ -126,7 +126,7 @@ func TestInventoryService_ValidateImportRows_Delegates(t *testing.T) {
 	svc := NewInventoryService(&mockInventoryRepo{}, nil)
 	results, err := svc.ValidateImportRows([]requests.InventoryImportRow{
 		{SKU: "SKU-X01", Location: "LOC-A01", Quantity: "5"},
-	})
+	}, "t")
 	assert.Nil(t, err)
 	assert.Nil(t, results)
 }
@@ -136,7 +136,7 @@ func TestInventoryService_ValidateImportRows_Delegates(t *testing.T) {
 func TestInventoryService_GetValuation_DefaultsToArticle(t *testing.T) {
 	repo := &mockInventoryRepo{}
 	svc := NewInventoryService(repo, nil)
-	result, errResp := svc.GetValuation("")
+	result, errResp := svc.GetValuation("", "t")
 	require.Nil(t, errResp)
 	// mock returns nil, which is fine for this test
 	_ = result
@@ -146,7 +146,7 @@ func TestInventoryService_GetValuation_ValidGroupBy(t *testing.T) {
 	repo := &mockInventoryRepo{}
 	svc := NewInventoryService(repo, nil)
 	for _, gb := range []string{"article", "location", "category"} {
-		_, errResp := svc.GetValuation(gb)
+		_, errResp := svc.GetValuation(gb, "t")
 		require.Nil(t, errResp, "group_by=%s", gb)
 	}
 }

@@ -71,7 +71,7 @@ func (m *mockUsersRepoCtrl) GenerateImportTemplate(language string) ([]byte, err
 
 func newUsersController(repo *mockUsersRepoCtrl) *UserController {
 	svc := services.NewUserService(repo)
-	return NewUserController(*svc)
+	return NewUserController(*svc, "tenant-test")
 }
 
 // ─── tests ───────────────────────────────────────────────────────────────────

@@ -19,8 +19,8 @@ func NewInventoryService(repo ports.InventoryRepository, articlesRepo ports.Arti
 	}
 }
 
-func (s *InventoryService) GetAllInventory() ([]*dto.EnhancedInventory, *responses.InternalResponse) {
-	return s.Repository.GetAllInventory()
+func (s *InventoryService) GetAllInventory(tenantID string) ([]*dto.EnhancedInventory, *responses.InternalResponse) {
+	return s.Repository.GetAllInventory(tenantID)
 }
 
 func (s *InventoryService) GetInventoryBySkuAndLocation(sku, location string) (*dto.EnhancedInventory, *responses.InternalResponse) {
@@ -51,12 +51,12 @@ func (s *InventoryService) ImportInventoryFromJSON(userId string, rows []request
 	return s.Repository.ImportInventoryFromJSON(userId, rows)
 }
 
-func (s *InventoryService) ValidateImportRows(rows []requests.InventoryImportRow) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
-	return s.Repository.ValidateImportRows(rows)
+func (s *InventoryService) ValidateImportRows(rows []requests.InventoryImportRow, tenantID string) ([]responses.InventoryValidationResult, *responses.InternalResponse) {
+	return s.Repository.ValidateImportRows(rows, tenantID)
 }
 
-func (s *InventoryService) ExportInventoryToExcel() ([]byte, *responses.InternalResponse) {
-	return s.Repository.ExportInventoryToExcel()
+func (s *InventoryService) ExportInventoryToExcel(tenantID string) ([]byte, *responses.InternalResponse) {
+	return s.Repository.ExportInventoryToExcel(tenantID)
 }
 
 func (s *InventoryService) GetInventoryLots(inventoryID string) ([]responses.InventoryLot, *responses.InternalResponse) {
@@ -94,11 +94,11 @@ func (s *InventoryService) GenerateImportTemplate(language string) ([]byte, erro
 }
 
 // GetValuation returns AVCO-based inventory valuation grouped by article, location, or category.
-func (s *InventoryService) GetValuation(groupBy string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
+func (s *InventoryService) GetValuation(groupBy string, tenantID string) (*responses.InventoryValuationResponse, *responses.InternalResponse) {
 	switch groupBy {
 	case "article", "location", "category":
 	default:
 		groupBy = "article"
 	}
-	return s.Repository.GetValuation(groupBy)
+	return s.Repository.GetValuation(groupBy, tenantID)
 }
