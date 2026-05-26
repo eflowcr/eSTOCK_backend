@@ -30,6 +30,9 @@ type mockUsersRepo struct {
 func (m *mockUsersRepo) GetAllUsers() ([]database.User, *responses.InternalResponse) {
 	return m.users, nil
 }
+func (m *mockUsersRepo) GetUsersByTenant(tenantID string) ([]database.User, *responses.InternalResponse) {
+	return m.users, nil
+}
 
 func (m *mockUsersRepo) GetUserByID(id string) (*database.User, *responses.InternalResponse) {
 	if m.byID != nil {

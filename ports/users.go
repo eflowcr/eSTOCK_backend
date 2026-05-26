@@ -13,6 +13,10 @@ import (
 // the JWT (TenantIDFromContext) so admins only create users inside their own tenant.
 type UsersRepository interface {
 	GetAllUsers() ([]database.User, *responses.InternalResponse)
+	// GetUsersByTenant returns only the users in the given tenant. Used by the
+	// mobile Users admin facade so an admin never sees other tenants' users.
+	// (The unscoped GetAllUsers is left as-is for already-scoped callers.)
+	GetUsersByTenant(tenantID string) ([]database.User, *responses.InternalResponse)
 	GetUserByID(id string) (*database.User, *responses.InternalResponse)
 	CreateUser(tenantID string, user *requests.User) *responses.InternalResponse
 	UpdateUser(id string, data map[string]interface{}) *responses.InternalResponse

@@ -42,6 +42,29 @@ func (u *UsersRepository) GetAllUsers() ([]database.User, *responses.InternalRes
 	return users, nil
 }
 
+// GetUsersByTenant mirrors GetAllUsers but scopes the result to a single tenant,
+// so the mobile Users admin only ever lists users inside the caller's tenant.
+func (u *UsersRepository) GetUsersByTenant(tenantID string) ([]database.User, *responses.InternalResponse) {
+	var users []database.User
+
+	err := u.DB.
+		Table(database.User{}.TableName()).
+		Preload("Role").
+		Where("tenant_id = ?", tenantID).
+		Order("created_at DESC").
+		Find(&users).Error
+
+	if err != nil {
+		return nil, &responses.InternalResponse{
+			Error:   err,
+			Message: "Error al obtener usuarios",
+			Handled: false,
+		}
+	}
+
+	return users, nil
+}
+
 func (u *UsersRepository) GetUserByID(id string) (*database.User, *responses.InternalResponse) {
 	var user database.User
 

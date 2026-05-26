@@ -67,7 +67,14 @@ func (c *MobileUsersController) ListUsers(ctx *gin.Context) {
 		tools.ResponseOK(ctx, "MobileListUsers", "Sin usuarios", "mobile_list_users", []responses.MobileUserDto{}, false, "")
 		return
 	}
-	users, resp := c.Users.GetAllUsers()
+	// Tenant scope: the mobile admin must only list users inside their own tenant
+	// (same JWT-sourced contract as CreateUser) — prevents a cross-tenant user leak.
+	tenantID := tools.ResolveTenantID(ctx, c.Config.TenantID)
+	if tenantID == "" {
+		tools.ResponseUnauthorized(ctx, "MobileListUsers", "tenant no identificado", "mobile_list_users")
+		return
+	}
+	users, resp := c.Users.GetUsersByTenant(tenantID)
 	if resp != nil {
 		writeErrorResponse(ctx, "MobileListUsers", "mobile_list_users", resp)
 		return

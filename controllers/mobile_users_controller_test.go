@@ -33,6 +33,10 @@ type capturingUsersRepo struct {
 func (m *capturingUsersRepo) GetAllUsers() ([]database.User, *responses.InternalResponse) {
 	return m.users, nil
 }
+func (m *capturingUsersRepo) GetUsersByTenant(tenantID string) ([]database.User, *responses.InternalResponse) {
+	m.lastTenantID = tenantID
+	return m.users, nil
+}
 func (m *capturingUsersRepo) GetUserByID(id string) (*database.User, *responses.InternalResponse) {
 	return nil, &responses.InternalResponse{Message: "not found", Handled: true, StatusCode: responses.StatusNotFound}
 }

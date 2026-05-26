@@ -21,6 +21,11 @@ func (s *UserService) GetAllUsers() ([]database.User, *responses.InternalRespons
 	return s.Repository.GetAllUsers()
 }
 
+// GetUsersByTenant lists users scoped to a single tenant (mobile Users admin).
+func (s *UserService) GetUsersByTenant(tenantID string) ([]database.User, *responses.InternalResponse) {
+	return s.Repository.GetUsersByTenant(tenantID)
+}
+
 func (s *UserService) GetUserByID(id string) (*database.User, *responses.InternalResponse) {
 	return s.Repository.GetUserByID(id)
 }
