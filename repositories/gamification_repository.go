@@ -47,7 +47,13 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 			AvgPickTime:             0,
 		}
 
-		if err := r.DB.Create(&userStat).Error; err != nil {
+		// Omit("id"): user_stats.id is an int4 sequence column, but the model
+		// declares ID as string. Without Omit, GORM inserts id='' into the int4
+		// column → "invalid input syntax for integer" → 400 on the Performance
+		// page for every user without a stats row yet (e.g. fresh tenants). Omit
+		// lets the sequence default assign the id (the read path already converts
+		// int4→string fine).
+		if err := r.DB.Omit("id").Create(&userStat).Error; err != nil {
 			return nil, &responses.InternalResponse{
 				Error:   err,
 				Message: "Error al crear las estadísticas del usuario",
