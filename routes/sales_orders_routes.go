@@ -21,10 +21,14 @@ func RegisterSalesOrdersRoutes(router *gin.RouterGroup, db *gorm.DB, config conf
 		read  := tools.RequirePermission(rolesRepo, "sales_orders", "read")
 		write := tools.RequirePermission(rolesRepo, "sales_orders", "write")
 
-		// SO1 — CRUD
-		route.GET("", read, ctrl.List)
+		// SO1 — CRUD. List/Create use the trailing-slash form ("/") to match
+		// purchase-orders and the frontend convention (services call the list/create
+		// root WITH a slash). Registering as "" made /api/sales-orders/ 301-redirect,
+		// so the web SO page received the redirect HTML instead of an array and
+		// crashed ("this.orders.filter is not a function"). See parity with PO.
+		route.GET("/", read, ctrl.List)
 		route.GET("/:id", read, ctrl.GetByID)
-		route.POST("", write, ctrl.Create)
+		route.POST("/", write, ctrl.Create)
 		route.PATCH("/:id", write, ctrl.Update)
 		route.DELETE("/:id", write, ctrl.SoftDelete)
 
