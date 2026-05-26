@@ -59,7 +59,7 @@ func newGamificationController(repo *mockGamificationRepoCtrl) *GamificationCont
 
 func TestGamificationController_GamificationStats_Success(t *testing.T) {
 	repo := &mockGamificationRepoCtrl{
-		userStat: &database.UserStat{ID: "stat-1", UserID: "user-1", ReceivingTasksCompleted: 5},
+		userStat: &database.UserStat{ID: 1, UserID: "user-1", ReceivingTasksCompleted: 5},
 	}
 	ctrl := newGamificationController(repo)
 	w := performRequestWithHeader(ctrl.GamificationStats, "GET", "/gamification/stats", nil, nil, map[string]string{
@@ -102,7 +102,7 @@ func TestGamificationController_GamificationStats_ServiceError(t *testing.T) {
 
 func TestGamificationController_Badges_Success(t *testing.T) {
 	repo := &mockGamificationRepoCtrl{
-		badges: []database.Badge{{ID: "badge-1", Name: "First Pick", Description: "Completed first pick", Emoji: "🏅"}},
+		badges: []database.Badge{{ID: 1, Name: "First Pick", Description: "Completed first pick", Emoji: "🏅"}},
 	}
 	ctrl := newGamificationController(repo)
 	w := performRequestWithHeader(ctrl.Badges, "GET", "/gamification/badges", nil, nil, map[string]string{
@@ -142,7 +142,7 @@ func TestGamificationController_Badges_ServiceError(t *testing.T) {
 
 func TestGamificationController_GetAllBadges_Success(t *testing.T) {
 	repo := &mockGamificationRepoCtrl{
-		allBadges: []database.Badge{{ID: "badge-1", Name: "First Pick", Description: "Completed first pick", Emoji: "🏅"}},
+		allBadges: []database.Badge{{ID: 1, Name: "First Pick", Description: "Completed first pick", Emoji: "🏅"}},
 	}
 	ctrl := newGamificationController(repo)
 	w := performRequest(ctrl.GetAllBadges, "GET", "/gamification/all-badges", nil, nil)
@@ -170,7 +170,7 @@ func TestGamificationController_GetAllBadges_ServiceError(t *testing.T) {
 
 func TestGamificationController_CompleteTasks_Success(t *testing.T) {
 	repo := &mockGamificationRepoCtrl{
-		userBadges: []database.UserBadge{{ID: "ub-1", UserID: "user-1", BadgeID: "badge-1"}},
+		userBadges: []database.UserBadge{{ID: 1, UserID: "user-1", BadgeID: 1}},
 	}
 	ctrl := newGamificationController(repo)
 	body := requests.CompleteTasks{TaskType: "receiving", CompletionTime: 120}
