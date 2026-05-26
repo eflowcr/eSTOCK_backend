@@ -60,8 +60,16 @@ func (r *GamificationRepository) GamificationStats(userId string) (*database.Use
 }
 
 func (r *GamificationRepository) Badges(userId string) ([]database.Badge, *responses.InternalResponse) {
+	// Badges EARNED by the user. The `badges` table holds definitions (no user_id);
+	// the earned link lives in `user_badges`. The previous query filtered
+	// `badges WHERE user_id = ?` — a column that doesn't exist → SQL error / 400
+	// on every Performance page load. Join user_badges so a user with no badges
+	// simply returns an empty list.
 	var badges []database.Badge
-	if err := r.DB.Where("user_id = ?", userId).Find(&badges).Error; err != nil {
+	if err := r.DB.
+		Joins("JOIN user_badges ub ON ub.badge_id = badges.id").
+		Where("ub.user_id = ?", userId).
+		Find(&badges).Error; err != nil {
 		return nil, &responses.InternalResponse{
 			Error:   err,
 			Message: "Error al obtener las insignias",
