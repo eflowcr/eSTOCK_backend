@@ -40,6 +40,8 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, pool *pgxpool.Pool, config confi
 	RegisterPresentationsRoutes(api, db, pool, config)
 	RegisterAuditRoutes(api, pool, config, auditSvc, rolesRepo)
 	RegisterArticlesRoutes(api, db, pool, config, auditSvc, rolesRepo)
+	// S3-5 close (2026-05-27): "Múltiples proveedores por artículo" — CRUD link table.
+	RegisterArticleSuppliersRoutes(api, db, config, rolesRepo)
 	RegisterLocationRoutes(api, db, pool, config, rolesRepo)
 	RegisterLocationTypesRoutes(api, pool, config, rolesRepo)
 	RegisterPresentationTypesRoutes(api, pool, config, rolesRepo)
