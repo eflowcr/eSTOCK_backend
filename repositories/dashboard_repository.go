@@ -352,7 +352,7 @@ func (r *DashboardRepository) GetInventorySummary(period string) (map[string]int
 			SUM(im.quantity * COALESCE(a.unit_price, 0)) AS value
 		FROM inventory_movements im
 		LEFT JOIN articles a ON im.sku = a.sku
-		WHERE im.created_at >= NOW() - INTERVAL '`+intervalExpr+`'
+		WHERE im.created_at >= NOW() - INTERVAL '` + intervalExpr + `'
 		GROUP BY im.location
 		ORDER BY value DESC
 		LIMIT 6
@@ -478,6 +478,7 @@ func (r *DashboardRepository) GetMovementsMonthly(period string) (map[string]int
 		total := row.Inbound + row.Outbound + row.Adjusted
 		months[i] = map[string]interface{}{
 			"period":   row.PeriodLabel,
+			"sortKey":  row.SortKey,
 			"total":    total,
 			"inbound":  row.Inbound,
 			"outbound": row.Outbound,
