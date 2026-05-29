@@ -289,6 +289,16 @@ type InventorySerial struct {
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
+type KpiDailySnapshot struct {
+	ID            string      `json:"id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	SnapshotDate  pgtype.Date `json:"snapshot_date"`
+	TotalSkus     int32       `json:"total_skus"`
+	ActiveTasks   int32       `json:"active_tasks"`
+	LowStockCount int32       `json:"low_stock_count"`
+	CreatedAt     time.Time   `json:"created_at"`
+}
+
 type Location struct {
 	ID           string           `json:"id"`
 	LocationCode string           `json:"location_code"`
