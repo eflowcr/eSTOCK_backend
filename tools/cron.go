@@ -468,6 +468,88 @@ func CronDispatch(db *gorm.DB, analyzer func(tenantID string) error, lotNotifyFn
 	if err := RunIdempotencyKeysSweep(db); err != nil {
 		log.Error().Err(err).Msg("cron: idempotency keys sweep failed")
 	}
+	// Dashboard sparklines — upsert today's KPI snapshot per tenant.
+	if err := RunKpiSnapshot(db); err != nil {
+		log.Error().Err(err).Msg("cron: kpi snapshot failed")
+	}
+}
+
+// RunKpiSnapshot computes today's KPI values per active tenant and upserts one
+// row in kpi_daily_snapshots. Runs inside a transaction with advisory lock
+// 987654324 so only one pod fires per tick. Idempotent: ON CONFLICT UPDATE
+// replaces any existing row for the same (tenant, date).
+//
+// Columns computed per tenant:
+//   - total_skus      = COUNT(*) of articles WHERE is_active IS NOT FALSE
+//   - active_tasks    = COUNT of open+in_progress picking_tasks + receiving_tasks
+//   - low_stock_count = COUNT(*) of inventory rows with quantity < 20
+//     (mirrors GetDashboardStats which has no tenant_id filter on inventory,
+//     so the same global count is stored for every tenant row)
+func RunKpiSnapshot(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("cron: nil db")
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Advisory lock (transaction-scoped) — only one pod upserts per tick.
+		var locked bool
+		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(987654324)").Scan(&locked).Error; err != nil {
+			return err
+		}
+		if !locked {
+			log.Debug().Msg("cron: kpi_snapshot: otro pod tiene el lock, skipping")
+			return nil
+		}
+
+		tenantIDs, err := activeTenantIDs(tx)
+		if err != nil {
+			return fmt.Errorf("kpi_snapshot: list tenants: %w", err)
+		}
+
+		// low_stock_count is global (inventory has no tenant_id) — compute once.
+		var lowStockCount int64
+		if err := tx.Raw("SELECT COUNT(*) FROM inventory WHERE quantity < 20").Scan(&lowStockCount).Error; err != nil {
+			return fmt.Errorf("kpi_snapshot: low_stock_count: %w", err)
+		}
+
+		for _, tid := range tenantIDs {
+			var totalSKUs int64
+			if err := tx.Raw(
+				"SELECT COUNT(*) FROM articles WHERE tenant_id = ? AND is_active IS NOT FALSE",
+				tid,
+			).Scan(&totalSKUs).Error; err != nil {
+				log.Error().Err(err).Str("tenant_id", tid).Msg("cron: kpi_snapshot: total_skus query failed")
+				continue
+			}
+
+			var activeTasks int64
+			if err := tx.Raw(`
+				SELECT COUNT(*) FROM (
+					SELECT id FROM receiving_tasks WHERE tenant_id = ? AND status IN ('open','in_progress')
+					UNION ALL
+					SELECT id FROM picking_tasks   WHERE tenant_id = ? AND status IN ('open','in_progress')
+				) t
+			`, tid, tid).Scan(&activeTasks).Error; err != nil {
+				log.Error().Err(err).Str("tenant_id", tid).Msg("cron: kpi_snapshot: active_tasks query failed")
+				continue
+			}
+
+			if err := tx.Exec(`
+				INSERT INTO kpi_daily_snapshots
+					(tenant_id, snapshot_date, total_skus, active_tasks, low_stock_count)
+				VALUES (?, CURRENT_DATE, ?, ?, ?)
+				ON CONFLICT (tenant_id, snapshot_date) DO UPDATE
+					SET total_skus      = EXCLUDED.total_skus,
+					    active_tasks    = EXCLUDED.active_tasks,
+					    low_stock_count = EXCLUDED.low_stock_count
+			`, tid, totalSKUs, activeTasks, lowStockCount).Error; err != nil {
+				log.Error().Err(err).Str("tenant_id", tid).Msg("cron: kpi_snapshot: upsert failed")
+				continue
+			}
+		}
+
+		log.Info().Int("tenants", len(tenantIDs)).Msg("cron: kpi_snapshot completed")
+		return nil
+	})
 }
 
 // RunIdempotencyKeysSweep deletes idempotency_keys rows whose expires_at is

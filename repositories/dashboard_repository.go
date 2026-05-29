@@ -221,6 +221,39 @@ func (r *DashboardRepository) GetDashboardStats(tasksPeriod string, lowStockThre
 		movChangePercent = float64(movCurrentPeriod-movPreviousPeriod) / float64(movPreviousPeriod) * 100
 	}
 
+	// KPI sparkline trends — last 6 daily snapshots aggregated globally
+	// (no tenant filter, matching the rest of GetDashboardStats which is also global).
+	// Returns empty slices gracefully when the table has 0 rows.
+	type snapshotRow struct {
+		SnapshotDate  string `gorm:"column:snapshot_date"`
+		TotalSKUs     int    `gorm:"column:total_skus"`
+		ActiveTasks   int    `gorm:"column:active_tasks"`
+		LowStockCount int    `gorm:"column:low_stock_count"`
+	}
+	var snapshots []snapshotRow
+	_ = r.DB.Raw(`
+		SELECT snapshot_date::text AS snapshot_date,
+		       SUM(total_skus)::int      AS total_skus,
+		       SUM(active_tasks)::int    AS active_tasks,
+		       SUM(low_stock_count)::int AS low_stock_count
+		FROM kpi_daily_snapshots
+		GROUP BY snapshot_date
+		ORDER BY snapshot_date DESC
+		LIMIT 6
+	`).Scan(&snapshots).Error
+	// Reverse to ascending order (oldest first) for frontend sparkline rendering.
+	for i, j := 0, len(snapshots)-1; i < j; i, j = i+1, j-1 {
+		snapshots[i], snapshots[j] = snapshots[j], snapshots[i]
+	}
+	skusTrend := make([]int, len(snapshots))
+	tasksTrend := make([]int, len(snapshots))
+	lowStockTrend := make([]int, len(snapshots))
+	for i, s := range snapshots {
+		skusTrend[i] = s.TotalSKUs
+		tasksTrend[i] = s.ActiveTasks
+		lowStockTrend[i] = s.LowStockCount
+	}
+
 	result := map[string]interface{}{
 		"totalSkus":          totalSkus,
 		"inventoryValue":     inventoryValue,
@@ -230,6 +263,9 @@ func (r *DashboardRepository) GetDashboardStats(tasksPeriod string, lowStockThre
 		"movementLast7Days":  movementLast7Days,
 		"tasksChangePercent": tasksChangePercent,
 		"movChangePercent":   movChangePercent,
+		"skusTrend":          skusTrend,
+		"tasksTrend":         tasksTrend,
+		"lowStockTrend":      lowStockTrend,
 	}
 
 	return result, nil
