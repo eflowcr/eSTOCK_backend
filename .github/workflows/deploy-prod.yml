@@ -62,6 +62,9 @@ jobs:
         with:
           context: .
           push: true
+          # no-cache: the buildx gha cache can return a stale `COPY . .` layer, shipping
+          # an image built from older source. Force a clean build so prod matches the tag.
+          no-cache: true
           platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PATH }}:latest
